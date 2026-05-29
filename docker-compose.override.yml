@@ -1,10 +1,20 @@
-# Development overrides — hot reload for the backend
-# Run frontend locally with: cd frontend && npm run dev
+# Development overrides — hot reload, DB port exposed for local tools
+# Run frontend with: cd frontend && npm run dev
+# Run API + DB with: make dev
 services:
+  db:
+    ports:
+      - "5432:5432"   # expose for local psql / DB GUI
+
   api:
     volumes:
       - ./backend:/app
       - attachments:/data/attachments
+    # Override the entrypoint: skip auto-migrate (run manually with `make migrate`)
+    # and use uvicorn with --reload for hot reload
+    entrypoint: []
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"   # expose for direct API testing / swagger UI
     environment:
       - PYTHONDONTWRITEBYTECODE=1

@@ -1,4 +1,6 @@
-.PHONY: dev dev-frontend build migrate shell-api shell-db logs prod-build prod-up prod-down
+.PHONY: dev dev-frontend build migrate migrate-new migrate-down migrate-fresh \
+        shell-api shell-db logs logs-api lint test \
+        prod-build prod-up prod-down prod-logs prod-migrate
 
 # ── Development ───────────────────────────────────────────────────────────────
 
@@ -13,7 +15,7 @@ dev-frontend:
 build:
 	docker compose build
 
-# ── Database ──────────────────────────────────────────────────────────────────
+# ── Database migrations ───────────────────────────────────────────────────────
 
 migrate:
 	docker compose run --rm api alembic upgrade head
@@ -24,6 +26,14 @@ migrate-down:
 migrate-new:
 	@read -p "Migration name: " name; \
 	docker compose run --rm api alembic revision --autogenerate -m "$$name"
+
+migrate-fresh:
+	@echo "WARNING: This will DROP and recreate the entire database."
+	@read -p "Are you sure? [y/N] " confirm; \
+	[ "$$confirm" = "y" ] || exit 0; \
+	docker compose run --rm api alembic downgrade base; \
+	docker compose run --rm api alembic upgrade head
+	@echo "Database reset complete."
 
 # ── Shells ────────────────────────────────────────────────────────────────────
 
@@ -41,6 +51,14 @@ logs:
 logs-api:
 	docker compose logs -f api
 
+# ── Lint / Test ───────────────────────────────────────────────────────────────
+
+lint:
+	docker compose run --rm api sh -c "pip install --quiet ruff && ruff check app"
+
+test:
+	docker compose run --rm api sh -c "pip install --quiet pytest pytest-asyncio httpx && pytest tests/ -v"
+
 # ── Production ────────────────────────────────────────────────────────────────
 
 prod-build:
@@ -51,3 +69,9 @@ prod-up:
 
 prod-down:
 	docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+
+prod-logs:
+	docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f
+
+prod-migrate:
+	docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm api alembic upgrade head

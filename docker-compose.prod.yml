@@ -1,14 +1,54 @@
-# Production overrides — no bind mounts, restart policies, API not exposed
+# Production overrides — no bind mounts, restart policies, hardened settings
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 services:
   db:
     restart: unless-stopped
-    ports: []
+    ports: []   # never expose DB port in production
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in production}
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   api:
     restart: unless-stopped
-    ports: []
+    ports: []   # only reachable via nginx proxy
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
 
   frontend:
     restart: unless-stopped
     ports:
       - "80:80"
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+    # nginx only needs to write to a handful of temp dirs — everything else read-only
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
