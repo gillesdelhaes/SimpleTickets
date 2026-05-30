@@ -12,14 +12,9 @@ interface SettingRead {
 
 const GROUPS: { name: string; label: string; keys: string[] }[] = [
   {
-    name: 'app',
-    label: 'Application',
-    keys: ['app_base_url'],
-  },
-  {
     name: 'slack',
     label: 'Slack Integration',
-    keys: ['slack_bot_token', 'slack_app_token', 'slack_signing_secret', 'slack_trigger_emoji', 'slack_monitored_channels', 'slack_two_way_sync'],
+    keys: ['slack_bot_token', 'slack_app_token', 'slack_signing_secret', 'slack_trigger_emoji', 'slack_two_way_sync'],
   },
   {
     name: 'storage',
@@ -29,14 +24,12 @@ const GROUPS: { name: string; label: string; keys: string[] }[] = [
 ]
 
 const KEY_META: Record<string, { label: string; hint: string; placeholder?: string }> = {
-  app_base_url:             { label: 'Public URL', hint: 'Frontend URL used in links', placeholder: 'https://tickets.example.com' },
-  slack_bot_token:          { label: 'Bot Token', hint: 'Starts with xoxb-', placeholder: 'xoxb-…' },
-  slack_app_token:          { label: 'App-Level Token', hint: 'Socket Mode — starts with xapp-', placeholder: 'xapp-…' },
-  slack_signing_secret:     { label: 'Signing Secret', hint: 'From Basic Information', placeholder: '••••••••' },
-  slack_trigger_emoji:      { label: 'Trigger Emoji', hint: 'Reaction that creates a ticket', placeholder: 'ticket' },
-  slack_monitored_channels: { label: 'Monitored Channels', hint: 'Comma-separated IDs. Empty = all channels.', placeholder: 'C01234567, C09876543' },
-  slack_two_way_sync:       { label: 'Two-way sync', hint: 'Sync web replies to Slack threads and vice versa' },
-  attachment_max_size_mb:   { label: 'Max attachment size (MB)', hint: 'Per-file upload limit', placeholder: '10' },
+  slack_bot_token:        { label: 'Bot Token', hint: 'Starts with xoxb-', placeholder: 'xoxb-…' },
+  slack_app_token:        { label: 'App-Level Token', hint: 'Socket Mode — starts with xapp-', placeholder: 'xapp-…' },
+  slack_signing_secret:   { label: 'Signing Secret', hint: 'From Basic Information', placeholder: '••••••••' },
+  slack_trigger_emoji:    { label: 'Trigger Emoji', hint: 'Reaction that creates a ticket', placeholder: 'ticket' },
+  slack_two_way_sync:     { label: 'Two-way sync', hint: 'Sync web replies to Slack threads and vice versa' },
+  attachment_max_size_mb: { label: 'Max attachment size (MB)', hint: 'Per-file upload limit', placeholder: '10' },
 }
 
 export default function Settings() {
