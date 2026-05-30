@@ -8,7 +8,6 @@ from app.auth.deps import get_current_user
 from app.auth.jwt import create_access_token
 from app.database import get_session
 from app.models import User
-from app.models.enums import AuthProvider
 from app.schemas.auth import LoginRequest, TokenResponse
 from app.services.passwords import verify_password
 
@@ -32,7 +31,7 @@ async def login(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    if user is None or user.auth_provider != AuthProvider.local:
+    if user is None:
         raise _invalid
     if not user.hashed_password or not verify_password(body.password, user.hashed_password):
         raise _invalid

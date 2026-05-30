@@ -88,6 +88,15 @@ function IconAudit() {
   )
 }
 
+function IconSettings() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="9" cy="9" r="2.5" />
+      <path d="M9 1.5v2M9 14.5v2M1.5 9h2M14.5 9h2M3.697 3.697l1.414 1.414M12.889 12.889l1.414 1.414M3.697 14.303l1.414-1.414M12.889 5.111l1.414-1.414" />
+    </svg>
+  )
+}
+
 function IconChevronLeft() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -145,6 +154,7 @@ const NAV_ADMIN = [
   { to: '/admin/categories', label: 'Categories', icon: <IconCategories /> },
   { to: '/admin/sla', label: 'SLA Policies', icon: <IconSLA /> },
   { to: '/admin/audit', label: 'Audit Log', icon: <IconAudit /> },
+  { to: '/admin/settings', label: 'Settings', icon: <IconSettings /> },
 ]
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -394,17 +404,13 @@ export default function AppShell({ title, children }: AppShellProps) {
       {/* ── Main area (offset by sidebar width on desktop) ── */}
       <div style={{
         flex: 1,
-        marginLeft: 0,
+        marginLeft: sidebarWidth,
         display: 'flex',
         flexDirection: 'column',
         minHeight: '100vh',
         background: '#F2F2F2',
         transition: 'margin-left 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-      }}
-        className="md:ml-[var(--sidebar-w)]"
-      >
-        {/* Inline CSS variable for margin */}
-        <style>{`:root { --sidebar-w: ${sidebarWidth}px; } @media (min-width: 768px) { .md\\:ml-\\[var\\(--sidebar-w\\)\\] { margin-left: ${sidebarWidth}px; } }`}</style>
+      }}>
 
         {/* ── Top bar ── */}
         <header style={{

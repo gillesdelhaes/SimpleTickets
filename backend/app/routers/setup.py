@@ -120,10 +120,11 @@ async def test_slack(body: TestSlackRequest) -> dict:
     Verify Slack tokens by calling auth.test.
     Does NOT require setup to be incomplete — reused from the settings page too.
     """
+    import asyncio
     try:
-        from slack_sdk.web.async_client import AsyncWebClient
-        client = AsyncWebClient(token=body.bot_token)
-        response = await client.auth_test()
+        from slack_sdk import WebClient
+        client = WebClient(token=body.bot_token)
+        response = await asyncio.to_thread(client.auth_test)
         return {
             "ok": True,
             "team_name": response.get("team"),
