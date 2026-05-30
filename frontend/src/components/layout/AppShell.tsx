@@ -24,15 +24,6 @@ function IconQueue() {
   )
 }
 
-function IconMyQueue() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="6.5" cy="5" r="2.5" />
-      <path d="M2 14.5c0-2.485 2.015-4.5 4.5-4.5" />
-      <path d="M11 9.5h6M11 12.5h6M11 15.5h4" />
-    </svg>
-  )
-}
 
 function IconSearch() {
   return (
@@ -137,7 +128,6 @@ function IconLogout() {
 const NAV_MAIN = [
   { to: '/dashboard', label: 'Dashboard', icon: <IconDashboard /> },
   { to: '/queue', label: 'Queue', icon: <IconQueue /> },
-  { to: '/queue/mine', label: 'My Queue', icon: <IconMyQueue /> },
   { to: '/search', label: 'Search', icon: <IconSearch /> },
   { to: '/reports', label: 'Reports', icon: <IconReports /> },
 ]

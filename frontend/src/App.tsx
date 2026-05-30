@@ -11,6 +11,7 @@ import AdminCategories from './pages/admin/Categories'
 import AdminSLAPolicies from './pages/admin/SLAPolicies'
 import AdminSettings from './pages/admin/Settings'
 import AdminAudit from './pages/admin/Audit'
+import Search from './pages/Search'
 import SetupWizard from './pages/setup/SetupWizard'
 
 function Placeholder({ name }: { name: string }) {
@@ -40,8 +41,7 @@ export default function App() {
             <Route path="/tickets/:id" element={<TicketDetail />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/queue" element={<Queue />} />
-            <Route path="/queue/mine" element={<Placeholder name="My Queue" />} />
-            <Route path="/search" element={<Placeholder name="Search" />} />
+            <Route path="/search" element={<Search />} />
             <Route path="/reports" element={<Placeholder name="Reports" />} />
           </Route>
 
