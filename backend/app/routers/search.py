@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, literal, select, union_all
+from sqlalchemy import func, select, text, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -50,6 +50,8 @@ def _build_ticket_read(
         sla_deadline=ticket.sla_deadline,
         sla_breached=ticket.sla_breached,
         duplicate_of_id=ticket.duplicate_of_id,
+        slack_channel_id=ticket.slack_channel_id,
+        slack_message_ts=ticket.slack_message_ts,
         created_at=ticket.created_at,
         updated_at=ticket.updated_at,
         resolved_at=ticket.resolved_at,
@@ -73,18 +75,22 @@ async def search_tickets(
     if not q.strip():
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Query cannot be blank")
 
+    # Use a raw SQL literal for the regconfig argument — parameterized binds
+    # cannot be cast to regconfig by asyncpg, so we embed it directly.
+    lang = text("'english'::regconfig")
+
     # Build the tsquery expression — websearch_to_tsquery is safe against
     # malformed input; it silently drops tokens it cannot parse
-    tsq = func.websearch_to_tsquery(literal("english"), q)
+    tsq = func.websearch_to_tsquery(lang, q)
 
     # ── Step 1: ranked ticket IDs via FTS ─────────────────────────────────────
 
     # Title gets weight A (0.1), description weight B (0.05) in ts_rank defaults
     # We use setweight to give title a bigger boost
-    title_tsv = func.to_tsvector(literal("english"), Ticket.title)
-    desc_tsv = func.to_tsvector(literal("english"), Ticket.description)
-    ticket_tsv = func.setweight(title_tsv, literal("A")).op("||")(
-        func.setweight(desc_tsv, literal("B"))
+    title_tsv = func.to_tsvector(lang, Ticket.title)
+    desc_tsv = func.to_tsvector(lang, Ticket.description)
+    ticket_tsv = func.setweight(title_tsv, text("'A'")).op("||")(
+        func.setweight(desc_tsv, text("'B'"))
     )
     ticket_rank = func.ts_rank_cd(ticket_tsv, tsq)
 
@@ -97,7 +103,7 @@ async def search_tickets(
     )
 
     # Reply bodies get weight C
-    reply_tsv = func.setweight(func.to_tsvector(literal("english"), TicketReply.body), literal("C"))
+    reply_tsv = func.setweight(func.to_tsvector(lang, TicketReply.body), text("'C'"))
     reply_rank = func.ts_rank_cd(reply_tsv, tsq)
 
     r_match = (
@@ -163,10 +169,10 @@ async def search_tickets(
         hl_stmt = select(
             Ticket.id,
             func.ts_headline(
-                literal("english"),
-                Ticket.title + literal(" ") + Ticket.description,
+                lang,
+                func.concat(Ticket.title, ' ', Ticket.description),
                 tsq,
-                literal(_HL_OPTIONS),
+                _HL_OPTIONS,
             ).label("headline"),
         ).where(Ticket.id.in_(visible_ids))
 
