@@ -13,7 +13,7 @@ from typing import Any, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
+from app.config import settings_manager
 from app.database import AsyncSessionLocal
 from app.models import Category, SLAPolicy, Ticket, TicketReply, User
 from app.models.enums import Channel, Priority, TicketStatus
@@ -128,7 +128,7 @@ async def post_reply_to_slack(ticket: Ticket, reply_body: str, author_name: str)
     Returns the Slack message ts if successful (used to set reply.slack_ts for
     deduplication), or None if Slack is not configured / sync is disabled.
     """
-    if not settings.slack_two_way_sync:
+    if not settings_manager.slack_two_way_sync:
         return None
     if not (ticket.slack_channel_id and ticket.slack_message_ts):
         return None
@@ -162,7 +162,7 @@ async def post_status_to_slack(ticket: Ticket, new_status: str, actor_name: str)
     Post a status-change notification to the originating Slack thread.
     Silently no-ops if Slack is not configured / sync is disabled.
     """
-    if not settings.slack_two_way_sync:
+    if not settings_manager.slack_two_way_sync:
         return
     if not (ticket.slack_channel_id and ticket.slack_message_ts):
         return
@@ -208,7 +208,7 @@ async def handle_slack_thread_message(
     inside a ticket's Slack thread. Creates a TicketReply with slack_ts set
     so the reply is never re-posted back to Slack (deduplication).
     """
-    if not settings.slack_two_way_sync:
+    if not settings_manager.slack_two_way_sync:
         return
 
     async with AsyncSessionLocal() as session:

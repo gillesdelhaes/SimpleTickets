@@ -1,175 +1,276 @@
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import AdminPageShell from '../../components/admin/AdminPageShell'
+import api from '../../lib/api'
 
-interface EnvVar {
+interface SettingRead {
   key: string
-  description: string
-  example?: string
-  sensitive?: boolean
+  value: string | null
+  is_secret: boolean
+  group_name: string
 }
 
-interface Group {
-  title: string
-  icon: React.ReactNode
-  vars: EnvVar[]
-}
-
-const ENV_GROUPS: Group[] = [
+const GROUPS: { name: string; label: string; keys: string[] }[] = [
   {
-    title: 'Application',
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-        <rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" strokeWidth="1.8"/>
-        <path d="M9 12l2 2 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-    ),
-    vars: [
-      { key: 'APP_BASE_URL', description: 'Public URL of the frontend', example: 'https://tickets.example.com' },
-      { key: 'APP_SECRET_KEY', description: 'JWT signing secret (HS256) — change in production', sensitive: true },
-      { key: 'ATTACHMENT_MAX_SIZE_MB', description: 'Max upload size per attachment', example: '10' },
-    ],
+    name: 'app',
+    label: 'Application',
+    keys: ['app_base_url'],
   },
   {
-    title: 'Slack Integration',
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-        <path d="M14.5 10c-.83 0-1.5-.67-1.5-1.5v-5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5z" fill="currentColor"/>
-        <path d="M20.5 10H19V8.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" fill="currentColor"/>
-        <path d="M9.5 14c.83 0 1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5S8 21.33 8 20.5v-5c0-.83.67-1.5 1.5-1.5z" fill="currentColor"/>
-        <path d="M3.5 14H5v1.5c0 .83-.67 1.5-1.5 1.5S2 16.33 2 15.5 2.67 14 3.5 14z" fill="currentColor"/>
-        <path d="M14 14.5c0-.83.67-1.5 1.5-1.5h5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5h-5c-.83 0-1.5-.67-1.5-1.5z" fill="currentColor"/>
-        <path d="M15.5 19H14v1.5c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5-.67-1.5-1.5-1.5z" fill="currentColor"/>
-        <path d="M10 9.5C10 8.67 9.33 8 8.5 8h-5C2.67 8 2 8.67 2 9.5S2.67 11 3.5 11h5c.83 0 1.5-.67 1.5-1.5z" fill="currentColor"/>
-        <path d="M8.5 5H10V3.5C10 2.67 9.33 2 8.5 2S7 2.67 7 3.5 7.67 5 8.5 5z" fill="currentColor"/>
-      </svg>
-    ),
-    vars: [
-      { key: 'SLACK_BOT_TOKEN', description: 'Bot User OAuth Token (xoxb-…)', sensitive: true },
-      { key: 'SLACK_APP_TOKEN', description: 'App-Level Token for Socket Mode (xapp-…)', sensitive: true },
-      { key: 'SLACK_SIGNING_SECRET', description: 'Used to verify request signatures from Slack', sensitive: true },
-      { key: 'SLACK_TRIGGER_EMOJI', description: 'Emoji reaction that creates a ticket (without colons)', example: 'ticket' },
-      { key: 'SLACK_MONITORED_CHANNELS', description: 'Comma-separated channel IDs to watch. Leave empty to monitor all channels.', example: 'C01234567,C09876543' },
-    ],
+    name: 'slack',
+    label: 'Slack Integration',
+    keys: ['slack_bot_token', 'slack_app_token', 'slack_signing_secret', 'slack_trigger_emoji', 'slack_monitored_channels', 'slack_two_way_sync'],
   },
   {
-    title: 'Database',
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-        <ellipse cx="12" cy="5" rx="9" ry="3" stroke="currentColor" strokeWidth="1.8"/>
-        <path d="M21 12c0 1.66-4.03 3-9 3S3 13.66 3 12" stroke="currentColor" strokeWidth="1.8"/>
-        <path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5" stroke="currentColor" strokeWidth="1.8"/>
-      </svg>
-    ),
-    vars: [
-      { key: 'DATABASE_URL', description: 'PostgreSQL connection string', example: 'postgresql+asyncpg://user:pass@db:5432/simplytickets', sensitive: true },
-    ],
+    name: 'storage',
+    label: 'Storage',
+    keys: ['attachment_max_size_mb'],
   },
 ]
 
+const KEY_META: Record<string, { label: string; hint: string; placeholder?: string }> = {
+  app_base_url:             { label: 'Public URL', hint: 'Frontend URL used in links', placeholder: 'https://tickets.example.com' },
+  slack_bot_token:          { label: 'Bot Token', hint: 'Starts with xoxb-', placeholder: 'xoxb-…' },
+  slack_app_token:          { label: 'App-Level Token', hint: 'Socket Mode — starts with xapp-', placeholder: 'xapp-…' },
+  slack_signing_secret:     { label: 'Signing Secret', hint: 'From Basic Information', placeholder: '••••••••' },
+  slack_trigger_emoji:      { label: 'Trigger Emoji', hint: 'Reaction that creates a ticket', placeholder: 'ticket' },
+  slack_monitored_channels: { label: 'Monitored Channels', hint: 'Comma-separated IDs. Empty = all channels.', placeholder: 'C01234567, C09876543' },
+  slack_two_way_sync:       { label: 'Two-way sync', hint: 'Sync web replies to Slack threads and vice versa' },
+  attachment_max_size_mb:   { label: 'Max attachment size (MB)', hint: 'Per-file upload limit', placeholder: '10' },
+}
+
 export default function Settings() {
+  const queryClient = useQueryClient()
+  const [edits, setEdits] = useState<Record<string, string>>({})
+  const [editing, setEditing] = useState<Record<string, boolean>>({})
+  const [testResult, setTestResult] = useState<{ ok: boolean; team_name?: string; error?: string } | null>(null)
+  const [testing, setTesting] = useState(false)
+  const [saveSuccess, setSaveSuccess] = useState(false)
+
+  const { data, isLoading } = useQuery<{ settings: SettingRead[] }>({
+    queryKey: ['admin-settings'],
+    queryFn: async () => (await api.get('/admin/settings')).data,
+  })
+
+  const settingMap = Object.fromEntries((data?.settings ?? []).map(s => [s.key, s]))
+
+  const mutation = useMutation({
+    mutationFn: async (updates: { key: string; value: string }[]) => {
+      await api.patch('/admin/settings', { settings: updates })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-settings'] })
+      setEdits({})
+      setEditing({})
+      setSaveSuccess(true)
+      setTimeout(() => setSaveSuccess(false), 3000)
+    },
+  })
+
+  function getValue(key: string): string {
+    if (key in edits) return edits[key]
+    return settingMap[key]?.value ?? ''
+  }
+
+  function handleEdit(key: string, value: string) {
+    setEdits(e => ({ ...e, [key]: value }))
+  }
+
+  function handleSaveGroup(keys: string[]) {
+    const changed = keys
+      .filter(k => k in edits)
+      .map(k => ({ key: k, value: edits[k] }))
+    if (changed.length > 0) mutation.mutate(changed)
+  }
+
+  function hasChanges(keys: string[]) {
+    return keys.some(k => k in edits)
+  }
+
+  async function handleTestSlack() {
+    const botToken = getValue('slack_bot_token')
+    const appToken = getValue('slack_app_token')
+    if (!botToken || !appToken || botToken === '••••••••') return
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const res = await api.post('/admin/settings/test-slack', { bot_token: botToken, app_token: appToken })
+      setTestResult(res.data)
+    } catch {
+      setTestResult({ ok: false, error: 'Request failed' })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  if (isLoading) return (
+    <AdminPageShell title="Settings">
+      <div style={{ color: '#737373', fontSize: 14 }}>Loading…</div>
+    </AdminPageShell>
+  )
+
   return (
     <AdminPageShell title="Settings">
-      <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 700, color: '#0A0A0A', letterSpacing: '-0.02em', margin: 0 }}>Settings</h1>
-        <p style={{ fontSize: 13, color: '#737373', marginTop: 3 }}>
-          SimplyTickets is configured via environment variables.
-        </p>
-      </div>
-
-      {/* Notice banner */}
-      <div style={{
-        background: '#F0F9FF', border: '1px solid #BAE6FD',
-        borderLeft: '4px solid #0EA5E9', borderRadius: '0 10px 10px 0',
-        padding: '14px 18px', marginBottom: 28,
-        display: 'flex', gap: 12, alignItems: 'flex-start',
-      }}>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0, marginTop: 1 }}>
-          <circle cx="12" cy="12" r="10" stroke="#0EA5E9" strokeWidth="1.8"/>
-          <path d="M12 16v-4M12 8h.01" stroke="#0EA5E9" strokeWidth="1.8" strokeLinecap="round"/>
-        </svg>
+      <div style={{ marginBottom: 24, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div>
-          <p style={{ fontSize: 13, fontWeight: 600, color: '#0369A1', margin: '0 0 4px' }}>
-            Configuration via Environment Variables
-          </p>
-          <p style={{ fontSize: 12, color: '#0284C7', margin: 0, lineHeight: 1.6 }}>
-            All settings are read at startup from environment variables or the <code style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, background: '#E0F2FE', padding: '1px 5px', borderRadius: 3 }}>.env</code> file.
-            Changes require restarting the API container. Sensitive values are never exposed through the API.
+          <h1 style={{ fontSize: 20, fontWeight: 700, color: '#0A0A0A', letterSpacing: '-0.02em', margin: 0 }}>Settings</h1>
+          <p style={{ fontSize: 13, color: '#737373', marginTop: 3 }}>
+            Changes take effect immediately. Slack reconnects automatically when credentials change.
           </p>
         </div>
+        {saveSuccess && (
+          <span style={{ fontSize: 13, color: '#059669', fontWeight: 600, background: '#D1FAE5', border: '1px solid #6EE7B7', padding: '6px 14px', borderRadius: 999 }}>
+            ✓ Saved
+          </span>
+        )}
       </div>
 
-      {/* Groups */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {ENV_GROUPS.map(group => (
-          <div key={group.title} style={{ background: '#fff', border: '1px solid #E5E5E5', borderRadius: 12, overflow: 'hidden' }}>
+        {GROUPS.map(group => (
+          <div key={group.name} style={{ background: '#fff', border: '1px solid #E5E5E5', borderRadius: 12, overflow: 'hidden' }}>
             {/* Group header */}
-            <div style={{ padding: '14px 20px', borderBottom: '1px solid #F2F2F2', background: '#FAFAFA', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ color: '#737373' }}>{group.icon}</span>
+            <div style={{
+              padding: '12px 20px', borderBottom: '1px solid #F2F2F2',
+              background: '#FAFAFA', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: '#262626', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-                {group.title}
+                {group.label}
               </span>
-            </div>
-
-            {/* Vars */}
-            <div>
-              {group.vars.map((v, i) => (
-                <div
-                  key={v.key}
-                  style={{
-                    padding: '12px 20px',
-                    borderBottom: i < group.vars.length - 1 ? '1px solid #F9F9F9' : 'none',
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 2fr auto',
-                    gap: 16,
-                    alignItems: 'center',
-                  }}
-                >
-                  {/* Key */}
-                  <div>
-                    <code style={{
-                      fontFamily: 'JetBrains Mono, monospace',
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: '#0A0A0A',
-                      background: '#F2F2F2',
-                      padding: '3px 7px',
-                      borderRadius: 4,
-                      display: 'inline-block',
-                    }}>
-                      {v.key}
-                    </code>
-                  </div>
-
-                  {/* Description + example */}
-                  <div>
-                    <p style={{ fontSize: 12, color: '#262626', margin: 0, lineHeight: 1.5 }}>{v.description}</p>
-                    {v.example && (
-                      <p style={{ fontSize: 11, color: '#A3A3A3', margin: '3px 0 0', fontFamily: 'JetBrains Mono, monospace' }}>
-                        e.g. {v.example}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Sensitive badge */}
-                  {v.sensitive && (
-                    <span style={{
-                      fontSize: 10, fontWeight: 700, color: '#92400E',
-                      background: '#FEF3C7', border: '1px solid #FDE68A',
-                      borderRadius: 4, padding: '2px 7px', whiteSpace: 'nowrap',
-                      textTransform: 'uppercase', letterSpacing: '0.05em',
-                    }}>
-                      Secret
+              {group.name === 'slack' && (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  {testResult && (
+                    <span style={{ fontSize: 12, color: testResult.ok ? '#059669' : '#DC2626' }}>
+                      {testResult.ok ? `✓ ${testResult.team_name}` : `✗ ${testResult.error}`}
                     </span>
                   )}
-                  {!v.sensitive && <span />}
+                  <button
+                    onClick={handleTestSlack}
+                    disabled={testing}
+                    style={{ fontSize: 12, padding: '4px 12px', borderRadius: 8, border: '1px solid #E5E5E5', background: '#fff', cursor: 'pointer', color: '#737373', fontWeight: 500 }}
+                  >
+                    {testing ? 'Testing…' : 'Test connection'}
+                  </button>
                 </div>
-              ))}
+              )}
             </div>
+
+            {/* Fields */}
+            <div>
+              {group.keys.map((key, i) => {
+                const meta = KEY_META[key]
+                const row = settingMap[key]
+                const isToggle = key === 'slack_two_way_sync'
+                const isEditing = editing[key] || false
+                const val = getValue(key)
+
+                return (
+                  <div
+                    key={key}
+                    style={{
+                      padding: '14px 20px',
+                      borderBottom: i < group.keys.length - 1 ? '1px solid #F9F9F9' : 'none',
+                      display: 'grid',
+                      gridTemplateColumns: '220px 1fr auto',
+                      gap: 16,
+                      alignItems: 'center',
+                    }}
+                  >
+                    {/* Label */}
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#262626' }}>{meta?.label ?? key}</div>
+                      {meta?.hint && <div style={{ fontSize: 11, color: '#A3A3A3', marginTop: 2 }}>{meta.hint}</div>}
+                    </div>
+
+                    {/* Value / input */}
+                    <div>
+                      {isToggle ? (
+                        <div
+                          onClick={() => handleEdit(key, val === 'false' ? 'true' : 'false')}
+                          style={{
+                            width: 44, height: 24, borderRadius: 12, cursor: 'pointer',
+                            background: val !== 'false' ? 'linear-gradient(135deg, #FF4713 0%, #AD1164 100%)' : '#E5E5E5',
+                            position: 'relative', transition: 'background 0.2s',
+                          }}
+                        >
+                          <div style={{
+                            position: 'absolute', top: 3,
+                            left: val !== 'false' ? 23 : 3,
+                            width: 18, height: 18, borderRadius: '50%', background: '#fff',
+                            transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                          }} />
+                        </div>
+                      ) : row?.is_secret && !isEditing ? (
+                        <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 13, color: '#A3A3A3' }}>
+                          {val || '—'}
+                        </span>
+                      ) : (
+                        <input
+                          value={val}
+                          type={row?.is_secret ? 'password' : 'text'}
+                          onChange={e => handleEdit(key, e.target.value)}
+                          placeholder={meta?.placeholder ?? ''}
+                          style={{
+                            width: '100%', height: 34, borderRadius: 8,
+                            border: key in edits ? '1px solid #FF4713' : '1px solid #E5E5E5',
+                            background: key in edits ? '#FFF9F7' : '#FAFAFA',
+                            padding: '0 10px', fontSize: 13, color: '#0A0A0A', outline: 'none',
+                            fontFamily: row?.is_secret ? 'JetBrains Mono, monospace' : 'inherit',
+                            boxShadow: key in edits ? '0 0 0 3px rgba(255,71,19,0.08)' : 'none',
+                            boxSizing: 'border-box',
+                          }}
+                          onFocus={() => {
+                            if (row?.is_secret && !isEditing) {
+                              setEditing(e => ({ ...e, [key]: true }))
+                              setEdits(e => ({ ...e, [key]: '' }))
+                            }
+                          }}
+                        />
+                      )}
+                    </div>
+
+                    {/* Edit button for secrets */}
+                    <div style={{ width: 60, textAlign: 'right' }}>
+                      {row?.is_secret && !isEditing && (
+                        <button
+                          onClick={() => {
+                            setEditing(e => ({ ...e, [key]: true }))
+                            setEdits(e => ({ ...e, [key]: '' }))
+                          }}
+                          style={{ fontSize: 12, color: '#FF4713', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, padding: '4px 8px' }}
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Save button */}
+            {hasChanges(group.keys) && (
+              <div style={{ padding: '12px 20px', borderTop: '1px solid #F2F2F2', background: '#FAFAFA', display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => handleSaveGroup(group.keys)}
+                  disabled={mutation.isPending}
+                  style={{
+                    height: 36, paddingLeft: 20, paddingRight: 20,
+                    background: 'linear-gradient(135deg, #FF4713 0%, #AD1164 100%)',
+                    border: 'none', borderRadius: 8, cursor: 'pointer',
+                    fontSize: 13, fontWeight: 600, color: '#fff',
+                    boxShadow: '0 2px 8px rgba(255,71,19,0.2)',
+                  }}
+                >
+                  {mutation.isPending ? 'Saving…' : 'Save changes'}
+                </button>
+              </div>
+            )}
           </div>
         ))}
       </div>
 
-      <p style={{ fontSize: 12, color: '#C0C0C0', marginTop: 20, textAlign: 'center' }}>
-        See <code style={{ fontFamily: 'JetBrains Mono, monospace' }}>.env.example</code> in the repository root for a complete template.
+      <p style={{ fontSize: 11, color: '#D4D4D4', marginTop: 20, textAlign: 'center' }}>
+        DATABASE_URL is set via environment variable and cannot be changed here.
       </p>
     </AdminPageShell>
   )

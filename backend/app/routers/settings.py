@@ -1,0 +1,160 @@
+"""
+Admin settings endpoints — read/write app_settings from the UI.
+
+GET  /api/admin/settings         — list all settings (secrets masked)
+PATCH /api/admin/settings        — bulk update settings
+POST /api/admin/settings/test-slack — test Slack connection (post-setup)
+"""
+from __future__ import annotations
+
+import logging
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth.deps import get_current_user
+from app.database import get_session
+from app.models.app_setting import AppSetting
+from app.models.user import User
+from app.models.enums import Role
+from app.services.settings_service import decrypt_value, encrypt_value, set_setting
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/admin/settings", tags=["admin"])
+
+# Keys the UI is allowed to write (prevent arbitrary key injection)
+_WRITABLE_KEYS = {
+    "app_base_url",
+    "slack_bot_token",
+    "slack_app_token",
+    "slack_signing_secret",
+    "slack_trigger_emoji",
+    "slack_monitored_channels",
+    "slack_two_way_sync",
+    "attachment_max_size_mb",
+}
+
+_SLACK_KEYS = {
+    "slack_bot_token", "slack_app_token", "slack_signing_secret",
+    "slack_trigger_emoji", "slack_monitored_channels", "slack_two_way_sync",
+}
+
+
+def _require_admin(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role != Role.admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only")
+    return current_user
+
+
+# ── Response types ─────────────────────────────────────────────────────────────
+
+class SettingRead(BaseModel):
+    key: str
+    value: Optional[str]   # None / masked for secrets
+    is_secret: bool
+    group_name: str
+
+
+class SettingsResponse(BaseModel):
+    settings: list[SettingRead]
+
+
+class SettingUpdate(BaseModel):
+    key: str
+    value: str
+
+
+class SettingsPatchRequest(BaseModel):
+    settings: list[SettingUpdate]
+
+
+# ── GET /admin/settings ────────────────────────────────────────────────────────
+
+@router.get("", response_model=SettingsResponse)
+async def list_settings(
+    current_user: User = Depends(_require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> SettingsResponse:
+    result = await session.execute(
+        select(AppSetting).order_by(AppSetting.group_name, AppSetting.key)
+    )
+    rows = result.scalars().all()
+    items = []
+    for row in rows:
+        if row.is_secret:
+            display = "••••••••" if row.value else None
+        else:
+            display = row.value
+        items.append(SettingRead(
+            key=row.key,
+            value=display,
+            is_secret=row.is_secret,
+            group_name=row.group_name,
+        ))
+    return SettingsResponse(settings=items)
+
+
+# ── PATCH /admin/settings ──────────────────────────────────────────────────────
+
+@router.patch("")
+async def update_settings(
+    body: SettingsPatchRequest,
+    current_user: User = Depends(_require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    invalid = [s.key for s in body.settings if s.key not in _WRITABLE_KEYS]
+    if invalid:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unknown or read-only settings keys: {invalid}",
+        )
+
+    slack_changed = False
+    for item in body.settings:
+        await set_setting(item.key, item.value, session)
+        if item.key in _SLACK_KEYS:
+            slack_changed = True
+
+    await session.commit()
+
+    # Invalidate cache so next request picks up new values
+    from app.config import settings_manager
+    settings_manager.invalidate()
+    await settings_manager.warm(session)
+
+    # Reload Slack bot if any Slack credential changed
+    if slack_changed and settings_manager.is_slack_configured():
+        from app.slack.bot import reload_slack
+        import asyncio
+        asyncio.create_task(reload_slack())
+
+    return {"updated": len(body.settings), "slack_reloaded": slack_changed}
+
+
+# ── POST /admin/settings/test-slack ───────────────────────────────────────────
+
+class TestSlackRequest(BaseModel):
+    bot_token: str
+    app_token: str
+
+
+@router.post("/test-slack")
+async def test_slack(
+    body: TestSlackRequest,
+    current_user: User = Depends(_require_admin),
+) -> dict:
+    """Test Slack credentials without persisting. Same logic as /setup/test-slack."""
+    try:
+        from slack_sdk.web.async_client import AsyncWebClient
+        client = AsyncWebClient(token=body.bot_token)
+        response = await client.auth_test()
+        return {
+            "ok": True,
+            "team_name": response.get("team"),
+            "bot_name": response.get("user"),
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}

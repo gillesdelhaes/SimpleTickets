@@ -14,7 +14,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
+from app.config import settings_manager
 from app.database import AsyncSessionLocal
 from app.models import Category
 from app.models.enums import Priority
@@ -33,7 +33,7 @@ _MONITORED_CHANNELS: set[str] = set()
 
 def _load_monitored_channels() -> None:
     global _MONITORED_CHANNELS
-    raw = settings.slack_monitored_channels.strip()
+    raw = settings_manager.slack_monitored_channels.strip()
     _MONITORED_CHANNELS = {c.strip() for c in raw.split(",") if c.strip()} if raw else set()
 
 
@@ -43,7 +43,7 @@ def _channel_is_monitored(channel_id: str) -> bool:
 
 
 def _ticket_url(ticket_id: int) -> str:
-    return f"{settings.app_base_url}/tickets/{ticket_id}"
+    return f"{settings_manager.app_base_url}/tickets/{ticket_id}"
 
 
 async def _fetch_categories() -> list[dict]:
@@ -74,7 +74,7 @@ def register_handlers(app: Any) -> None:
         5. Post a thread reply confirming creation (or warning if unmatched).
         """
         emoji = event.get("reaction", "")
-        if emoji != settings.slack_trigger_emoji:
+        if emoji != settings_manager.slack_trigger_emoji:
             return
 
         item = event.get("item", {})

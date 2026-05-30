@@ -16,6 +16,7 @@ from app.models.ticket_reply import TicketReply  # noqa: F401
 from app.models.ticket_history import TicketHistory  # noqa: F401
 from app.models.ticket_attachment import TicketAttachment  # noqa: F401
 from app.models.audit_log import AuditLog  # noqa: F401
+from app.models.app_setting import AppSetting  # noqa: F401
 
 __all__ = [
     "AuthProvider",
@@ -31,4 +32,5 @@ __all__ = [
     "TicketHistory",
     "TicketAttachment",
     "AuditLog",
+    "AppSetting",
 ]

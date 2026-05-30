@@ -18,7 +18,8 @@ services:
 
   api:
     build: ./backend
-    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:${DB_PASSWORD:-postgres}@db:5432/simplytickets
     depends_on:
       db:
         condition: service_healthy

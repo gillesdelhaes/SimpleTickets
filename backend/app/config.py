@@ -1,27 +1,132 @@
+"""
+Two-phase configuration:
+
+Phase 1 — `settings` (pydantic-settings, reads from env/.env at import time).
+  Used only for: DATABASE_URL, and fallback defaults for everything else.
+  Never fails — all fields have defaults.
+
+Phase 2 — `settings_manager` (SettingsManager, reads from app_settings DB table).
+  DB values override env defaults at runtime.
+  Cache TTL: 30 seconds. Invalidated immediately after any PATCH /admin/settings.
+  Must be warmed in FastAPI lifespan before serving requests.
+"""
+import logging
+import time
+from typing import Optional
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # App
+    # These two are never overridden from the DB
     app_secret_key: str = "dev-secret-change-in-production"
-    app_base_url: str = "http://localhost:3000"
-
-    # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@db:5432/simplytickets"
 
-    # Slack
+    # All other fields serve as defaults when the DB has no value
+    app_base_url: str = "http://localhost:3000"
     slack_bot_token: str = ""
     slack_signing_secret: str = ""
     slack_app_token: str = ""
     slack_trigger_emoji: str = "ticket"
     slack_monitored_channels: str = ""
     slack_two_way_sync: bool = True
-
-    # Storage
     storage_local_path: str = "/data/attachments"
     attachment_max_size_mb: int = 10
 
 
 settings = Settings()
+
+
+# ── Runtime settings manager ───────────────────────────────────────────────────
+
+class SettingsManager:
+    """
+    Wraps the static Settings with a DB-backed override layer.
+    Call warm() once at startup to pre-load all values into the in-process cache.
+    """
+
+    def __init__(self) -> None:
+        self._cache: dict[str, str] = {}
+        self._cache_at: float = 0.0
+        self._TTL: float = 30.0
+
+    def invalidate(self) -> None:
+        """Force a full cache reload on next access."""
+        self._cache_at = 0.0
+
+    async def warm(self, session) -> None:
+        """Pre-load all settings into cache. Call from lifespan startup."""
+        await self._refresh(session)
+
+    async def _refresh(self, session) -> None:
+        from app.services.settings_service import get_all_settings
+        self._cache = await get_all_settings(session)
+        self._cache_at = time.monotonic()
+        logger.debug("Settings cache refreshed (%d keys)", len(self._cache))
+
+    async def _ensure_fresh(self, session) -> None:
+        if time.monotonic() - self._cache_at > self._TTL:
+            await self._refresh(session)
+
+    async def get(self, key: str, session, default: str = "") -> str:
+        await self._ensure_fresh(session)
+        return self._cache.get(key) or default
+
+    # ── Synchronous properties (read from cache only, no DB) ──────────────────
+    # Used by JWT signing and other places where we cannot inject a session.
+    # Safe after warm() has been called.
+
+    @property
+    def secret_key(self) -> str:
+        # Always prefer the live env value (set by bootstrap) over the cache
+        return settings.app_secret_key
+
+    @property
+    def slack_bot_token(self) -> str:
+        return self._cache.get("slack_bot_token") or settings.slack_bot_token
+
+    @property
+    def slack_app_token(self) -> str:
+        return self._cache.get("slack_app_token") or settings.slack_app_token
+
+    @property
+    def slack_signing_secret(self) -> str:
+        return self._cache.get("slack_signing_secret") or settings.slack_signing_secret
+
+    @property
+    def slack_trigger_emoji(self) -> str:
+        return self._cache.get("slack_trigger_emoji") or settings.slack_trigger_emoji
+
+    @property
+    def slack_monitored_channels(self) -> str:
+        v = self._cache.get("slack_monitored_channels")
+        return v if v is not None else settings.slack_monitored_channels
+
+    @property
+    def slack_two_way_sync(self) -> bool:
+        v = self._cache.get("slack_two_way_sync")
+        if v is not None:
+            return v.lower() not in ("false", "0", "no")
+        return settings.slack_two_way_sync
+
+    @property
+    def app_base_url(self) -> str:
+        return self._cache.get("app_base_url") or settings.app_base_url
+
+    @property
+    def attachment_max_size_mb(self) -> int:
+        v = self._cache.get("attachment_max_size_mb")
+        try:
+            return int(v) if v else settings.attachment_max_size_mb
+        except ValueError:
+            return settings.attachment_max_size_mb
+
+    def is_slack_configured(self) -> bool:
+        return bool(self.slack_bot_token and self.slack_app_token)
+
+
+settings_manager = SettingsManager()
