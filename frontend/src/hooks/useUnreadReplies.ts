@@ -1,8 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 
+export interface UnreadTicketSummary {
+  id: number
+  display_id: string
+  title: string
+}
+
 export interface UnreadResponse {
   my_unread_count: number
+  my_unread_tickets: UnreadTicketSummary[]
   ticket_ids_with_unread: number[]
 }
 

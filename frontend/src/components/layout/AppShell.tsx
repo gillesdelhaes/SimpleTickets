@@ -172,6 +172,9 @@ export default function AppShell({ title, children }: AppShellProps) {
   const navigate = useNavigate()
   const { data: unreadData } = useUnreadReplies()
   const myUnreadCount = unreadData?.my_unread_count ?? 0
+  const myUnreadTickets = unreadData?.my_unread_tickets ?? []
+  const [bellOpen, setBellOpen] = useState(false)
+  const bellRef = useRef<HTMLDivElement>(null)
   const [collapsed, setCollapsed] = useState(() => {
     return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
   })
@@ -185,6 +188,18 @@ export default function AppShell({ title, children }: AppShellProps) {
 
   // Close mobile drawer on route change
   useEffect(() => { setMobileOpen(false) }, [navigate])
+
+  // Close bell dropdown on outside click
+  useEffect(() => {
+    if (!bellOpen) return
+    function handle(e: MouseEvent) {
+      if (bellRef.current && !bellRef.current.contains(e.target as Node)) {
+        setBellOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [bellOpen])
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault()
@@ -491,42 +506,80 @@ export default function AppShell({ title, children }: AppShellProps) {
           </form>
 
           {/* Notification bell */}
-          <div style={{ position: 'relative', display: 'inline-flex' }}>
-            <button style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: myUnreadCount > 0 ? '#FF4713' : '#737373',
-              padding: 6, borderRadius: 8,
-              display: 'flex', alignItems: 'center',
-              transition: 'background 0.15s, color 0.15s',
-            }}
+          <div ref={bellRef} style={{ position: 'relative', display: 'inline-flex' }}>
+            <button
+              onClick={() => setBellOpen(o => !o)}
+              style={{
+                background: bellOpen ? '#F2F2F2' : 'none',
+                border: 'none', cursor: 'pointer',
+                color: myUnreadCount > 0 ? '#FF4713' : '#737373',
+                padding: 6, borderRadius: 8,
+                display: 'flex', alignItems: 'center',
+                transition: 'background 0.15s, color 0.15s',
+              }}
               onMouseOver={e => (e.currentTarget.style.background = '#F2F2F2')}
-              onMouseOut={e => (e.currentTarget.style.background = 'none')}
-              title={myUnreadCount > 0 ? `${myUnreadCount} ticket${myUnreadCount > 1 ? 's' : ''} with unread replies` : 'No new notifications'}
+              onMouseOut={e => (e.currentTarget.style.background = bellOpen ? '#F2F2F2' : 'none')}
+              title={myUnreadCount > 0 ? `${myUnreadCount} ticket${myUnreadCount > 1 ? 's' : ''} with unread replies` : 'Notifications'}
             >
               <IconBell />
             </button>
             {myUnreadCount > 0 && (
               <span style={{
-                position: 'absolute',
-                top: 2,
-                right: 2,
-                minWidth: 16,
-                height: 16,
-                borderRadius: 8,
-                background: '#FF4713',
-                color: '#fff',
-                fontSize: 10,
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '0 3px',
-                pointerEvents: 'none',
-                lineHeight: 1,
+                position: 'absolute', top: 2, right: 2,
+                minWidth: 16, height: 16, borderRadius: 8,
+                background: '#FF4713', color: '#fff',
+                fontSize: 10, fontWeight: 700,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                padding: '0 3px', pointerEvents: 'none', lineHeight: 1,
                 border: '1.5px solid #fff',
               }}>
                 {myUnreadCount > 99 ? '99+' : myUnreadCount}
               </span>
+            )}
+
+            {/* Dropdown */}
+            {bellOpen && (
+              <div style={{
+                position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+                width: 320, background: '#fff',
+                border: '1px solid #E5E5E5', borderRadius: 12,
+                boxShadow: '0 8px 24px rgba(0,0,0,0.10)',
+                zIndex: 100, overflow: 'hidden',
+              }}>
+                <div style={{
+                  padding: '12px 16px',
+                  borderBottom: '1px solid #F2F2F2',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#0A0A0A' }}>Unread replies</span>
+                  {myUnreadCount > 0 && (
+                    <span style={{
+                      fontSize: 11, fontWeight: 600, color: '#FF4713',
+                      background: 'rgba(255,71,19,0.08)', borderRadius: 6, padding: '2px 7px',
+                    }}>
+                      {myUnreadCount} ticket{myUnreadCount > 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
+                {myUnreadTickets.length === 0 ? (
+                  <div style={{ padding: '24px 16px', textAlign: 'center' }}>
+                    <p style={{ fontSize: 13, color: '#A3A3A3', margin: 0 }}>You're all caught up</p>
+                  </div>
+                ) : (
+                  <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                    {myUnreadTickets.map(t => (
+                      <BellTicketRow
+                        key={t.id}
+                        ticket={t}
+                        onNavigate={() => {
+                          setBellOpen(false)
+                          navigate(`/tickets/${t.id}`)
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </header>
@@ -537,6 +590,54 @@ export default function AppShell({ title, children }: AppShellProps) {
         </main>
       </div>
     </div>
+  )
+}
+
+// ── BellTicketRow sub-component ───────────────────────────────────────────────
+
+function BellTicketRow({
+  ticket,
+  onNavigate,
+}: {
+  ticket: { id: number; display_id: string; title: string }
+  onNavigate: () => void
+}) {
+  return (
+    <button
+      onClick={onNavigate}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        width: '100%', padding: '10px 16px',
+        background: 'none', border: 'none', cursor: 'pointer',
+        borderBottom: '1px solid #F9F9F9', textAlign: 'left',
+        transition: 'background 0.12s',
+      }}
+      onMouseOver={e => (e.currentTarget.style.background = '#F9F9F9')}
+      onMouseOut={e => (e.currentTarget.style.background = 'none')}
+    >
+      <span style={{
+        width: 7, height: 7, borderRadius: '50%',
+        background: '#FF4713', flexShrink: 0,
+      }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <span style={{
+          fontFamily: 'JetBrains Mono, monospace', fontSize: 10,
+          color: '#A3A3A3', letterSpacing: '0.04em', display: 'block',
+        }}>
+          {ticket.display_id}
+        </span>
+        <span style={{
+          fontSize: 12, fontWeight: 500, color: '#0A0A0A',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          display: 'block', marginTop: 1,
+        }}>
+          {ticket.title}
+        </span>
+      </div>
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#A3A3A3" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+        <path d="M4.5 2.5l3 3.5-3 3.5" />
+      </svg>
+    </button>
   )
 }
 

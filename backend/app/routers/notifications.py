@@ -28,8 +28,15 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+class UnreadTicketSummary(BaseModel):
+    id: int
+    display_id: str
+    title: str
+
+
 class UnreadResponse(BaseModel):
     my_unread_count: int
+    my_unread_tickets: list[UnreadTicketSummary]
     ticket_ids_with_unread: list[int]
 
 
@@ -76,18 +83,25 @@ async def get_unread(
         (await session.execute(unread_stmt)).scalars().all()
     )
 
-    # Count only those that are assigned to me
-    my_unread_count = 0
+    # Fetch tickets assigned to me that have unread replies
+    my_unread_tickets: list[UnreadTicketSummary] = []
     if unread_ticket_ids:
-        my_count_stmt = select(Ticket.id).where(
-            Ticket.id.in_(unread_ticket_ids),
-            Ticket.assignee_id == current_user.id,
+        my_tickets_stmt = (
+            select(Ticket.id, Ticket.display_id, Ticket.title)
+            .where(
+                Ticket.id.in_(unread_ticket_ids),
+                Ticket.assignee_id == current_user.id,
+            )
+            .order_by(Ticket.updated_at.desc())
         )
-        my_assigned = (await session.execute(my_count_stmt)).scalars().all()
-        my_unread_count = len(my_assigned)
+        rows = (await session.execute(my_tickets_stmt)).all()
+        my_unread_tickets = [
+            UnreadTicketSummary(id=r[0], display_id=r[1], title=r[2]) for r in rows
+        ]
 
     return UnreadResponse(
-        my_unread_count=my_unread_count,
+        my_unread_count=len(my_unread_tickets),
+        my_unread_tickets=my_unread_tickets,
         ticket_ids_with_unread=unread_ticket_ids,
     )
 

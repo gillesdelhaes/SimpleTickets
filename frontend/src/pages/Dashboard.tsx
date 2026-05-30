@@ -5,6 +5,7 @@ import StatusBadge from '../components/tickets/StatusBadge'
 import PriorityBadge from '../components/tickets/PriorityBadge'
 import SLABadge from '../components/tickets/SLABadge'
 import { useTickets } from '../hooks/useTickets'
+import { useUnreadReplies } from '../hooks/useUnreadReplies'
 import { PRIORITY_ORDER, timeAgo, type TicketRead } from '../types/ticket'
 
 // ── Stat card ──────────────────────────────────────────────────────────────────
@@ -81,28 +82,40 @@ function StatCard({ label, value, accent, icon, sub }: StatCardProps) {
 
 interface TicketRowProps {
   ticket: TicketRead
+  hasUnread?: boolean
   onClick: () => void
 }
 
-function TicketRow({ ticket, onClick }: TicketRowProps) {
+function TicketRow({ ticket, hasUnread, onClick }: TicketRowProps) {
   return (
     <tr
       onClick={onClick}
-      style={{ cursor: 'pointer', transition: 'background 0.12s', borderBottom: '1px solid #F9F9F9' }}
+      style={{
+        cursor: 'pointer', transition: 'background 0.12s', borderBottom: '1px solid #F9F9F9',
+        background: hasUnread ? 'rgba(255,71,19,0.02)' : 'transparent',
+      }}
       onMouseEnter={e => (e.currentTarget.style.background = '#F9F9F9')}
-      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+      onMouseLeave={e => (e.currentTarget.style.background = hasUnread ? 'rgba(255,71,19,0.02)' : 'transparent')}
     >
       <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
-        <span
-          style={{
-            fontFamily: 'JetBrains Mono, monospace',
-            fontSize: 11,
-            color: '#737373',
-            letterSpacing: '0.03em',
-          }}
-        >
-          {ticket.display_id}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {hasUnread && (
+            <span title="New replies" style={{
+              width: 7, height: 7, borderRadius: '50%',
+              background: '#FF4713', flexShrink: 0, display: 'inline-block',
+            }} />
+          )}
+          <span
+            style={{
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: 11,
+              color: '#737373',
+              letterSpacing: '0.03em',
+            }}
+          >
+            {ticket.display_id}
+          </span>
+        </div>
       </td>
       <td style={{ padding: '10px 16px', maxWidth: 320 }}>
         <span
@@ -181,6 +194,9 @@ function EmptyState() {
 
 export default function Dashboard() {
   const navigate = useNavigate()
+
+  const { data: unreadData } = useUnreadReplies()
+  const unreadSet = new Set(unreadData?.ticket_ids_with_unread ?? [])
 
   const { data: active, isLoading: loadingActive } = useTickets({
     status: ['open', 'in_progress'],
@@ -361,6 +377,7 @@ export default function Dashboard() {
                     <TicketRow
                       key={ticket.id}
                       ticket={ticket}
+                      hasUnread={unreadSet.has(ticket.id)}
                       onClick={() => navigate(`/tickets/${ticket.id}`)}
                     />
                   ))
