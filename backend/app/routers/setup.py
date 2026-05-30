@@ -141,7 +141,6 @@ class SlackSetupRequest(BaseModel):
     app_token: str
     signing_secret: str = ""
     trigger_emoji: str = "ticket"
-    monitored_channels: str = ""
     two_way_sync: bool = True
 
 
@@ -151,12 +150,11 @@ async def setup_slack(
     session: AsyncSession = Depends(_require_setup_incomplete),
 ) -> dict:
     """Persist Slack credentials to app_settings."""
-    await set_setting("slack_bot_token",          body.bot_token,          session)
-    await set_setting("slack_app_token",          body.app_token,          session)
-    await set_setting("slack_signing_secret",     body.signing_secret,     session)
-    await set_setting("slack_trigger_emoji",      body.trigger_emoji,      session)
-    await set_setting("slack_monitored_channels", body.monitored_channels, session)
-    await set_setting("slack_two_way_sync",       "true" if body.two_way_sync else "false", session)
+    await set_setting("slack_bot_token",      body.bot_token,                                session)
+    await set_setting("slack_app_token",      body.app_token,                                session)
+    await set_setting("slack_signing_secret", body.signing_secret,                           session)
+    await set_setting("slack_trigger_emoji",  body.trigger_emoji,                            session)
+    await set_setting("slack_two_way_sync",   "true" if body.two_way_sync else "false",      session)
     await session.commit()
     logger.info("Setup: Slack settings saved")
     return {"success": True}

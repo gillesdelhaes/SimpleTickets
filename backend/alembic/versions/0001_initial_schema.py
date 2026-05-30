@@ -242,16 +242,13 @@ def upgrade() -> None:
             sa.column("updated_at", sa.DateTime),
         ),
         [
-            {"key": "setup_complete",           "value": None,     "is_secret": False, "group_name": "app",     "updated_at": _now},
-            {"key": "app_base_url",             "value": None,     "is_secret": False, "group_name": "app",     "updated_at": _now},
-            {"key": "app_secret_key",           "value": None,     "is_secret": False, "group_name": "app",     "updated_at": _now},
-            {"key": "slack_bot_token",          "value": None,     "is_secret": True,  "group_name": "slack",   "updated_at": _now},
-            {"key": "slack_app_token",          "value": None,     "is_secret": True,  "group_name": "slack",   "updated_at": _now},
-            {"key": "slack_signing_secret",     "value": None,     "is_secret": True,  "group_name": "slack",   "updated_at": _now},
-            {"key": "slack_trigger_emoji",      "value": "ticket", "is_secret": False, "group_name": "slack",   "updated_at": _now},
-            {"key": "slack_monitored_channels", "value": "",       "is_secret": False, "group_name": "slack",   "updated_at": _now},
-            {"key": "slack_two_way_sync",       "value": "true",   "is_secret": False, "group_name": "slack",   "updated_at": _now},
-            {"key": "attachment_max_size_mb",   "value": "10",     "is_secret": False, "group_name": "storage", "updated_at": _now},
+            {"key": "setup_complete",       "value": None,     "is_secret": False, "group_name": "app",   "updated_at": _now},
+            {"key": "app_secret_key",       "value": None,     "is_secret": False, "group_name": "app",   "updated_at": _now},
+            {"key": "slack_bot_token",      "value": None,     "is_secret": True,  "group_name": "slack", "updated_at": _now},
+            {"key": "slack_app_token",      "value": None,     "is_secret": True,  "group_name": "slack", "updated_at": _now},
+            {"key": "slack_signing_secret", "value": None,     "is_secret": True,  "group_name": "slack", "updated_at": _now},
+            {"key": "slack_trigger_emoji",  "value": "ticket", "is_secret": False, "group_name": "slack", "updated_at": _now},
+            {"key": "slack_two_way_sync",   "value": "true",   "is_secret": False, "group_name": "slack", "updated_at": _now},
         ],
     )
 

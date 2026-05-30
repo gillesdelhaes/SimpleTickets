@@ -10,7 +10,6 @@ export default function SetupStepSlack({ onNext }: Props) {
   const [appToken, setAppToken] = useState('')
   const [signingSecret, setSigningSecret] = useState('')
   const [triggerEmoji, setTriggerEmoji] = useState('ticket')
-  const [monitoredChannels, setMonitoredChannels] = useState('')
   const [twoWaySync, setTwoWaySync] = useState(true)
 
   const [testing, setTesting] = useState(false)
@@ -41,7 +40,6 @@ export default function SetupStepSlack({ onNext }: Props) {
         app_token: appToken,
         signing_secret: signingSecret,
         trigger_emoji: triggerEmoji || 'ticket',
-        monitored_channels: monitoredChannels,
         two_way_sync: twoWaySync,
       })
       onNext(true, testResult?.team_name || '')
@@ -130,14 +128,6 @@ export default function SetupStepSlack({ onNext }: Props) {
                 value={triggerEmoji} onChange={e => setTriggerEmoji(e.target.value)}
                 placeholder="ticket"
                 style={{ ...inputStyle, maxWidth: 180 }}
-                onFocus={focusStyle} onBlur={blurStyle}
-              />
-            </Field>
-            <Field label="Monitored channels" hint="Comma-separated channel IDs. Leave empty to watch all channels.">
-              <input
-                value={monitoredChannels} onChange={e => setMonitoredChannels(e.target.value)}
-                placeholder="C01234567, C09876543"
-                style={inputStyle}
                 onFocus={focusStyle} onBlur={blurStyle}
               />
             </Field>

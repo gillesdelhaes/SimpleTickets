@@ -30,19 +30,6 @@ logger = logging.getLogger(__name__)
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
-_MONITORED_CHANNELS: set[str] = set()
-
-
-def _load_monitored_channels() -> None:
-    global _MONITORED_CHANNELS
-    raw = settings_manager.slack_monitored_channels.strip()
-    _MONITORED_CHANNELS = {c.strip() for c in raw.split(",") if c.strip()} if raw else set()
-
-
-def _channel_is_monitored(channel_id: str) -> bool:
-    """Empty set = monitor ALL channels."""
-    return not _MONITORED_CHANNELS or channel_id in _MONITORED_CHANNELS
-
 
 async def _fetch_categories() -> list[dict]:
     """Fetch active categories for the /ticket modal dropdown."""
@@ -68,8 +55,6 @@ async def _slack_display_name(client: Any, slack_user_id: str) -> str:
 
 def register_handlers(app: Any) -> None:
     """Register all event/action/command handlers on the Bolt AsyncApp."""
-
-    _load_monitored_channels()
 
     # ── reaction_added ─────────────────────────────────────────────────────────
 
@@ -286,9 +271,6 @@ def register_handlers(app: Any) -> None:
         # ── Case 2: Thread reply sync ──────────────────────────────────────
         # Only process replies (thread_ts set and differs from the message ts)
         if not thread_ts or thread_ts == message_ts:
-            return
-
-        if not _channel_is_monitored(channel_id):
             return
 
         try:

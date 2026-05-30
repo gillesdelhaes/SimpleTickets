@@ -27,15 +27,12 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres@db:5432/simplytickets"
 
     # All other fields serve as defaults when the DB has no value
-    app_base_url: str = "http://localhost:3000"
     slack_bot_token: str = ""
     slack_signing_secret: str = ""
     slack_app_token: str = ""
     slack_trigger_emoji: str = "ticket"
-    slack_monitored_channels: str = ""
     slack_two_way_sync: bool = True
     storage_local_path: str = "/data/attachments"
-    attachment_max_size_mb: int = 10
 
 
 settings = Settings()
@@ -102,28 +99,11 @@ class SettingsManager:
         return self._cache.get("slack_trigger_emoji") or settings.slack_trigger_emoji
 
     @property
-    def slack_monitored_channels(self) -> str:
-        v = self._cache.get("slack_monitored_channels")
-        return v if v is not None else settings.slack_monitored_channels
-
-    @property
     def slack_two_way_sync(self) -> bool:
         v = self._cache.get("slack_two_way_sync")
         if v is not None:
             return v.lower() not in ("false", "0", "no")
         return settings.slack_two_way_sync
-
-    @property
-    def app_base_url(self) -> str:
-        return self._cache.get("app_base_url") or settings.app_base_url
-
-    @property
-    def attachment_max_size_mb(self) -> int:
-        v = self._cache.get("attachment_max_size_mb")
-        try:
-            return int(v) if v else settings.attachment_max_size_mb
-        except ValueError:
-            return settings.attachment_max_size_mb
 
     def is_slack_configured(self) -> bool:
         return bool(self.slack_bot_token and self.slack_app_token)

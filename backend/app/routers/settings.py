@@ -27,19 +27,16 @@ router = APIRouter(prefix="/admin/settings", tags=["admin"])
 
 # Keys the UI is allowed to write (prevent arbitrary key injection)
 _WRITABLE_KEYS = {
-    "app_base_url",
     "slack_bot_token",
     "slack_app_token",
     "slack_signing_secret",
     "slack_trigger_emoji",
-    "slack_monitored_channels",
     "slack_two_way_sync",
-    "attachment_max_size_mb",
 }
 
 _SLACK_KEYS = {
     "slack_bot_token", "slack_app_token", "slack_signing_secret",
-    "slack_trigger_emoji", "slack_monitored_channels", "slack_two_way_sync",
+    "slack_trigger_emoji", "slack_two_way_sync",
 }
 
 

@@ -99,15 +99,13 @@ async def upload_attachment(
     """
     await _get_ticket_or_404(session, ticket_id)
 
-    max_bytes = settings.attachment_max_size_mb * 1024 * 1024
+    max_bytes = 10 * 1024 * 1024  # 10 MB hard limit
 
-    # Read the entire file into memory to check size
-    # For a 10 MB cap this is acceptable; large-file streaming is out of scope
     contents = await file.read()
     if len(contents) > max_bytes:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"File exceeds the {settings.attachment_max_size_mb} MB limit",
+            detail="File exceeds the 10 MB limit",
         )
 
     if len(contents) == 0:
