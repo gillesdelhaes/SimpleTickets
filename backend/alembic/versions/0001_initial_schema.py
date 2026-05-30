@@ -108,6 +108,7 @@ def upgrade() -> None:
         sa.Column("body", sa.Text(), nullable=False),
         sa.Column("is_internal", sa.Boolean(), nullable=False),
         sa.Column("slack_ts", sqlmodel.AutoString(), nullable=True),
+        sa.Column("slack_author_name", sqlmodel.AutoString(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(["author_id"], ["users.id"]),
         sa.ForeignKeyConstraint(["ticket_id"], ["tickets.id"]),
@@ -178,6 +179,26 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("key"),
     )
 
+    # ── ticket_read_markers ────────────────────────────────────────────────────
+    op.create_table(
+        "ticket_read_markers",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("ticket_id", sa.Integer(), nullable=False),
+        sa.Column("last_read_at", sa.DateTime(), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["ticket_id"], ["tickets.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index("ix_ticket_read_markers_user_id", "ticket_read_markers", ["user_id"])
+    op.create_index("ix_ticket_read_markers_ticket_id", "ticket_read_markers", ["ticket_id"])
+    op.create_index(
+        "ix_ticket_read_markers_user_ticket",
+        "ticket_read_markers",
+        ["user_id", "ticket_id"],
+        unique=True,
+    )
+
     # ── seed: categories ───────────────────────────────────────────────────────
     op.bulk_insert(
         sa.table(
@@ -236,6 +257,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_table("ticket_read_markers")
     op.drop_table("app_settings")
     op.drop_table("audit_log")
     op.drop_table("ticket_attachments")

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
+import { useUnreadReplies } from '../../hooks/useUnreadReplies'
 
 // ── Inline SVG icons (18×18, stroke-based) ────────────────────────────────────
 
@@ -169,6 +170,8 @@ const SIDEBAR_COLLAPSED_KEY = 'st_sidebar_collapsed'
 export default function AppShell({ title, children }: AppShellProps) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const { data: unreadData } = useUnreadReplies()
+  const myUnreadCount = unreadData?.my_unread_count ?? 0
   const [collapsed, setCollapsed] = useState(() => {
     return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
   })
@@ -487,19 +490,45 @@ export default function AppShell({ title, children }: AppShellProps) {
             </div>
           </form>
 
-          {/* Notification bell (placeholder) */}
-          <button style={{
-            background: 'none', border: 'none', cursor: 'pointer',
-            color: '#737373', padding: 6, borderRadius: 8,
-            display: 'flex', alignItems: 'center',
-            transition: 'background 0.15s',
-          }}
-            onMouseOver={e => (e.currentTarget.style.background = '#F2F2F2')}
-            onMouseOut={e => (e.currentTarget.style.background = 'none')}
-            title="Notifications"
-          >
-            <IconBell />
-          </button>
+          {/* Notification bell */}
+          <div style={{ position: 'relative', display: 'inline-flex' }}>
+            <button style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: myUnreadCount > 0 ? '#FF4713' : '#737373',
+              padding: 6, borderRadius: 8,
+              display: 'flex', alignItems: 'center',
+              transition: 'background 0.15s, color 0.15s',
+            }}
+              onMouseOver={e => (e.currentTarget.style.background = '#F2F2F2')}
+              onMouseOut={e => (e.currentTarget.style.background = 'none')}
+              title={myUnreadCount > 0 ? `${myUnreadCount} ticket${myUnreadCount > 1 ? 's' : ''} with unread replies` : 'No new notifications'}
+            >
+              <IconBell />
+            </button>
+            {myUnreadCount > 0 && (
+              <span style={{
+                position: 'absolute',
+                top: 2,
+                right: 2,
+                minWidth: 16,
+                height: 16,
+                borderRadius: 8,
+                background: '#FF4713',
+                color: '#fff',
+                fontSize: 10,
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '0 3px',
+                pointerEvents: 'none',
+                lineHeight: 1,
+                border: '1.5px solid #fff',
+              }}>
+                {myUnreadCount > 99 ? '99+' : myUnreadCount}
+              </span>
+            )}
+          </div>
         </header>
 
         {/* ── Content ── */}

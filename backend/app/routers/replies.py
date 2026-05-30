@@ -36,7 +36,7 @@ def _to_read(reply: TicketReply, author_name: str | None, author_avatar: str | N
         id=reply.id,
         ticket_id=reply.ticket_id,
         author_id=reply.author_id,
-        author_name=author_name,
+        author_name=author_name or reply.slack_author_name,
         author_avatar=author_avatar,
         body=reply.body,
         is_internal=reply.is_internal,

@@ -305,6 +305,7 @@ async def handle_slack_thread_message(
             body=text or "(no content)",
             is_internal=False,
             slack_ts=message_ts,
+            slack_author_name=author_name_fallback if author_id is None else None,
             created_at=_utcnow(),
         )
         session.add(reply)

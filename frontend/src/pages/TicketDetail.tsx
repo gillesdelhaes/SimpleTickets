@@ -8,6 +8,7 @@ import { useReplies, useAddReply, type ReplyRead } from '../hooks/useReplies'
 import { useCategories } from '../hooks/useCategories'
 import { useAgents } from '../hooks/useAgents'
 import { useAuth } from '../contexts/AuthContext'
+import { useMarkTicketRead } from '../hooks/useUnreadReplies'
 import api from '../lib/api'
 import {
   STATUS_COLORS,
@@ -877,6 +878,12 @@ export default function TicketDetail() {
   const navigate = useNavigate()
 
   const { data: ticket, isLoading, error } = useTicket(ticketId)
+  const { mutate: markRead } = useMarkTicketRead(ticketId)
+
+  // Mark ticket as read when opened
+  useEffect(() => {
+    if (ticketId) markRead()
+  }, [ticketId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const isAdmin = user?.role === 'admin'
 

@@ -5,6 +5,7 @@ import PriorityBadge from '../components/tickets/PriorityBadge'
 import SLABadge from '../components/tickets/SLABadge'
 import { useTickets } from '../hooks/useTickets'
 import { useAuth } from '../contexts/AuthContext'
+import { useUnreadReplies } from '../hooks/useUnreadReplies'
 import { PRIORITY_ORDER, timeAgo, type Priority, type TicketStatus } from '../types/ticket'
 
 const PAGE_SIZE = 25
@@ -152,6 +153,8 @@ export default function Queue() {
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
   })
+  const { data: unreadData } = useUnreadReplies()
+  const unreadSet = new Set(unreadData?.ticket_ids_with_unread ?? [])
 
   // ── Filter helpers ─────────────────────────────────────────────────────────
 
@@ -372,7 +375,9 @@ export default function Queue() {
                     </td>
                   </tr>
                 ) : (
-                  sortedItems.map(ticket => (
+                  sortedItems.map(ticket => {
+                    const hasUnread = unreadSet.has(ticket.id)
+                    return (
                     <tr
                       key={ticket.id}
                       onClick={() => navigate(`/tickets/${ticket.id}`)}
@@ -380,14 +385,27 @@ export default function Queue() {
                         borderBottom: '1px solid #F9F9F9',
                         cursor: 'pointer',
                         transition: 'background 0.12s',
+                        background: hasUnread ? 'rgba(255,71,19,0.02)' : 'transparent',
                       }}
                       onMouseEnter={e => (e.currentTarget.style.background = '#F9F9F9')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                      onMouseLeave={e => (e.currentTarget.style.background = hasUnread ? 'rgba(255,71,19,0.02)' : 'transparent')}
                     >
                       <td style={{ padding: '9px 16px', whiteSpace: 'nowrap' }}>
-                        <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#737373', letterSpacing: '0.03em' }}>
-                          {ticket.display_id}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {hasUnread && (
+                            <span
+                              title="New replies"
+                              style={{
+                                width: 7, height: 7, borderRadius: '50%',
+                                background: '#FF4713', flexShrink: 0,
+                                display: 'inline-block',
+                              }}
+                            />
+                          )}
+                          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#737373', letterSpacing: '0.03em' }}>
+                            {ticket.display_id}
+                          </span>
+                        </div>
                       </td>
                       <td style={{ padding: '9px 16px', maxWidth: 300 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden' }}>
@@ -430,7 +448,8 @@ export default function Queue() {
                         <span style={{ fontSize: 12, color: '#737373' }}>{timeAgo(ticket.created_at)}</span>
                       </td>
                     </tr>
-                  ))
+                    )
+                  })
                 )}
               </tbody>
             </table>
