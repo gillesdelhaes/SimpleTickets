@@ -368,15 +368,22 @@ async def update_ticket(
     await session.commit()
     await session.refresh(ticket)
 
-    # Slack thread status sync
-    if "status" in changes:
-        _, new_s = changes["status"]
-        if ticket.slack_channel_id and ticket.slack_message_ts:
-            try:
-                from app.slack.service import post_status_to_slack
-                await post_status_to_slack(ticket, new_s or "", current_user.name)
-            except Exception:  # noqa: BLE001
-                pass
-
     items, _ = await _fetch_enriched(session, [Ticket.id == ticket_id])
-    return items[0]
+    enriched = items[0]
+
+    # Post a single Slack thread message covering all tracked field changes
+    _SLACK_TRACKED = {"status", "priority", "assignee_id", "category_id"}
+    if changes.keys() & _SLACK_TRACKED:
+        try:
+            from app.slack.service import post_ticket_update_to_slack
+            await post_ticket_update_to_slack(
+                ticket,
+                changes,
+                current_user.name,
+                assignee_name=enriched.assignee_name,
+                category_name=enriched.category_name,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+    return enriched

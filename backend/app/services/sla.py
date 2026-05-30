@@ -105,20 +105,13 @@ def apply_sla_status_change(ticket: Ticket, new_status: TicketStatus) -> None:
 
     elif new_status != _PAUSED_STATUS and ticket.sla_paused_at is not None:
         # Leaving pending_user — extend deadline by time spent paused
-        paused_at = ticket.sla_paused_at
-        if paused_at.tzinfo is None:
-            paused_at = paused_at.replace(tzinfo=timezone.utc)
-
-        paused_delta = now - paused_at
+        paused_delta = now - ticket.sla_paused_at
         paused_secs = int(paused_delta.total_seconds())
         ticket.sla_paused_seconds = (ticket.sla_paused_seconds or 0) + paused_secs
         ticket.sla_paused_at = None
 
         if ticket.sla_deadline is not None:
-            deadline = ticket.sla_deadline
-            if deadline.tzinfo is None:
-                deadline = deadline.replace(tzinfo=timezone.utc)
-            ticket.sla_deadline = deadline + timedelta(seconds=paused_secs)
+            ticket.sla_deadline = ticket.sla_deadline + timedelta(seconds=paused_secs)
 
 
 # ── Scheduled breach-detection job ────────────────────────────────────────────

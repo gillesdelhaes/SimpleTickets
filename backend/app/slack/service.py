@@ -23,11 +23,18 @@ logger = logging.getLogger(__name__)
 # ── Status display labels for Slack messages ───────────────────────────────────
 
 _STATUS_LABELS: dict[str, str] = {
-    "open": "Open",
-    "in_progress": "In Progress",
-    "pending_user": "Pending User",
+    "open": "Open 🆕",
+    "in_progress": "In Progress 🚀",
+    "pending_user": "Pending User ⏳",
     "resolved": "Resolved ✅",
-    "closed": "Closed",
+    "closed": "Closed 🔒",
+}
+
+_PRIORITY_LABELS: dict[str, str] = {
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "critical": "Critical 🚨",
 }
 
 
@@ -156,10 +163,18 @@ async def post_reply_to_slack(ticket: Ticket, reply_body: str, author_name: str)
         return None
 
 
-async def post_status_to_slack(ticket: Ticket, new_status: str, actor_name: str) -> None:
+async def post_ticket_update_to_slack(
+    ticket: Ticket,
+    changes: dict,
+    actor_name: str,
+    *,
+    assignee_name: Optional[str] = None,
+    category_name: Optional[str] = None,
+) -> None:
     """
-    Post a status-change notification to the originating Slack thread.
-    Silently no-ops if Slack is not configured / sync is disabled.
+    Post a single combined update message to the originating Slack thread
+    covering any combination of status, priority, assignee, and category changes.
+    Silently no-ops if Slack is not configured / sync is disabled / no thread anchor.
     """
     if not settings_manager.slack_two_way_sync:
         return
@@ -171,20 +186,47 @@ async def post_status_to_slack(ticket: Ticket, new_status: str, actor_name: str)
     if client is None:
         return
 
-    label = _STATUS_LABELS.get(new_status, new_status)
+    lines: list[str] = []
+
+    if "status" in changes:
+        _, new_val = changes["status"]
+        label = _STATUS_LABELS.get(new_val or "", new_val or "")
+        lines.append(f"• Status → *{label}*")
+
+    if "priority" in changes:
+        _, new_val = changes["priority"]
+        label = _PRIORITY_LABELS.get(new_val or "", (new_val or "").capitalize())
+        lines.append(f"• Priority → *{label}*")
+
+    if "assignee_id" in changes:
+        _, new_val = changes["assignee_id"]
+        if new_val:
+            lines.append(f"• Assigned to → *{assignee_name or 'Unknown'}*")
+        else:
+            lines.append("• Assignee → *Unassigned*")
+
+    if "category_id" in changes:
+        _, new_val = changes["category_id"]
+        if new_val:
+            lines.append(f"• Category → *{category_name or 'Unknown'}*")
+        else:
+            lines.append("• Category → *Removed*")
+
+    if not lines:
+        return
+
+    text = f"🔄 *{ticket.display_id}* updated by {actor_name}\n" + "\n".join(lines)
+
     try:
         await client.chat_postMessage(
             channel=ticket.slack_channel_id,
             thread_ts=ticket.slack_message_ts,
-            text=(
-                f"\U0001f504 Ticket *{ticket.display_id}* status changed to *{label}*"
-                f" by {actor_name}."
-            ),
+            text=text,
         )
-        logger.debug("Posted status update to Slack thread for ticket %s", ticket.display_id)
+        logger.debug("Posted field update to Slack thread for ticket %s", ticket.display_id)
     except Exception:  # noqa: BLE001
         logger.exception(
-            "Failed to post status update to Slack for ticket %s", ticket.display_id
+            "Failed to post field update to Slack for ticket %s", ticket.display_id
         )
 
 
