@@ -10,6 +10,11 @@ import Dashboard from './pages/Dashboard'
 import Queue from './pages/Queue'
 import Portal from './pages/Portal'
 import TicketDetail from './pages/TicketDetail'
+import AdminUsers from './pages/admin/Users'
+import AdminCategories from './pages/admin/Categories'
+import AdminSLAPolicies from './pages/admin/SLAPolicies'
+import AdminSettings from './pages/admin/Settings'
+import AdminAudit from './pages/admin/Audit'
 
 // Placeholder — replaced when each chunk is built
 function Placeholder({ name }: { name: string }) {
@@ -56,11 +61,11 @@ export default function App() {
 
         {/* ── Protected: admin only ── */}
         <Route element={<ProtectedRoute roles={['admin']} />}>
-          <Route path="/admin/users" element={<Placeholder name="User Management" />} />
-          <Route path="/admin/categories" element={<Placeholder name="Categories" />} />
-          <Route path="/admin/sla" element={<Placeholder name="SLA Policies" />} />
-          <Route path="/admin/settings" element={<Placeholder name="Settings" />} />
-          <Route path="/admin/audit" element={<Placeholder name="Audit Log" />} />
+          <Route path="/admin/users" element={<AdminUsers />} />
+          <Route path="/admin/categories" element={<AdminCategories />} />
+          <Route path="/admin/sla" element={<AdminSLAPolicies />} />
+          <Route path="/admin/settings" element={<AdminSettings />} />
+          <Route path="/admin/audit" element={<AdminAudit />} />
         </Route>
       </Routes>
     </AuthProvider>
