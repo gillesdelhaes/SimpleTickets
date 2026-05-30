@@ -2,22 +2,24 @@
 Admin Panel API — Chunk 13 (expands Chunk 04 stub).
 
 Endpoints:
-  POST  /admin/users            create local account (Chunk 04)
-  GET   /admin/users            list all users with filters + pagination
-  GET   /admin/users/{id}       get a single user
-  PATCH /admin/users/{id}       update role, is_active, name (writes audit entry)
-  GET   /admin/audit            paginated, filterable audit log
+  POST  /admin/users                      create local account (Chunk 04)
+  GET   /admin/users                      list all users with filters + pagination
+  GET   /admin/users/{id}                 get a single user
+  PATCH /admin/users/{id}                 update role, is_active, name (writes audit entry)
+  GET   /admin/audit                      paginated, filterable audit log
+  POST  /admin/tickets/{id}/link-user     link an unmatched Slack ticket to a user
 """
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.auth.deps import require_admin
 from app.database import get_session
-from app.models import AuditLog, AuthProvider, Role, User
+from app.models import AuditLog, AuthProvider, Role, Ticket, User
 from app.schemas.audit import AuditLogRead, AuditLogResponse
 from app.schemas.auth import CreateLocalUserRequest
 from app.schemas.user import UserAdminUpdate, UserListResponse, UserRead
@@ -279,3 +281,55 @@ async def list_audit_log(
     ]
 
     return AuditLogResponse(items=items, total=total)
+
+
+# ── POST /admin/tickets/{id}/link-user ────────────────────────────────────────
+
+
+class LinkUserRequest(BaseModel):
+    user_id: int
+
+
+@router.post("/tickets/{ticket_id}/link-user", status_code=status.HTTP_200_OK)
+async def link_ticket_user(
+    ticket_id: int,
+    body: LinkUserRequest,
+    request: Request,
+    admin: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """
+    Link an unmatched Slack ticket to an existing SimplyTickets user.
+    Sets ticket.submitter_id and clears slack_submitter_name. Admin only.
+    """
+    ticket = await session.get(Ticket, ticket_id)
+    if ticket is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
+
+    user = await session.get(User, body.user_id)
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found or inactive",
+        )
+
+    old_name = ticket.slack_submitter_name
+    ticket.submitter_id = body.user_id
+    ticket.slack_submitter_name = None
+
+    await write_audit(
+        session,
+        actor_id=admin.id,
+        action="ticket.linked_user",
+        entity_type="ticket",
+        entity_id=str(ticket_id),
+        payload={
+            "user_id": body.user_id,
+            "user_email": user.email,
+            "previous_slack_name": old_name,
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+
+    await session.commit()
+    return {"ticket_id": ticket_id, "user_id": body.user_id, "user_email": user.email}

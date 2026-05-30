@@ -6,6 +6,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.auth.google import init_oauth
 from app.config import settings
+from app.slack.bot import start_slack, stop_slack
 from app.routers import (
     admin,
     attachments,
@@ -28,8 +29,10 @@ async def lifespan(app: FastAPI):
     # Startup
     init_oauth()
     start_scheduler()
+    await start_slack()
     yield
     # Shutdown
+    await stop_slack()
     stop_scheduler()
 
 

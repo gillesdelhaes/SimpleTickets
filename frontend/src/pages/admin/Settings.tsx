@@ -78,9 +78,10 @@ const ENV_GROUPS: Group[] = [
     ),
     vars: [
       { key: 'SLACK_BOT_TOKEN', description: 'Bot User OAuth Token (xoxb-…)', sensitive: true },
+      { key: 'SLACK_APP_TOKEN', description: 'App-Level Token for Socket Mode (xapp-…)', sensitive: true },
       { key: 'SLACK_SIGNING_SECRET', description: 'Used to verify request signatures from Slack', sensitive: true },
-      { key: 'SLACK_TRIGGER_EMOJI', description: 'Emoji reaction that creates a ticket', example: 'ticket' },
-      { key: 'SLACK_MONITORED_CHANNELS', description: 'Comma-separated channel IDs to watch', example: 'C01234567,C09876543' },
+      { key: 'SLACK_TRIGGER_EMOJI', description: 'Emoji reaction that creates a ticket (without colons)', example: 'ticket' },
+      { key: 'SLACK_MONITORED_CHANNELS', description: 'Comma-separated channel IDs to watch. Leave empty to monitor all channels.', example: 'C01234567,C09876543' },
     ],
   },
   {

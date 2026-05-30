@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     slack_bot_token: str = ""
     slack_signing_secret: str = ""
     slack_app_token: str = ""
+    slack_trigger_emoji: str = "ticket"
+    # Comma-separated channel IDs to monitor for emoji reactions.
+    # Empty string = monitor ALL channels.
+    slack_monitored_channels: str = ""
 
     # Email (SMTP)
     smtp_host: str = ""
