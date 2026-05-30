@@ -111,12 +111,13 @@ Leave all blank to disable Slack features.
 | `SLACK_SIGNING_SECRET` | Used to verify request signatures from Slack |
 | `SLACK_TRIGGER_EMOJI` | Emoji reaction that creates a ticket (without colons). Default: `ticket` |
 | `SLACK_MONITORED_CHANNELS` | Comma-separated channel IDs to watch. Leave blank to monitor all channels. |
+| `SLACK_TWO_WAY_SYNC` | Sync web replies to Slack threads and vice versa. Default: `true` |
 
 **Slack app setup:**
 1. Create an app at api.slack.com/apps
 2. Enable Socket Mode (requires an App-Level Token with `connections:write` scope)
 3. Add Bot Token Scopes: `channels:history`, `reactions:read`, `users:read`, `users:read.email`, `chat:write`, `im:write`
-4. Enable Events: `reaction_added`
+4. Enable Events: `reaction_added`, `message.channels`
 5. Add a Slash Command: `/ticket`
 6. Install the app to your workspace
 

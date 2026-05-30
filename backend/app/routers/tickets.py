@@ -113,6 +113,8 @@ async def _fetch_enriched(
                 sla_deadline=ticket.sla_deadline,
                 sla_breached=ticket.sla_breached,
                 duplicate_of_id=ticket.duplicate_of_id,
+                slack_channel_id=ticket.slack_channel_id,
+                slack_message_ts=ticket.slack_message_ts,
                 created_at=ticket.created_at,
                 updated_at=ticket.updated_at,
                 resolved_at=ticket.resolved_at,
@@ -449,6 +451,13 @@ async def update_ticket(
             submitter_id=ticket.submitter_id,
             actor_id=current_user.id,
         )
+        # ── Slack thread status notification ────────────────────────────────
+        if ticket.slack_channel_id and ticket.slack_message_ts:
+            try:
+                from app.slack.service import post_status_to_slack
+                await post_status_to_slack(ticket, new_s or "", current_user.name)
+            except Exception:  # noqa: BLE001
+                pass  # post_status_to_slack already logs internally
 
     if "assignee_id" in changes:
         _, new_a = changes["assignee_id"]

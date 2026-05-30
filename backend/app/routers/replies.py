@@ -1,5 +1,5 @@
 """
-Ticket Replies — Chunk 08.
+Ticket Replies — Chunk 08 (extended in Chunk 21 with Slack two-way sync).
 
 Access rules:
   GET  /tickets/{id}/replies   end_users: own ticket, public replies only
@@ -7,6 +7,7 @@ Access rules:
   POST /tickets/{id}/replies   end_users: public replies on own open ticket
                                tech/admin: public or internal, any ticket
 """
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -20,6 +21,8 @@ from app.models import Ticket, TicketHistory, TicketReply, User
 from app.models.enums import Role, TicketStatus
 from app.services.notifications import notify_reply_added
 from app.schemas.reply import ReplyCreate, ReplyRead
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["replies"])
 
@@ -160,6 +163,21 @@ async def create_reply(
     session.add(reply)
     await session.commit()
     await session.refresh(reply)
+
+    # ── Web → Slack thread sync ──────────────────────────────────────────────
+    # Post public replies back to the originating Slack thread. Store the
+    # returned Slack ts as reply.slack_ts so inbound dedup works correctly.
+    if not is_internal and ticket.slack_channel_id and ticket.slack_message_ts:
+        try:
+            from app.slack.service import post_reply_to_slack
+            slack_ts = await post_reply_to_slack(ticket, body.body, current_user.name)
+            if slack_ts and reply.slack_ts is None:
+                reply.slack_ts = slack_ts
+                await session.commit()
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "Failed to sync reply to Slack for ticket %s", ticket.display_id
+            )
 
     await notify_reply_added(
         session=session,

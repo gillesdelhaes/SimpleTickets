@@ -89,6 +89,10 @@ class TicketRead(BaseModel):
 
     duplicate_of_id: Optional[int]
 
+    # Slack integration — present when ticket was created from Slack
+    slack_channel_id: Optional[str]
+    slack_message_ts: Optional[str]
+
     created_at: datetime
     updated_at: datetime
     resolved_at: Optional[datetime]

@@ -89,6 +89,16 @@ async def start_slack() -> None:
         _socket_handler = None
 
 
+def get_slack_client():
+    """
+    Return the Slack AsyncWebClient if the bot is running, else None.
+    Used by service helpers to post messages without importing the full app.
+    """
+    if _slack_app is not None:
+        return _slack_app.client
+    return None
+
+
 async def stop_slack() -> None:
     """Cleanly disconnect the Slack Socket Mode handler."""
     global _socket_handler

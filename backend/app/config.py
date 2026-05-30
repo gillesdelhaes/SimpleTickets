@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     # Comma-separated channel IDs to monitor for emoji reactions.
     # Empty string = monitor ALL channels.
     slack_monitored_channels: str = ""
+    # Sync web replies back to Slack threads and Slack thread replies back to the web.
+    slack_two_way_sync: bool = True
 
     # Email (SMTP)
     smtp_host: str = ""

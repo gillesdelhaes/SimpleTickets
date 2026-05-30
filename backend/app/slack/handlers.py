@@ -18,7 +18,11 @@ from app.config import settings
 from app.database import AsyncSessionLocal
 from app.models import Category
 from app.models.enums import Priority
-from app.slack.service import create_ticket_from_slack, get_user_by_email
+from app.slack.service import (
+    create_ticket_from_slack,
+    get_user_by_email,
+    handle_slack_thread_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +179,55 @@ def register_handlers(app: Any) -> None:
             )
         except Exception:  # noqa: BLE001
             logger.exception("reaction_added: failed to post thread reply for %s", ticket.display_id)
+
+    # ── Inbound thread replies (Web ← Slack sync) ─────────────────────────────
+
+    @app.event("message")
+    async def handle_message(event: dict, client: Any) -> None:
+        """
+        When a human posts a reply inside a SimplyTickets Slack thread,
+        sync it back as a public reply on the ticket.
+
+        Filters:
+        - Must be a thread reply (thread_ts set, thread_ts != ts)
+        - Must be a human message (no bot_id, no subtype)
+        - Channel must be monitored (or monitoring is off)
+        """
+        # Skip bot messages and system events (message_changed, message_deleted, etc.)
+        if event.get("subtype") is not None:
+            return
+        if event.get("bot_id"):
+            return
+
+        thread_ts: str = event.get("thread_ts", "")
+        message_ts: str = event.get("ts", "")
+        slack_user_id: str = event.get("user", "")
+
+        # Only process replies (not the original message that started the thread)
+        if not thread_ts or thread_ts == message_ts:
+            return
+
+        channel_id: str = event.get("channel", "")
+
+        if not _channel_is_monitored(channel_id):
+            return
+
+        text: str = event.get("text", "")
+
+        try:
+            await handle_slack_thread_message(
+                channel_id=channel_id,
+                thread_ts=thread_ts,
+                message_ts=message_ts,
+                slack_user_id=slack_user_id,
+                text=text,
+                client=client,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "handle_message: failed to sync thread reply ts=%s channel=%s",
+                message_ts, channel_id,
+            )
 
     # ── /ticket slash command ──────────────────────────────────────────────────
 

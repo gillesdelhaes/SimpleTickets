@@ -20,6 +20,8 @@ export interface TicketRead {
   sla_deadline: string | null
   sla_breached: boolean
   duplicate_of_id: number | null
+  slack_channel_id: string | null
+  slack_message_ts: string | null
   created_at: string
   updated_at: string
   resolved_at: string | null
