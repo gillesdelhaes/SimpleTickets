@@ -132,14 +132,6 @@ function IconLogout() {
   )
 }
 
-function IconMenu() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-      <path d="M3 5h14M3 10h14M3 15h14" />
-    </svg>
-  )
-}
-
 // ── Nav data ──────────────────────────────────────────────────────────────────
 
 const NAV_MAIN = [
@@ -444,18 +436,6 @@ export default function AppShell({ title, children }: AppShellProps) {
           zIndex: 30,
           flexShrink: 0,
         }}>
-          {/* Mobile hamburger */}
-          <button
-            onClick={() => setMobileOpen(o => !o)}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: '#737373', padding: 4, display: 'flex', alignItems: 'center',
-            }}
-            className="md:hidden"
-          >
-            <IconMenu />
-          </button>
-
           {/* Page title */}
           <h1 style={{
             fontSize: 15, fontWeight: 700, color: '#0A0A0A',
