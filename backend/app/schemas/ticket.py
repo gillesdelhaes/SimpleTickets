@@ -11,6 +11,9 @@ class TicketCreate(BaseModel):
     description: str
     priority: Priority = Priority.medium
     category_id: Optional[int] = None
+    # When set, the ticket is created on behalf of a Slack user (no DB submitter)
+    slack_reporter_id: Optional[str] = None
+    slack_reporter_name: Optional[str] = None
 
     @field_validator("title")
     @classmethod

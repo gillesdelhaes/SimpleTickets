@@ -3,9 +3,12 @@ Ticket CRUD.
 
 Access: all endpoints require technician or admin role.
 """
+import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+logger = logging.getLogger(__name__)
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -149,7 +152,9 @@ async def create_ticket(
 ) -> TicketRead:
     """
     Create a ticket via the web portal.
-    - The authenticated user is automatically set as submitter.
+    - Without slack_reporter_id: authenticated user becomes the submitter.
+    - With slack_reporter_id: ticket is created on behalf of a Slack user;
+      the bot sends them a DM and saves the thread anchor for future sync.
     - SLA deadline is calculated from the matching SLA policy (if any).
     """
     now = _utcnow()
@@ -175,13 +180,19 @@ async def create_ticket(
         sla_policy_id = sla_policy.id
         sla_deadline = now + timedelta(minutes=sla_policy.resolution_minutes)
 
+    # If a Slack reporter is given, the ticket is on behalf of a Slack user —
+    # submitter_id stays None and we store the Slack identity instead.
+    slack_reporter = body.slack_reporter_id or None
+
     ticket = Ticket(
         title=body.title,
         description=body.description,
         status=TicketStatus.open,
         priority=body.priority,
         category_id=body.category_id,
-        submitter_id=current_user.id,
+        submitter_id=None if slack_reporter else current_user.id,
+        slack_submitter_id=slack_reporter,
+        slack_submitter_name=body.slack_reporter_name if slack_reporter else None,
         sla_policy_id=sla_policy_id,
         sla_deadline=sla_deadline,
         created_at=now,
@@ -195,6 +206,19 @@ async def create_ticket(
 
     await session.commit()
     await session.refresh(ticket)
+
+    # Notify the Slack reporter via DM and save the thread anchor so all
+    # future replies and status updates thread back to them automatically.
+    if slack_reporter:
+        try:
+            from app.slack.service import notify_reporter_dm
+            await notify_reporter_dm(ticket, slack_reporter)
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "Failed to DM Slack reporter %s for ticket %s",
+                slack_reporter,
+                ticket.display_id,
+            )
 
     # Return enriched response
     items, _ = await _fetch_enriched(session, [Ticket.id == ticket.id])

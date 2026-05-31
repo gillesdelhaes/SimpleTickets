@@ -135,6 +135,42 @@ async def create_ticket_from_slack(
 # ── Web → Slack sync ───────────────────────────────────────────────────────────
 
 
+async def notify_reporter_dm(ticket: Ticket, slack_user_id: str) -> None:
+    """
+    Send a DM to a Slack user when a ticket is opened on their behalf via the web portal.
+
+    Posts the confirmation to the user's DM channel (using the Slack user ID as
+    the channel), then saves the returned channel_id + ts on the ticket so all
+    future web-portal replies and status updates thread back to the user.
+    """
+    from app.slack.bot import get_slack_client
+
+    client = get_slack_client()
+    if client is None:
+        return
+
+    try:
+        result = await client.chat_postMessage(
+            channel=slack_user_id,
+            text=(
+                f"📋 A ticket has been opened on your behalf.\n"
+                f"*{ticket.display_id}* — {ticket.title}\n"
+                f"Our team will be in touch shortly. Reply here to add a comment."
+            ),
+        )
+        dm_channel_id: Optional[str] = result.get("channel")
+        message_ts: Optional[str] = result.get("ts")
+        if dm_channel_id and message_ts:
+            async with AsyncSessionLocal() as session:
+                t = await session.get(Ticket, ticket.id)
+                if t:
+                    t.slack_channel_id = dm_channel_id
+                    t.slack_message_ts = message_ts
+                    await session.commit()
+    except Exception:  # noqa: BLE001
+        logger.exception("notify_reporter_dm: failed to DM user %s", slack_user_id)
+
+
 async def post_reply_to_slack(ticket: Ticket, reply_body: str, author_name: str) -> Optional[str]:
     """
     Post a web portal reply to the originating Slack thread.

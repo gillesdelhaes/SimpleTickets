@@ -20,7 +20,7 @@ from app.routers import (
     sla_policies,
     tickets,
 )
-from app.routers import setup, settings as settings_router
+from app.routers import setup, settings as settings_router, slack_users
 from app.services.sla import start_scheduler, stop_scheduler
 
 
@@ -73,3 +73,4 @@ app.include_router(search.router,          prefix="/api")
 app.include_router(notifications.router,   prefix="/api")
 app.include_router(app_config.router,      prefix="/api")
 app.include_router(reports.router,         prefix="/api")
+app.include_router(slack_users.router,     prefix="/api")

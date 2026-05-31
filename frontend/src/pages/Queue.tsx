@@ -4,6 +4,7 @@ import AppShell from '../components/layout/AppShell'
 import StatusBadge from '../components/tickets/StatusBadge'
 import PriorityBadge from '../components/tickets/PriorityBadge'
 import SLABadge from '../components/tickets/SLABadge'
+import CreateTicketModal from '../components/tickets/CreateTicketModal'
 import { useTickets } from '../hooks/useTickets'
 import { useAuth } from '../contexts/AuthContext'
 import { useUnreadReplies } from '../hooks/useUnreadReplies'
@@ -143,6 +144,7 @@ export default function Queue() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [sortCol, setSortCol] = useState<SortCol>('priority')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const [createOpen, setCreateOpen] = useState(false)
 
   // Read filters from URL
   const selectedStatuses = searchParams.getAll('status') as TicketStatus[]
@@ -236,7 +238,30 @@ export default function Queue() {
 
   return (
     <AppShell title="Ticket Queue">
+      <CreateTicketModal open={createOpen} onClose={() => setCreateOpen(false)} />
       <div style={{ padding: '28px 32px' }}>
+        {/* Toolbar */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+          <button
+            onClick={() => setCreateOpen(true)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+              border: 'none',
+              background: 'linear-gradient(135deg, #FF4713, #AD1164)',
+              color: '#fff', cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(255,71,19,0.25)',
+              transition: 'opacity 0.15s',
+            }}
+            onMouseOver={e => (e.currentTarget.style.opacity = '0.88')}
+            onMouseOut={e => (e.currentTarget.style.opacity = '1')}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M7 2v10M2 7h10" />
+            </svg>
+            New Ticket
+          </button>
+        </div>
         {/* Filter bar */}
         <div
           style={{
