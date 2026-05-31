@@ -1,79 +1,109 @@
 # SimpleTickets
 
-A self-hosted, Slack-first support ticketing system for small IT teams. End users submit and track tickets entirely through Slack — no portal account required. Technicians and admins work through a web UI.
+A self-hosted, Slack-first helpdesk for small IT teams. End users submit and track tickets entirely through Slack — no portal account required. Technicians work the queue through a web UI.
+
+---
 
 ## Features
 
-- **Slack-native** — tickets created via DM, emoji reaction, `/ticket` modal, or Slack App Home
-- **Two-way thread sync** — web replies appear in Slack threads and vice versa
+### Slack integration
+- **Four creation paths** — DM the bot, react with an emoji, use `/ticket`, or the App Home tab
+- **Two-way thread sync** — web replies post to the Slack thread automatically, and vice versa
+- **DM notifications** — when a technician creates a ticket on behalf of a Slack user, the bot DMs them a confirmation and threads all future updates back to them
 - **File attachments** — images and files flow in both directions between Slack and the web UI
-- **Queue & dashboard** — filtered ticket list, SLA badges, priority/status/assignee management
+- **App Home tab** — end users see all their open tickets and can submit new ones without leaving Slack
+
+### Web UI (technicians and admins only)
+- **Dashboard** — unassigned queue count, "needs your attention" panel (SLA breaches + unread replies on your tickets), live activity feed
+- **Queue** — filterable by status, priority, assignee; sortable columns; channel icons; SLA bars
+- **Ticket detail** — public replies, internal notes, file attachments, full conversation timeline with field-change events interleaved by timestamp
+- **Reports** — ticket volume, by priority, by status, by category, by channel (Slack vs web), technician performance with SLA compliance
 - **Full-text search** — across titles, descriptions, and reply bodies (PostgreSQL FTS)
-- **Internal notes** — team-only replies invisible to the submitter
-- **SLA engine** — configurable policies per priority, deadline tracking, breach detection
-- **Notifications** — unread reply indicators and bell dropdown for assigned tickets
-- **Audit log** — full history of every field change
-- **Admin panel** — users, categories, SLA policies, settings, Slack setup guide
-- **Setup wizard** — first-run flow to create the admin account and configure Slack
+
+### Core engine
+- **SLA policies** — configurable per priority; resolution and first-response deadlines; breach detection; pause/resume on `pending_user` status
+- **Conversation timeline** — status changes, reassignments, priority changes, and category changes appear inline between replies with actor and timestamp
+- **Audit log** — every field change recorded with actor, old value, and new value
+- **Notifications** — unread reply badges on queue rows, bell dropdown with per-ticket navigation
+
+### Admin
+- **Users** — local accounts only (admin-created); Slack user ID linking for cross-platform identity
+- **Categories, SLA policies, settings** — all configurable from the web UI; no config files or restarts needed
+- **Setup wizard** — first-run flow creates the admin account and optionally configures Slack credentials
+- **Slack setup guide** — step-by-step in-app guide covering all required scopes, events, and settings
+
+---
 
 ## Stack
 
 | Layer | Technology |
 |---|---|
 | Backend | Python 3.12, FastAPI, SQLModel, Alembic, asyncpg |
-| Frontend | React 18, Vite, TypeScript, TanStack Query |
+| Frontend | React 18, Vite, TypeScript, TanStack Query v5, Recharts |
 | Database | PostgreSQL 16 |
-| Auth | Local email/password accounts, JWT (HS256) |
-| Slack | Slack Bolt, Socket Mode (no public webhook URL needed) |
+| Auth | Local email/password, JWT (HS256), auto-generated secret on first boot |
+| Slack | Slack Bolt (Python), Socket Mode — no public inbound URL required |
 | Deployment | Docker Compose |
 
-## Quick Start
+---
+
+## Quick start
 
 ```bash
 git clone https://github.com/gillesdelhaes/SimpleTickets.git
-cd simpletickets
+cd SimpleTickets
 docker compose up -d
 ```
 
 Open **http://localhost:3000** — the setup wizard runs automatically on first launch.
 
-The wizard creates the admin account and optionally configures Slack. Everything else is configured through the admin panel.
+The wizard creates the admin account and optionally configures Slack. Everything else is managed through the admin panel.
 
-## Environment Variables
+---
 
-The stack is configured via `docker-compose.yml`. The only variable with no default is the database password.
+## Configuration
+
+The stack is self-configuring. The only required variable with no default is the database password.
 
 | Variable | Default | Description |
 |---|---|---|
 | `DB_PASSWORD` | — | PostgreSQL password (required) |
 | `DATABASE_URL` | set in compose | asyncpg connection string |
-| `STORAGE_LOCAL_PATH` | `/data/attachments` | Where uploaded files are stored inside the container |
+| `STORAGE_LOCAL_PATH` | `/data/attachments` | Attachment storage path inside the container |
 
-All Slack credentials (bot token, app token, signing secret, trigger emoji) are configured through the web UI after first login — not via environment variables.
+All Slack credentials (bot token, app token, signing secret, trigger emoji) are set through the web UI after first login — not environment variables. The JWT secret is generated and persisted automatically on first boot.
 
-## Slack Setup
+---
 
-SimpleTickets uses a **private Slack app** installed in your workspace. A step-by-step guide covering all required scopes, events, and settings is available inside the app at **Admin → Slack Setup** once you've completed the setup wizard.
+## Slack setup
 
-Short version:
-1. Create an app at [api.slack.com/apps](https://api.slack.com/apps) — From scratch
-2. Enable Socket Mode → generate an App-Level Token (`xapp-…`) with `connections:write`
-3. Add Bot Token Scopes: `chat:write`, `files:read`, `files:write`, `reactions:read`, `users:read`, `channels:history`, `groups:history`, `im:history`
-4. Subscribe to bot events: `message.im`, `message.channels`, `message.groups`, `reaction_added`, `app_home_opened`
-5. Enable Interactivity and the App Home tab
+SimpleTickets uses a **private Slack app** in your workspace running over Socket Mode — no public webhook URL or port forwarding needed.
+
+A full step-by-step guide is available inside the app at **Admin → Slack Setup** after completing the wizard. Short version:
+
+1. Create an app at [api.slack.com/apps](https://api.slack.com/apps) → From scratch
+2. Enable **Socket Mode** → generate an App-Level Token (`xapp-…`) with `connections:write`
+3. Add **Bot Token Scopes**: `chat:write`, `files:read`, `files:write`, `reactions:read`, `users:read`, `channels:history`, `groups:history`, `im:history`, `im:write`
+4. Subscribe to **bot events**: `message.im`, `message.channels`, `message.groups`, `reaction_added`, `app_home_opened`
+5. Enable **Interactivity** and the **App Home** tab
 6. Install to workspace → copy the Bot Token (`xoxb-…`)
-7. Enter both tokens + the signing secret in **Admin → Settings**
+7. Enter both tokens and the signing secret in **Admin → Settings**
+
+---
 
 ## Architecture
 
 ```
-Browser ──▶ Vite / nginx (3000) ──▶ FastAPI (8000) ──▶ PostgreSQL (5432)
-                                          │
-                                    Slack (Socket Mode)
-                                    WebSocket, no inbound port
+Browser ──▶ nginx (port 3000) ──▶ FastAPI (port 8000) ──▶ PostgreSQL (port 5432)
+                                         │
+                                   Slack API
+                                 (Socket Mode WebSocket,
+                                  no inbound port required)
 ```
 
-All services run on an internal Docker bridge network (`simpletickets_internal`). Only the frontend port is exposed to the host.
+All services run on an internal Docker bridge network. Only the frontend port (`3000`) is exposed to the host.
+
+---
 
 ## License
 
