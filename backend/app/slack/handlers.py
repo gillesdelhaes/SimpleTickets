@@ -385,9 +385,9 @@ def register_handlers(app: Any) -> None:
                 await client.chat_postMessage(
                     channel=channel_id,
                     text=(
-                        f"✅ Ticket *{ticket.display_id}* has been submitted.\n"
+                        f"📋 Ticket *{ticket.display_id}* has been submitted.\n"
                         f"*{ticket.title}*\n"
-                        f"Our team will get back to you shortly."
+                        f"Our team will get back to you shortly. Reply here to add a comment."
                     ),
                 )
             except Exception:  # noqa: BLE001
@@ -523,9 +523,9 @@ def register_handlers(app: Any) -> None:
                 result = await client.chat_postMessage(
                     channel=slack_user_id,
                     text=(
-                        f"✅ Ticket *{ticket.display_id}* has been submitted.\n"
+                        f"📋 Ticket *{ticket.display_id}* has been submitted.\n"
                         f"*{ticket.title}*\n"
-                        f"Our team will get back to you shortly."
+                        f"Our team will get back to you shortly. Reply here to add a comment."
                     ),
                 )
                 dm_channel_id: str | None = result.get("channel")
