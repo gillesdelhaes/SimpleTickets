@@ -1,6 +1,8 @@
+from collections import defaultdict
 from datetime import datetime, timezone
+from time import monotonic
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -13,13 +15,34 @@ from app.services.passwords import verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+# ── Simple in-memory rate limiter ─────────────────────────────────────────────
+# 10 attempts per IP per 60 seconds. Resets automatically as the window slides.
+
+_attempts: dict[str, list[float]] = defaultdict(list)
+_LIMIT = 10
+_WINDOW = 60.0
+
+
+def _check_rate_limit(ip: str) -> None:
+    now = monotonic()
+    _attempts[ip] = [t for t in _attempts[ip] if now - t < _WINDOW]
+    if len(_attempts[ip]) >= _LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts — please wait a minute and try again.",
+        )
+    _attempts[ip].append(now)
+
 
 @router.post("/login", response_model=TokenResponse)
 async def login(
     body: LoginRequest,
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> TokenResponse:
     """Authenticate with email + password. Returns a Bearer JWT."""
+    _check_rate_limit(request.client.host if request.client else "unknown")
+
     result = await session.execute(
         select(User).where(User.email == body.email.lower())
     )
