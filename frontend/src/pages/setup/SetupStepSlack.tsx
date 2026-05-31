@@ -39,7 +39,7 @@ export default function SetupStepSlack({ onNext }: Props) {
         bot_token: botToken,
         app_token: appToken,
         signing_secret: signingSecret,
-        trigger_emoji: triggerEmoji || 'ticket',
+        trigger_emoji: triggerEmoji || 'clipboard',
         two_way_sync: twoWaySync,
       })
       onNext(true, testResult?.team_name || '')

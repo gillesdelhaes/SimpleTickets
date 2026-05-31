@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     slack_bot_token: str = ""
     slack_signing_secret: str = ""
     slack_app_token: str = ""
-    slack_trigger_emoji: str = "ticket"
+    slack_trigger_emoji: str = "clipboard"
     slack_two_way_sync: bool = True
     storage_local_path: str = "/data/attachments"
 

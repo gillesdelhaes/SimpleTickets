@@ -75,6 +75,7 @@ def upgrade() -> None:
         sa.Column("submitter_id", sa.Integer(), nullable=True),
         sa.Column("assignee_id", sa.Integer(), nullable=True),
         sa.Column("slack_submitter_name", sqlmodel.AutoString(), nullable=True),
+        sa.Column("slack_submitter_id", sqlmodel.AutoString(), nullable=True),
         sa.Column("sla_policy_id", sa.Integer(), nullable=True),
         sa.Column("sla_deadline", sa.DateTime(), nullable=True),
         sa.Column("sla_breached", sa.Boolean(), nullable=False),
@@ -98,6 +99,7 @@ def upgrade() -> None:
     op.create_index("ix_tickets_priority", "tickets", ["priority"], unique=False)
     op.create_index("ix_tickets_status", "tickets", ["status"], unique=False)
     op.create_index("ix_tickets_submitter_id", "tickets", ["submitter_id"], unique=False)
+    op.create_index("ix_tickets_slack_submitter_id", "tickets", ["slack_submitter_id"], unique=False)
 
     # ── ticket_replies ─────────────────────────────────────────────────────────
     op.create_table(
@@ -248,7 +250,7 @@ def upgrade() -> None:
             {"key": "slack_bot_token",      "value": None,     "is_secret": True,  "group_name": "slack", "updated_at": _now},
             {"key": "slack_app_token",      "value": None,     "is_secret": True,  "group_name": "slack", "updated_at": _now},
             {"key": "slack_signing_secret", "value": None,     "is_secret": True,  "group_name": "slack", "updated_at": _now},
-            {"key": "slack_trigger_emoji",  "value": "ticket", "is_secret": False, "group_name": "slack", "updated_at": _now},
+            {"key": "slack_trigger_emoji",  "value": "clipboard", "is_secret": False, "group_name": "slack", "updated_at": _now},
             {"key": "slack_two_way_sync",   "value": "true",   "is_secret": False, "group_name": "slack", "updated_at": _now},
             {"key": "timezone",             "value": "UTC",    "is_secret": False, "group_name": "app",   "updated_at": _now},
         ],

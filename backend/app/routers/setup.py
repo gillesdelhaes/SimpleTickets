@@ -140,7 +140,7 @@ class SlackSetupRequest(BaseModel):
     bot_token: str
     app_token: str
     signing_secret: str = ""
-    trigger_emoji: str = "ticket"
+    trigger_emoji: str = "clipboard"
     two_way_sync: bool = True
 
 

@@ -396,7 +396,7 @@ async def build_home_view(slack_user_id: str, client: Any) -> dict:
     blocks: list[dict] = [
         {
             "type": "header",
-            "text": {"type": "plain_text", "text": "🎫  My Support Tickets", "emoji": True},
+            "text": {"type": "plain_text", "text": "📋  My Support Tickets", "emoji": True},
         },
         {"type": "divider"},
     ]

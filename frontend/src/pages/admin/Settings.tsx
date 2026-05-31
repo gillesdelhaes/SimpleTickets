@@ -65,7 +65,7 @@ const KEY_META: Record<string, { label: string; hint: string; placeholder?: stri
   slack_bot_token:      { label: 'Bot Token', hint: 'Starts with xoxb-', placeholder: 'xoxb-…' },
   slack_app_token:      { label: 'App-Level Token', hint: 'Socket Mode — starts with xapp-', placeholder: 'xapp-…' },
   slack_signing_secret: { label: 'Signing Secret', hint: 'From Basic Information', placeholder: '••••••••' },
-  slack_trigger_emoji:  { label: 'Trigger Emoji', hint: 'Reaction that creates a ticket', placeholder: 'ticket' },
+  slack_trigger_emoji:  { label: 'Trigger Emoji', hint: 'Reaction that creates a ticket', placeholder: 'clipboard' },
   slack_two_way_sync:   { label: 'Two-way sync', hint: 'Sync web replies to Slack threads and vice versa' },
 }
 
