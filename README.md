@@ -77,4 +77,4 @@ All services run on an internal Docker bridge network (`simplytickets_internal`)
 
 ## License
 
-MIT
+AGPL-3.0
