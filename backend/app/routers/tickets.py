@@ -210,6 +210,7 @@ async def list_tickets(
     priority_filter: list[Priority] = Query(default=[], alias="priority"),
     category_id: int | None = Query(default=None),
     assignee_id: int | None = Query(default=None),
+    unassigned: bool = Query(default=False),
     q: str | None = Query(default=None, description="Search in title"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
@@ -227,6 +228,8 @@ async def list_tickets(
         where.append(Ticket.category_id == category_id)
     if assignee_id is not None:
         where.append(Ticket.assignee_id == assignee_id)
+    if unassigned:
+        where.append(Ticket.assignee_id.is_(None))
     if q:
         where.append(Ticket.title.ilike(f"%{q}%"))
 

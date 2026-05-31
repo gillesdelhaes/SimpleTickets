@@ -6,6 +6,7 @@ interface UseTicketsParams {
   status?: string[]
   priority?: string[]
   assignee_id?: number | null
+  unassigned?: boolean
   category_id?: number | null
   submitter_id?: number | null
   q?: string
@@ -14,9 +15,9 @@ interface UseTicketsParams {
 }
 
 export function useTickets(params: UseTicketsParams = {}) {
-  const { status, priority, assignee_id, category_id, submitter_id, q, limit = 50, offset = 0 } = params
+  const { status, priority, assignee_id, unassigned, category_id, submitter_id, q, limit = 50, offset = 0 } = params
 
-  const queryKey = ['tickets', { status, priority, assignee_id, category_id, submitter_id, q, limit, offset }]
+  const queryKey = ['tickets', { status, priority, assignee_id, unassigned, category_id, submitter_id, q, limit, offset }]
 
   return useQuery<TicketListResponse>({
     queryKey,
@@ -25,6 +26,7 @@ export function useTickets(params: UseTicketsParams = {}) {
       status?.forEach(s => p.append('status', s))
       priority?.forEach(pr => p.append('priority', pr))
       if (assignee_id != null) p.set('assignee_id', String(assignee_id))
+      if (unassigned) p.set('unassigned', 'true')
       if (category_id != null) p.set('category_id', String(category_id))
       if (submitter_id != null) p.set('submitter_id', String(submitter_id))
       if (q) p.set('q', q)

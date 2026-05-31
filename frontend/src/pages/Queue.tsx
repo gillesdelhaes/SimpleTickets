@@ -155,11 +155,13 @@ export default function Queue() {
   const priorityParam = selectedPriorities.length > 0 ? selectedPriorities : undefined
   const assigneeIdParam: number | undefined =
     assigneeFilter === 'mine' ? (user?.id ?? undefined) : undefined
+  const unassignedParam = assigneeFilter === 'unassigned'
 
   const { data, isLoading } = useTickets({
     status: statusParam,
     priority: priorityParam,
     assignee_id: assigneeIdParam,
+    unassigned: unassignedParam,
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
   })
