@@ -104,6 +104,8 @@ async def _fetch_enriched(
                 duplicate_of_id=ticket.duplicate_of_id,
                 slack_channel_id=ticket.slack_channel_id,
                 slack_message_ts=ticket.slack_message_ts,
+                first_response_deadline=ticket.first_response_deadline,
+                first_responded_at=ticket.first_responded_at,
                 created_at=ticket.created_at,
                 updated_at=ticket.updated_at,
                 resolved_at=ticket.resolved_at,
@@ -176,9 +178,11 @@ async def create_ticket(
 
     sla_deadline: datetime | None = None
     sla_policy_id: int | None = None
+    first_response_deadline: datetime | None = None
     if sla_policy:
         sla_policy_id = sla_policy.id
         sla_deadline = now + timedelta(minutes=sla_policy.resolution_minutes)
+        first_response_deadline = now + timedelta(minutes=sla_policy.first_response_minutes)
 
     # If a Slack reporter is given, the ticket is on behalf of a Slack user —
     # submitter_id stays None and we store the Slack identity instead.
@@ -195,6 +199,7 @@ async def create_ticket(
         slack_submitter_name=body.slack_reporter_name if slack_reporter else None,
         sla_policy_id=sla_policy_id,
         sla_deadline=sla_deadline,
+        first_response_deadline=first_response_deadline,
         created_at=now,
         updated_at=now,
     )

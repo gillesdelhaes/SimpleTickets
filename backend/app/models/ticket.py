@@ -65,6 +65,9 @@ class Ticket(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow, index=True)
     updated_at: datetime = Field(default_factory=utcnow)
     resolved_at: Optional[datetime] = Field(default=None)
+    # First-response SLA — deadline set at creation, timestamp set on first public tech reply
+    first_response_deadline: Optional[datetime] = Field(default=None)
+    first_responded_at: Optional[datetime] = Field(default=None)
 
     @property
     def display_id(self) -> str:

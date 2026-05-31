@@ -84,6 +84,8 @@ def upgrade() -> None:
         sa.Column("slack_channel_id", sqlmodel.AutoString(), nullable=True),
         sa.Column("slack_message_ts", sqlmodel.AutoString(), nullable=True),
         sa.Column("duplicate_of_id", sa.Integer(), nullable=True),
+        sa.Column("first_response_deadline", sa.DateTime(), nullable=True),
+        sa.Column("first_responded_at", sa.DateTime(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.Column("resolved_at", sa.DateTime(), nullable=True),

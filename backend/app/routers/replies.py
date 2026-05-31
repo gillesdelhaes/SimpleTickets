@@ -111,6 +111,11 @@ async def create_reply(
             )
         )
 
+    # Record first response timestamp — only for the first public tech/admin reply
+    if not is_internal and ticket.first_responded_at is None:
+        ticket.first_responded_at = now
+        ticket.updated_at = now
+
     reply = TicketReply(
         ticket_id=ticket_id,
         author_id=current_user.id,

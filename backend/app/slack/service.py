@@ -97,9 +97,11 @@ async def create_ticket_from_slack(
         sla_policy = sla_result.scalar_one_or_none()
         sla_policy_id = None
         sla_deadline = None
+        first_response_deadline = None
         if sla_policy:
             sla_policy_id = sla_policy.id
             sla_deadline = now + timedelta(minutes=sla_policy.resolution_minutes)
+            first_response_deadline = now + timedelta(minutes=sla_policy.first_response_minutes)
 
         ticket = Ticket(
             title=title[:255],
@@ -112,6 +114,7 @@ async def create_ticket_from_slack(
             slack_submitter_id=slack_submitter_id,
             sla_policy_id=sla_policy_id,
             sla_deadline=sla_deadline,
+            first_response_deadline=first_response_deadline,
             slack_channel_id=slack_channel_id,
             slack_message_ts=slack_message_ts,
             created_at=now,
@@ -367,6 +370,11 @@ async def handle_slack_thread_message(
                 "Re-opened ticket %s (was %s) due to Slack reply from %s",
                 ticket.display_id, old_status.value, author_name_fallback,
             )
+
+        # Record first response if this is a tech/admin replying and none recorded yet
+        if author_id is not None and ticket.first_responded_at is None:
+            ticket.first_responded_at = now
+            ticket.updated_at = now
 
         reply = TicketReply(
             ticket_id=ticket.id,

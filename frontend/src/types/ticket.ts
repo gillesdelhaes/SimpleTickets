@@ -22,6 +22,8 @@ export interface TicketRead {
   duplicate_of_id: number | null
   slack_channel_id: string | null
   slack_message_ts: string | null
+  first_response_deadline: string | null
+  first_responded_at: string | null
   created_at: string
   updated_at: string
   resolved_at: string | null

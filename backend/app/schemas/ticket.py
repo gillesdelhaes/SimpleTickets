@@ -1,7 +1,7 @@
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, computed_field, field_validator
 
 from app.models.enums import Priority, TicketStatus
 
@@ -95,9 +95,17 @@ class TicketRead(BaseModel):
     slack_channel_id: Optional[str]
     slack_message_ts: Optional[str]
 
+    first_response_deadline: Optional[datetime]
+    first_responded_at: Optional[datetime]
+
     created_at: datetime
     updated_at: datetime
     resolved_at: Optional[datetime]
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def channel(self) -> Literal['slack', 'web']:
+        return 'slack' if self.slack_channel_id else 'web'
 
     model_config = {"from_attributes": True}
 
