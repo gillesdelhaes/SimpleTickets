@@ -165,14 +165,15 @@ async def upload_attachment(
     await session.commit()
     await session.refresh(attachment)
 
-    # If this attachment is linked to a reply, push it to the Slack thread
-    if reply_id is not None:
-        try:
-            from app.slack.service import upload_attachments_to_slack
-            ticket_obj = await _get_ticket_or_404(session, ticket_id)
+    # Push attachment to the Slack thread — works for both reply-level (reply_id set)
+    # and ticket-level (reply_id=None) attachments as long as the ticket has a thread anchor.
+    try:
+        from app.slack.service import upload_attachments_to_slack
+        ticket_obj = await _get_ticket_or_404(session, ticket_id)
+        if ticket_obj.slack_channel_id and ticket_obj.slack_message_ts:
             await upload_attachments_to_slack(ticket_obj, reply_id)
-        except Exception:  # noqa: BLE001
-            logger.warning("Failed to upload attachment %d to Slack", attachment.id)
+    except Exception:  # noqa: BLE001
+        logger.warning("Failed to upload attachment %d to Slack", attachment.id)
 
     return AttachmentRead.model_validate(attachment)
 

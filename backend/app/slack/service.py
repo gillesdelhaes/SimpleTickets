@@ -606,10 +606,13 @@ async def _download_slack_files(
 
 async def upload_attachments_to_slack(
     ticket: Ticket,
-    reply_id: int,
+    reply_id: Optional[int],
 ) -> None:
     """
-    Upload web attachments linked to a reply to the originating Slack thread.
+    Upload web attachments to the originating Slack thread.
+
+    Pass reply_id=None to upload ticket-level attachments (e.g. on ticket creation).
+    Pass a reply_id to upload attachments linked to a specific reply.
     Uses the files_upload_v2 (getUploadURLExternal) flow.
     Silently no-ops if Slack is not configured / no thread / no attachments.
     """

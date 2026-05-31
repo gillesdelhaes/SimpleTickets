@@ -31,11 +31,13 @@ export default function CreateTicketModal({ open, onClose }: Props) {
   const [reporterSearch, setReporterSearch] = useState('')
   const [selectedReporter, setSelectedReporter] = useState<{ id: string; name: string } | null>(null)
   const [reporterOpen, setReporterOpen] = useState(false)
+  const [files, setFiles] = useState<File[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const reporterRef = useRef<HTMLDivElement>(null)
   const titleRef = useRef<HTMLInputElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Reset form when modal opens
   useEffect(() => {
@@ -47,6 +49,7 @@ export default function CreateTicketModal({ open, onClose }: Props) {
       setReporterSearch('')
       setSelectedReporter(null)
       setReporterOpen(false)
+      setFiles([])
       setError(null)
       setTimeout(() => titleRef.current?.focus(), 50)
     }
@@ -95,6 +98,16 @@ export default function CreateTicketModal({ open, onClose }: Props) {
         slack_reporter_id: selectedReporter.id,
         slack_reporter_name: selectedReporter.name,
       })
+
+      // Upload attachments sequentially — failures are non-fatal
+      for (const file of files) {
+        const form = new FormData()
+        form.append('file', file)
+        await api.post(`/tickets/${data.id}/attachments`, form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        }).catch(() => {/* non-fatal */})
+      }
+
       await qc.invalidateQueries({ queryKey: ['tickets'] })
       onClose()
       navigate(`/tickets/${data.id}`)
@@ -307,6 +320,78 @@ export default function CreateTicketModal({ open, onClose }: Props) {
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
+            </div>
+          </div>
+
+          {/* Attachments */}
+          <div style={{ marginBottom: 20 }}>
+            <label style={labelStyle}>Attachments (optional)</label>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept="image/*,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx,.zip"
+              style={{ display: 'none' }}
+              onChange={e => {
+                const picked = Array.from(e.target.files ?? [])
+                setFiles(prev => {
+                  const existing = new Set(prev.map(f => f.name + f.size))
+                  return [...prev, ...picked.filter(f => !existing.has(f.name + f.size))]
+                })
+                e.target.value = ''
+              }}
+            />
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                border: '1.5px dashed #E5E5E5',
+                borderRadius: 8,
+                padding: '12px 14px',
+                cursor: 'pointer',
+                transition: 'border-color 0.15s, background 0.15s',
+                background: '#FAFAFA',
+              }}
+              onMouseOver={e => {
+                (e.currentTarget as HTMLDivElement).style.borderColor = '#FF4713'
+                ;(e.currentTarget as HTMLDivElement).style.background = 'rgba(255,71,19,0.03)'
+              }}
+              onMouseOut={e => {
+                (e.currentTarget as HTMLDivElement).style.borderColor = '#E5E5E5'
+                ;(e.currentTarget as HTMLDivElement).style.background = '#FAFAFA'
+              }}
+            >
+              {files.length === 0 ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#A3A3A3" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M8 2v8M5 5l3-3 3 3" />
+                    <path d="M2 12h12" />
+                    <path d="M2 14h12" />
+                  </svg>
+                  <span style={{ fontSize: 12, color: '#A3A3A3' }}>Click to attach files — images, PDF, Word, Excel, CSV</span>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {files.map((f, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: 12, color: '#525252', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 360 }}>
+                        {f.name} <span style={{ color: '#A3A3A3' }}>({(f.size / 1024).toFixed(0)} KB)</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={e => { e.stopPropagation(); setFiles(prev => prev.filter((_, j) => j !== i)) }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#A3A3A3', padding: '0 2px', flexShrink: 0 }}
+                        onMouseOver={ev => (ev.currentTarget.style.color = '#EF4444')}
+                        onMouseOut={ev => (ev.currentTarget.style.color = '#A3A3A3')}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                          <path d="M2 2l8 8M10 2l-8 8" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                  <span style={{ fontSize: 11, color: '#A3A3A3', marginTop: 2 }}>Click to add more</span>
+                </div>
+              )}
             </div>
           </div>
 
