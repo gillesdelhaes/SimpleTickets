@@ -47,3 +47,4 @@ data/
 *.key
 *.p12
 secrets/
+ROADMAP.md
