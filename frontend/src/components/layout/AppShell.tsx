@@ -271,7 +271,7 @@ export default function AppShell({ title, children }: AppShellProps) {
           ) : (
             <Link to="/dashboard" style={{ textDecoration: 'none', whiteSpace: 'nowrap' }}>
               <span style={{ fontSize: 17, letterSpacing: '-0.04em', lineHeight: 1 }}>
-                <span style={{ fontWeight: 200, color: 'rgba(255,255,255,0.85)' }}>Simply</span>
+                <span style={{ fontWeight: 200, color: 'rgba(255,255,255,0.85)' }}>Simple</span>
                 <span style={{
                   fontWeight: 800,
                   background: 'linear-gradient(135deg, #FF4713, #AD1164)',

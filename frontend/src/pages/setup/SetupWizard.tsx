@@ -35,7 +35,7 @@ export default function SetupWizard() {
       {/* Header */}
       <div style={{ padding: '28px 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
         <div>
-          <span style={{ fontSize: 20, fontWeight: 200, color: 'rgba(255,255,255,0.9)', letterSpacing: '-0.03em' }}>Simply</span>
+          <span style={{ fontSize: 20, fontWeight: 200, color: 'rgba(255,255,255,0.9)', letterSpacing: '-0.03em' }}>Simple</span>
           <span style={{
             fontSize: 20, fontWeight: 800, letterSpacing: '-0.03em',
             background: 'linear-gradient(135deg, #FF4713 0%, #AD1164 100%)',

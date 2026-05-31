@@ -157,7 +157,7 @@ export default function Login() {
               style={{ fontSize: 'clamp(48px, 5.5vw, 80px)', letterSpacing: '-0.04em' }}
             >
               <span style={{ fontWeight: 200, color: 'rgba(255,255,255,0.90)' }}>
-                Simply
+                Simple
               </span>
               <span
                 style={{
@@ -274,7 +274,7 @@ export default function Login() {
             className="leading-none select-none"
             style={{ fontSize: '40px', letterSpacing: '-0.04em' }}
           >
-            <span style={{ fontWeight: 200, color: '#0A0A0A' }}>Simply</span>
+            <span style={{ fontWeight: 200, color: '#0A0A0A' }}>Simple</span>
             <span
               style={{
                 fontWeight: 800,
