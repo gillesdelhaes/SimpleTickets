@@ -16,6 +16,11 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   api:
     build: ./backend
@@ -29,6 +34,8 @@ services:
       - attachments:/data/attachments
     networks:
       - internal
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "python", "-c",
              "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
@@ -36,6 +43,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
 
   frontend:
     build: ./frontend
@@ -47,6 +59,18 @@ services:
         condition: service_healthy
     networks:
       - internal
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   internal:
