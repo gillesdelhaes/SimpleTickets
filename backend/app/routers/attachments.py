@@ -225,36 +225,3 @@ async def download_attachment(
         media_type=attachment.mime_type,
         filename=attachment.filename,
     )
-
-
-# ── DELETE /attachments/{id} ──────────────────────────────────────────────────
-
-
-@router.delete("/attachments/{attachment_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_attachment(
-    attachment_id: int,
-    current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-) -> None:
-    """
-    Delete an attachment.
-    Allowed by: the original uploader, technicians, and admins.
-    The file is removed from disk; the DB row is hard-deleted.
-    """
-    attachment = await session.get(TicketAttachment, attachment_id)
-    if attachment is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
-
-    await _get_ticket_or_404(session, attachment.ticket_id)
-
-    # Remove file from disk (best-effort — don't fail the request if missing)
-    abs_path = Path(settings.storage_local_path) / attachment.storage_path
-    try:
-        abs_path.unlink(missing_ok=True)
-        # Remove directory if empty
-        abs_path.parent.rmdir()
-    except OSError:
-        pass  # non-empty dir or other FS issue — ignore
-
-    await session.delete(attachment)
-    await session.commit()

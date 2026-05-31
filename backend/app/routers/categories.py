@@ -81,20 +81,3 @@ async def update_category(
     return category
 
 
-@router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def archive_category(
-    category_id: int,
-    _admin: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_session),
-) -> None:
-    """
-    Soft-delete (archive) a category. Admin only.
-    Hard deletion is intentionally not supported — tickets may reference the category.
-    """
-    result = await session.execute(select(Category).where(Category.id == category_id))
-    category = result.scalar_one_or_none()
-    if not category:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
-
-    category.is_archived = True
-    await session.commit()

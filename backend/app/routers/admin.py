@@ -118,22 +118,6 @@ async def list_users(
     )
 
 
-# ── GET /admin/users/{id} ──────────────────────────────────────────────────────
-
-
-@router.get("/users/{user_id}", response_model=UserRead)
-async def get_user(
-    user_id: int,
-    _admin: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_session),
-) -> UserRead:
-    """Get a single user by ID. Admin only."""
-    user = await session.get(User, user_id)
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    return UserRead.model_validate(user)
-
-
 # ── PATCH /admin/users/{id} ────────────────────────────────────────────────────
 
 
@@ -289,53 +273,3 @@ async def list_audit_log(
     return AuditLogResponse(items=items, total=total)
 
 
-# ── POST /admin/tickets/{id}/link-user ────────────────────────────────────────
-
-
-class LinkUserRequest(BaseModel):
-    user_id: int
-
-
-@router.post("/tickets/{ticket_id}/link-user", status_code=status.HTTP_200_OK)
-async def link_ticket_user(
-    ticket_id: int,
-    body: LinkUserRequest,
-    request: Request,
-    admin: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_session),
-) -> dict:
-    """
-    Link an unmatched Slack ticket to an existing SimpleTickets user.
-    Sets ticket.submitter_id and clears slack_submitter_name. Admin only.
-    """
-    ticket = await session.get(Ticket, ticket_id)
-    if ticket is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
-
-    user = await session.get(User, body.user_id)
-    if user is None or not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found or inactive",
-        )
-
-    old_name = ticket.slack_submitter_name
-    ticket.submitter_id = body.user_id
-    ticket.slack_submitter_name = None
-
-    await write_audit(
-        session,
-        actor_id=admin.id,
-        action="ticket.linked_user",
-        entity_type="ticket",
-        entity_id=str(ticket_id),
-        payload={
-            "user_id": body.user_id,
-            "user_email": user.email,
-            "previous_slack_name": old_name,
-        },
-        ip_address=request.client.host if request.client else None,
-    )
-
-    await session.commit()
-    return {"ticket_id": ticket_id, "user_id": body.user_id, "user_email": user.email}

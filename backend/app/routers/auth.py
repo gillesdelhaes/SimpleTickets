@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.auth.deps import get_current_user
 from app.auth.jwt import create_access_token
 from app.database import get_session
 from app.models import User
@@ -71,20 +70,6 @@ async def login(
         access_token=create_access_token(user.id, user.email, user.role.value, user.name or "")
     )
 
-
-@router.get("/me")
-async def get_me(current_user: User = Depends(get_current_user)) -> dict:
-    """Return the profile of the currently authenticated user."""
-    return {
-        "id": current_user.id,
-        "email": current_user.email,
-        "name": current_user.name,
-        "avatar_url": current_user.avatar_url,
-        "role": current_user.role,
-        "auth_provider": current_user.auth_provider,
-        "created_at": current_user.created_at,
-        "last_login_at": current_user.last_login_at,
-    }
 
 
 @router.post("/logout")
