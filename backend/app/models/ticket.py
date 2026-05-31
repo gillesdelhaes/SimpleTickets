@@ -54,6 +54,9 @@ class Ticket(SQLModel, table=True):
     sla_paused_at: Optional[datetime] = Field(default=None)
     sla_paused_seconds: int = Field(default=0)
 
+    # Origin: 'web' = created via web portal, 'slack' = created via Slack
+    source: str = Field(default="slack")
+
     # Slack integration
     slack_channel_id: Optional[str] = Field(default=None)
     slack_message_ts: Optional[str] = Field(default=None)

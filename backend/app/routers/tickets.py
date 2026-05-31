@@ -102,6 +102,7 @@ async def _fetch_enriched(
                 sla_deadline=ticket.sla_deadline,
                 sla_breached=ticket.sla_breached,
                 duplicate_of_id=ticket.duplicate_of_id,
+                source=ticket.source,
                 slack_channel_id=ticket.slack_channel_id,
                 slack_message_ts=ticket.slack_message_ts,
                 first_response_deadline=ticket.first_response_deadline,
@@ -200,6 +201,7 @@ async def create_ticket(
         sla_policy_id=sla_policy_id,
         sla_deadline=sla_deadline,
         first_response_deadline=first_response_deadline,
+        source="web",
         created_at=now,
         updated_at=now,
     )

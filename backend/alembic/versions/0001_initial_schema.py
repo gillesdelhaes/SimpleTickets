@@ -81,6 +81,7 @@ def upgrade() -> None:
         sa.Column("sla_breached", sa.Boolean(), nullable=False),
         sa.Column("sla_paused_at", sa.DateTime(), nullable=True),
         sa.Column("sla_paused_seconds", sa.Integer(), nullable=False),
+        sa.Column("source", sa.String(10), nullable=False, server_default="slack"),
         sa.Column("slack_channel_id", sqlmodel.AutoString(), nullable=True),
         sa.Column("slack_message_ts", sqlmodel.AutoString(), nullable=True),
         sa.Column("duplicate_of_id", sa.Integer(), nullable=True),

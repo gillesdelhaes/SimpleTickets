@@ -91,6 +91,8 @@ class TicketRead(BaseModel):
 
     duplicate_of_id: Optional[int]
 
+    source: str  # 'web' | 'slack'
+
     # Slack integration — present when ticket was created from Slack
     slack_channel_id: Optional[str]
     slack_message_ts: Optional[str]
@@ -105,7 +107,7 @@ class TicketRead(BaseModel):
     @computed_field  # type: ignore[misc]
     @property
     def channel(self) -> Literal['slack', 'web']:
-        return 'slack' if self.slack_channel_id else 'web'
+        return 'slack' if self.source == 'slack' else 'web'
 
     model_config = {"from_attributes": True}
 
