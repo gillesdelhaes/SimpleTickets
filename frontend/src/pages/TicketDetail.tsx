@@ -1029,8 +1029,8 @@ export default function TicketDetail() {
             {ticket.title}
           </h1>
 
-          {/* Slack origin notice */}
-          {ticket.channel === 'slack' && (
+          {/* Slack sync notice — shown for any ticket with an active Slack thread */}
+          {ticket.slack_channel_id && ticket.slack_message_ts && (
             <div
               style={{
                 display: 'flex',
@@ -1058,16 +1058,16 @@ export default function TicketDetail() {
                 <path d="M8.5 5H10V3.5C10 2.67 9.33 2 8.5 2S7 2.67 7 3.5 7.67 5 8.5 5z" fill="#10B981"/>
               </svg>
               <span>
-                This ticket was created from Slack.
-                {ticket.slack_channel_id && ticket.slack_message_ts && (
-                  <>
-                    {' '}
-                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#047857' }}>
-                      #{ticket.slack_channel_id}
-                    </span>
-                  </>
-                )}
-                {' '}Replies sync automatically.
+                {ticket.channel === 'slack'
+                  ? 'This ticket was created from Slack. Replies sync automatically.'
+                  : <>
+                      Replies are synced to Slack
+                      {ticket.submitter_name && (
+                        <> via DM to <strong>{ticket.submitter_name}</strong></>
+                      )}
+                      .
+                    </>
+                }
               </span>
             </div>
           )}
