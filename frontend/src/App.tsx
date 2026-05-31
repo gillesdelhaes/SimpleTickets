@@ -11,6 +11,7 @@ import AdminCategories from './pages/admin/Categories'
 import AdminSLAPolicies from './pages/admin/SLAPolicies'
 import AdminSettings from './pages/admin/Settings'
 import AdminAudit from './pages/admin/Audit'
+import SlackSetup from './pages/admin/SlackSetup'
 import Search from './pages/Search'
 import SetupWizard from './pages/setup/SetupWizard'
 
@@ -52,6 +53,7 @@ export default function App() {
             <Route path="/admin/sla" element={<AdminSLAPolicies />} />
             <Route path="/admin/settings" element={<AdminSettings />} />
             <Route path="/admin/audit" element={<AdminAudit />} />
+            <Route path="/admin/slack-setup" element={<SlackSetup />} />
           </Route>
         </Routes>
       </SetupGuard>

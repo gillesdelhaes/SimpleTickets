@@ -9,7 +9,7 @@ export default function SetupStepSlack({ onNext }: Props) {
   const [botToken, setBotToken] = useState('')
   const [appToken, setAppToken] = useState('')
   const [signingSecret, setSigningSecret] = useState('')
-  const [triggerEmoji, setTriggerEmoji] = useState('ticket')
+  const [triggerEmoji, setTriggerEmoji] = useState('clipboard')
   const [twoWaySync, setTwoWaySync] = useState(true)
 
   const [testing, setTesting] = useState(false)
@@ -58,11 +58,74 @@ export default function SetupStepSlack({ onNext }: Props) {
           Connect Slack
         </h2>
         <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6 }}>
-          Slack is how your team submits tickets. Create a Slack app at{' '}
+          SimplyTickets uses a private Slack app installed in your workspace. You'll need to create one at{' '}
           <span style={{ color: '#FF4713', fontFamily: 'monospace', fontSize: 12 }}>api.slack.com/apps</span>{' '}
-          with Socket Mode enabled.
+          before continuing.
         </p>
       </div>
+
+      {/* Setup guide accordion */}
+      <details style={{ marginBottom: 28 }}>
+        <summary style={{
+          cursor: 'pointer', userSelect: 'none', listStyle: 'none',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '12px 16px',
+          background: 'rgba(255,71,19,0.06)', border: '1px solid rgba(255,71,19,0.18)',
+          borderRadius: 10, fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.75)',
+        }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FF4713" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>
+            </svg>
+            How to create your Slack app — required scopes &amp; settings
+          </span>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" style={{ flexShrink: 0 }}>
+            <path d="M3 5l4 4 4-4"/>
+          </svg>
+        </summary>
+        <div style={{
+          marginTop: 8, padding: '16px 18px',
+          background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+          borderRadius: 10, display: 'flex', flexDirection: 'column', gap: 14,
+        }}>
+          {[
+            {
+              title: 'Create & enable Socket Mode',
+              body: 'Go to api.slack.com/apps → Create New App → From scratch. Then Settings → Socket Mode → Enable. Generate an App-Level Token (xapp-…) with the connections:write scope.',
+            },
+            {
+              title: 'Add Bot Token Scopes',
+              body: 'Features → OAuth & Permissions → Bot Token Scopes. Add: chat:write, files:read, files:write, reactions:read, users:read, channels:history, groups:history, im:history',
+              mono: true,
+            },
+            {
+              title: 'Subscribe to Bot Events',
+              body: 'Features → Event Subscriptions → Enable Events → Subscribe to bot events. Add: message.im, message.channels, message.groups, reaction_added, app_home_opened',
+              mono: true,
+            },
+            {
+              title: 'Enable Interactivity & App Home',
+              body: 'Features → Interactivity & Shortcuts → Enable. Features → App Home → enable the Home Tab.',
+            },
+            {
+              title: 'Install & copy tokens',
+              body: 'Settings → Install App → Install to Workspace. Copy the Bot Token (xoxb-…). The Signing Secret is under Basic Information → App Credentials.',
+            },
+          ].map(({ title, body, mono }) => (
+            <div key={title}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.7)', marginBottom: 4 }}>{title}</div>
+              <div style={{
+                fontSize: 12, lineHeight: 1.65,
+                color: 'rgba(255,255,255,0.4)',
+                fontFamily: mono ? 'JetBrains Mono, monospace' : undefined,
+              }}>{body}</div>
+            </div>
+          ))}
+          <div style={{ fontSize: 11, color: 'rgba(255,71,19,0.7)', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 10 }}>
+            Full step-by-step guide available in Admin → Slack Setup after completing setup.
+          </div>
+        </div>
+      </details>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
         <Field label="Bot Token" hint="Starts with xoxb-">
@@ -126,7 +189,7 @@ export default function SetupStepSlack({ onNext }: Props) {
             <Field label="Trigger emoji" hint="The reaction that creates a ticket (without colons)">
               <input
                 value={triggerEmoji} onChange={e => setTriggerEmoji(e.target.value)}
-                placeholder="ticket"
+                placeholder="clipboard"
                 style={{ ...inputStyle, maxWidth: 180 }}
                 onFocus={focusStyle} onBlur={blurStyle}
               />
