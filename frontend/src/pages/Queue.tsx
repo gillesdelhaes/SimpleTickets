@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import AppShell from '../components/layout/AppShell'
 import StatusBadge from '../components/tickets/StatusBadge'
@@ -129,10 +130,19 @@ function Pagination({ page, total, pageSize, onPrev, onNext }: PaginationProps) 
 
 // ── Queue page ─────────────────────────────────────────────────────────────────
 
+type SortCol = 'priority' | 'status' | 'created_at'
+type SortDir = 'asc' | 'desc'
+
+const STATUS_ORDER: Record<string, number> = {
+  open: 0, in_progress: 1, pending_user: 2, resolved: 3, closed: 4,
+}
+
 export default function Queue() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
+  const [sortCol, setSortCol] = useState<SortCol>('priority')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
 
   // Read filters from URL
   const selectedStatuses = searchParams.getAll('status') as TicketStatus[]
@@ -199,14 +209,28 @@ export default function Queue() {
     })
   }
 
-  // Sort displayed items: critical first, then created_at
   const sortedItems = data?.items
     ? [...data.items].sort((a, b) => {
-        const pd = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]
-        if (pd !== 0) return pd
-        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        let cmp = 0
+        if (sortCol === 'priority') {
+          cmp = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]
+        } else if (sortCol === 'status') {
+          cmp = (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99)
+        } else {
+          cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        }
+        return sortDir === 'asc' ? cmp : -cmp
       })
     : []
+
+  function handleSort(col: SortCol) {
+    if (sortCol === col) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortCol(col)
+      setSortDir('asc')
+    }
+  }
 
   return (
     <AppShell title="Ticket Queue">
@@ -327,21 +351,36 @@ export default function Queue() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #F2F2F2', background: '#FAFAFA' }}>
-                  {['ID', 'Title', 'Priority', 'Status', 'Assignee', 'SLA', 'Created'].map(h => (
+                  {([
+                    { label: 'ID', col: null },
+                    { label: 'Title', col: null },
+                    { label: 'Reporter', col: null },
+                    { label: 'Priority', col: 'priority' as SortCol },
+                    { label: 'Status', col: 'status' as SortCol },
+                    { label: 'Assignee', col: null },
+                    { label: 'SLA', col: null },
+                    { label: 'Created', col: 'created_at' as SortCol },
+                  ] as { label: string; col: SortCol | null }[]).map(({ label, col }) => (
                     <th
-                      key={h}
+                      key={label}
+                      onClick={col ? () => handleSort(col) : undefined}
                       style={{
                         padding: '8px 16px',
                         textAlign: 'left',
                         fontSize: 11,
                         fontWeight: 600,
-                        color: '#A3A3A3',
+                        color: col && sortCol === col ? '#FF4713' : '#A3A3A3',
                         textTransform: 'uppercase',
                         letterSpacing: '0.06em',
                         whiteSpace: 'nowrap',
+                        cursor: col ? 'pointer' : 'default',
+                        userSelect: 'none',
                       }}
                     >
-                      {h}
+                      {label}
+                      {col && sortCol === col && (
+                        <span style={{ marginLeft: 4 }}>{sortDir === 'asc' ? '↑' : '↓'}</span>
+                      )}
                     </th>
                   ))}
                 </tr>
@@ -350,7 +389,7 @@ export default function Queue() {
                 {isLoading ? (
                   Array.from({ length: PAGE_SIZE }).map((_, i) => (
                     <tr key={i} style={{ borderBottom: '1px solid #F9F9F9' }}>
-                      {Array.from({ length: 7 }).map((_, j) => (
+                      {Array.from({ length: 8 }).map((_, j) => (
                         <td key={j} style={{ padding: '10px 16px' }}>
                           <div
                             style={{
@@ -367,7 +406,7 @@ export default function Queue() {
                   ))
                 ) : sortedItems.length === 0 ? (
                   <tr>
-                    <td colSpan={7} style={{ padding: '60px 24px', textAlign: 'center' }}>
+                    <td colSpan={8} style={{ padding: '60px 24px', textAlign: 'center' }}>
                       <p style={{ fontSize: 14, fontWeight: 600, color: '#262626', margin: 0 }}>No tickets found</p>
                       <p style={{ fontSize: 13, color: '#A3A3A3', marginTop: 4 }}>
                         Try adjusting the filters above.
@@ -407,7 +446,7 @@ export default function Queue() {
                           </span>
                         </div>
                       </td>
-                      <td style={{ padding: '9px 16px', maxWidth: 300 }}>
+                      <td style={{ padding: '9px 16px', maxWidth: 280 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden' }}>
                           {ticket.channel === 'slack' && (
                             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0, opacity: 0.7 }}>
@@ -428,6 +467,12 @@ export default function Queue() {
                         {ticket.category_name && (
                           <span style={{ fontSize: 11, color: '#A3A3A3', display: 'block', marginTop: 1 }}>{ticket.category_name}</span>
                         )}
+                      </td>
+                      <td style={{ padding: '9px 16px', whiteSpace: 'nowrap' }}>
+                        {ticket.submitter_name
+                          ? <span style={{ fontSize: 12, color: '#262626' }}>{ticket.submitter_name}</span>
+                          : <span style={{ fontSize: 12, color: '#A3A3A3', fontStyle: 'italic' }}>Unknown</span>
+                        }
                       </td>
                       <td style={{ padding: '9px 16px', whiteSpace: 'nowrap' }}>
                         <PriorityBadge priority={ticket.priority} />

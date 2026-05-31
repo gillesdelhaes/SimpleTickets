@@ -138,6 +138,12 @@ function TicketRow({ ticket, hasUnread, onClick }: TicketRowProps) {
         )}
       </td>
       <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
+        {ticket.submitter_name
+          ? <span style={{ fontSize: 12, color: '#262626' }}>{ticket.submitter_name}</span>
+          : <span style={{ fontSize: 12, color: '#A3A3A3', fontStyle: 'italic' }}>Unknown</span>
+        }
+      </td>
+      <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
         <PriorityBadge priority={ticket.priority} />
       </td>
       <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
@@ -165,7 +171,7 @@ function TicketRow({ ticket, hasUnread, onClick }: TicketRowProps) {
 function EmptyState() {
   return (
     <tr>
-      <td colSpan={7} style={{ padding: '60px 24px', textAlign: 'center' }}>
+      <td colSpan={8} style={{ padding: '60px 24px', textAlign: 'center' }}>
         <div
           style={{
             width: 48,
@@ -331,7 +337,7 @@ export default function Dashboard() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #F2F2F2' }}>
-                  {['ID', 'Title', 'Priority', 'Status', 'Assignee', 'SLA', 'Created'].map(h => (
+                  {['ID', 'Title', 'Reporter', 'Priority', 'Status', 'Assignee', 'SLA', 'Created'].map(h => (
                     <th
                       key={h}
                       style={{
@@ -355,7 +361,7 @@ export default function Dashboard() {
                 {loadingActive ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <tr key={i} style={{ borderBottom: '1px solid #F9F9F9' }}>
-                      {Array.from({ length: 7 }).map((_, j) => (
+                      {Array.from({ length: 8 }).map((_, j) => (
                         <td key={j} style={{ padding: '10px 16px' }}>
                           <div
                             style={{
