@@ -54,34 +54,6 @@ function IconUsers() {
   )
 }
 
-function IconCategories() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9.5 2.5L16 9l-6.5 6.5-2-2L12 9 7.5 4.5z" />
-      <circle cx="5.5" cy="9" r="2.5" />
-    </svg>
-  )
-}
-
-function IconSLA() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="9" cy="9" r="7" />
-      <path d="M9 5v4l2.5 2.5" />
-    </svg>
-  )
-}
-
-function IconStatuses() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="5" cy="5" r="2.5" />
-      <circle cx="13" cy="9" r="2.5" />
-      <circle cx="5" cy="13" r="2.5" />
-      <path d="M7.5 5h6M7.5 13h6M2.5 9h3.5" />
-    </svg>
-  )
-}
 
 function IconAudit() {
   return (
@@ -92,30 +64,6 @@ function IconAudit() {
   )
 }
 
-function IconSlack() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14.5 10c-.83 0-1.5-.67-1.5-1.5v-5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5z"/>
-      <path d="M20.5 10H19V8.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
-      <path d="M9.5 14c.83 0 1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5S8 21.33 8 20.5v-5c0-.83.67-1.5 1.5-1.5z"/>
-      <path d="M3.5 14H5v1.5c0 .83-.67 1.5-1.5 1.5S2 16.33 2 15.5 2.67 14 3.5 14z"/>
-      <path d="M14 14.5c0-.83.67-1.5 1.5-1.5h5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5h-5c-.83 0-1.5-.67-1.5-1.5z"/>
-      <path d="M15.5 19H14v1.5c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5-.67-1.5-1.5-1.5z"/>
-      <path d="M10 9.5C10 8.67 9.33 8 8.5 8h-5C2.67 8 2 8.67 2 9.5S2.67 11 3.5 11h5c.83 0 1.5-.67 1.5-1.5z"/>
-      <path d="M8.5 5H10V3.5C10 2.67 9.33 2 8.5 2S7 2.67 7 3.5 7.67 5 8.5 5z"/>
-    </svg>
-  )
-}
-
-function IconBackup() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14 11.5A5.5 5.5 0 1 0 6.5 16H14" />
-      <path d="M12 9l2.5 2.5L17 9" />
-      <path d="M14.5 11.5v-5" />
-    </svg>
-  )
-}
 
 function IconSettings() {
   return (
@@ -171,12 +119,7 @@ const NAV_MAIN = [
 
 const NAV_ADMIN = [
   { to: '/admin/users', label: 'Users', icon: <IconUsers /> },
-  { to: '/admin/categories', label: 'Categories', icon: <IconCategories /> },
-  { to: '/admin/sla', label: 'SLA Policies', icon: <IconSLA /> },
-  { to: '/admin/statuses', label: 'Statuses', icon: <IconStatuses /> },
   { to: '/admin/audit', label: 'Audit Log', icon: <IconAudit /> },
-  { to: '/admin/slack-setup', label: 'Slack Setup', icon: <IconSlack /> },
-  { to: '/admin/backup', label: 'Backup & Restore', icon: <IconBackup /> },
   { to: '/admin/settings', label: 'Settings', icon: <IconSettings /> },
 ]
 
