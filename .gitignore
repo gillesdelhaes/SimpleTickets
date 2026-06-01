@@ -48,3 +48,4 @@ data/
 *.p12
 secrets/
 ROADMAP.md
+BLOCKERS.md
