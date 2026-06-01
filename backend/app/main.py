@@ -12,6 +12,7 @@ from app.routers import (
     app_config,
     attachments,
     auth,
+    backup,
     categories,
     health,
     notifications,
@@ -76,3 +77,4 @@ app.include_router(app_config.router,      prefix="/api")
 app.include_router(reports.router,         prefix="/api")
 app.include_router(slack_users.router,     prefix="/api")
 app.include_router(activity.router,        prefix="/api")
+app.include_router(backup.router,          prefix="/api")
