@@ -124,8 +124,8 @@ export function parseSLABar(ticket: TicketRead): {
   }
 
   const now = Date.now()
-  const created = new Date(ticket.created_at).getTime()
-  const deadline = new Date(ticket.sla_deadline).getTime()
+  const created = new Date(ticket.created_at + 'Z').getTime()
+  const deadline = new Date(ticket.sla_deadline + 'Z').getTime()
   const total = deadline - created
   const remaining = deadline - now
 
