@@ -700,11 +700,16 @@ async def upload_attachments_to_slack(
 # ── SLA breach warning ─────────────────────────────────────────────────────────
 
 
-async def post_sla_warning_to_technicians(ticket: Ticket, session: AsyncSession) -> None:
+async def post_sla_warning_to_technicians(
+    ticket: Ticket,
+    session: AsyncSession,
+    kind: str = "sla",
+) -> None:
     """
     DM every active technician/admin who has a slack_user_id registered.
-    Called ~15 minutes before SLA deadline. Fire-and-forget — errors are logged,
-    not raised, so a Slack outage never breaks the scheduler.
+    kind='sla'            — resolution SLA breach in ~15 min
+    kind='first_response' — first-response deadline in ~15 min
+    Fire-and-forget — errors are logged, not raised.
     """
     if not settings_manager.slack_two_way_sync:
         return
@@ -735,11 +740,10 @@ async def post_sla_warning_to_technicians(ticket: Ticket, session: AsyncSession)
             assignee_name = assignee.name or assignee.email
 
     # Build deadline display
-    deadline = ticket.sla_deadline
-    if deadline is not None:
-        if deadline.tzinfo is None:
-            deadline = deadline.replace(tzinfo=timezone.utc)
-        deadline_str = deadline.strftime("%H:%M UTC")
+    raw_deadline = ticket.first_response_deadline if kind == "first_response" else ticket.sla_deadline
+    if raw_deadline is not None:
+        dl = raw_deadline if raw_deadline.tzinfo else raw_deadline.replace(tzinfo=timezone.utc)
+        deadline_str = dl.strftime("%H:%M UTC")
     else:
         deadline_str = "unknown"
 
@@ -751,8 +755,13 @@ async def post_sla_warning_to_technicians(ticket: Ticket, session: AsyncSession)
     if ticket.slack_channel_id and ticket.slack_message_ts:
         thread_hint = "\n_Reply in the original Slack thread or open the web portal._"
 
+    if kind == "first_response":
+        headline = "⚠️ *First response due in ~15 minutes*"
+    else:
+        headline = "⚠️ *SLA breach in ~15 minutes*"
+
     text = (
-        f"⚠️ *SLA breach in ~15 minutes*\n"
+        f"{headline}\n"
         f"*{ticket.display_id}* · {ticket.title}\n"
         f"Priority: {emoji} {priority_str.capitalize()} · "
         f"Assignee: {assignee_name} · "

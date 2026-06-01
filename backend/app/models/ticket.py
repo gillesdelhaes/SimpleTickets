@@ -68,6 +68,8 @@ class Ticket(SQLModel, table=True):
     # First-response SLA — deadline set at creation, timestamp set on first public tech reply
     first_response_deadline: Optional[datetime] = Field(default=None)
     first_responded_at: Optional[datetime] = Field(default=None)
+    # Set when the 15-min first-response warning DM has been sent
+    first_response_warned_at: Optional[datetime] = Field(default=None)
 
     @property
     def display_id(self) -> str:

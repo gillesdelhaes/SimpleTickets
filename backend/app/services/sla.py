@@ -208,14 +208,35 @@ async def _warn_sla_breaches() -> None:
             )
             tickets = result.scalars().all()
 
+            from app.slack.service import post_sla_warning_to_technicians
+
             for ticket in tickets:
-                from app.slack.service import post_sla_warning_to_technicians
-                await post_sla_warning_to_technicians(ticket, session)
+                await post_sla_warning_to_technicians(ticket, session, kind="sla")
                 ticket.sla_breach_warned_at = now
                 session.add(ticket)
                 logger.info("SLA warning sent for ticket %s", ticket.display_id)
 
-            if tickets:
+            # ── First-response deadline warnings ──────────────────────────────
+            fr_result = await session.execute(
+                select(Ticket).where(
+                    Ticket.first_response_deadline.isnot(None),
+                    Ticket.first_responded_at.is_(None),
+                    Ticket.first_response_warned_at.is_(None),
+                    Ticket.sla_paused_at.is_(None),
+                    Ticket.status.not_in(resolved_names) if resolved_names else True,
+                    Ticket.first_response_deadline > now,
+                    Ticket.first_response_deadline <= now + warn_before,
+                )
+            )
+            fr_tickets = fr_result.scalars().all()
+
+            for ticket in fr_tickets:
+                await post_sla_warning_to_technicians(ticket, session, kind="first_response")
+                ticket.first_response_warned_at = now
+                session.add(ticket)
+                logger.info("First-response warning sent for ticket %s", ticket.display_id)
+
+            if tickets or fr_tickets:
                 await session.commit()
 
         except Exception as exc:
