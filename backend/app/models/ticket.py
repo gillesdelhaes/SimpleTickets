@@ -48,6 +48,8 @@ class Ticket(SQLModel, table=True):
     # Tracks cumulative paused time (seconds) for accurate remaining calculation
     sla_paused_at: Optional[datetime] = Field(default=None)
     sla_paused_seconds: int = Field(default=0)
+    # Set when the 15-min breach warning DM has been sent — prevents re-sends
+    sla_breach_warned_at: Optional[datetime] = Field(default=None)
 
     # Origin: 'web' = created via web portal, 'slack' = created via Slack
     source: str = Field(default="slack")

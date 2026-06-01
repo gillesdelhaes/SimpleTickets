@@ -174,6 +174,55 @@ async def _check_sla_breaches() -> None:
             await session.rollback()
 
 
+# ── SLA warning job (15 min before breach) ────────────────────────────────────
+
+
+async def _warn_sla_breaches() -> None:
+    """
+    Scheduled job: DM all technicians/admins with a Slack ID when a ticket is
+    within 15 minutes of breaching SLA. Runs every minute. The
+    sla_breach_warned_at timestamp prevents duplicate warnings.
+    """
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    warn_before = timedelta(minutes=15)
+
+    async for session in get_session():
+        try:
+            resolved_result = await session.execute(
+                select(TicketStatusConfig.name).where(
+                    TicketStatusConfig.is_resolved_state == True  # noqa: E712
+                )
+            )
+            resolved_names = [row[0] for row in resolved_result.all()]
+
+            result = await session.execute(
+                select(Ticket).where(
+                    Ticket.sla_deadline.isnot(None),
+                    Ticket.sla_breached == False,  # noqa: E712
+                    Ticket.sla_breach_warned_at.is_(None),
+                    Ticket.sla_paused_at.is_(None),
+                    Ticket.status.not_in(resolved_names) if resolved_names else True,
+                    Ticket.sla_deadline > now,
+                    Ticket.sla_deadline <= now + warn_before,
+                )
+            )
+            tickets = result.scalars().all()
+
+            for ticket in tickets:
+                from app.slack.service import post_sla_warning_to_technicians
+                await post_sla_warning_to_technicians(ticket, session)
+                ticket.sla_breach_warned_at = now
+                session.add(ticket)
+                logger.info("SLA warning sent for ticket %s", ticket.display_id)
+
+            if tickets:
+                await session.commit()
+
+        except Exception as exc:
+            logger.error("SLA warning job failed: %s", exc)
+            await session.rollback()
+
+
 # ── Scheduler lifecycle ────────────────────────────────────────────────────────
 
 
@@ -191,8 +240,16 @@ def start_scheduler() -> None:
         max_instances=1,
         coalesce=True,
     )
+    _scheduler.add_job(
+        _warn_sla_breaches,
+        trigger="interval",
+        minutes=1,
+        id="sla_breach_warn",
+        max_instances=1,
+        coalesce=True,
+    )
     _scheduler.start()
-    logger.info("SLA scheduler started — breach check every 60 s")
+    logger.info("SLA scheduler started — breach check + 15-min warning every 60 s")
 
 
 def stop_scheduler() -> None:

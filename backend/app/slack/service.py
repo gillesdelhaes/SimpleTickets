@@ -695,3 +695,77 @@ async def upload_attachments_to_slack(
             logger.debug("Uploaded attachment %d (%s) to Slack thread", att.id, att.filename)
         except Exception:
             logger.exception("Failed to upload attachment %d to Slack", att.id)
+
+
+# ── SLA breach warning ─────────────────────────────────────────────────────────
+
+
+async def post_sla_warning_to_technicians(ticket: Ticket, session: AsyncSession) -> None:
+    """
+    DM every active technician/admin who has a slack_user_id registered.
+    Called ~15 minutes before SLA deadline. Fire-and-forget — errors are logged,
+    not raised, so a Slack outage never breaks the scheduler.
+    """
+    if not settings_manager.slack_two_way_sync:
+        return
+
+    from app.slack.bot import get_slack_client
+    client = get_slack_client()
+    if client is None:
+        return
+
+    # Fetch all active staff with a Slack user ID
+    result = await session.execute(
+        select(User).where(
+            User.slack_user_id.isnot(None),
+            User.is_active == True,  # noqa: E712
+            User.role.in_(["technician", "admin"]),
+        )
+    )
+    technicians = result.scalars().all()
+    if not technicians:
+        return
+
+    # Resolve assignee name
+    assignee_name = "Unassigned"
+    if ticket.assignee_id:
+        assignee_result = await session.execute(select(User).where(User.id == ticket.assignee_id))
+        assignee = assignee_result.scalar_one_or_none()
+        if assignee:
+            assignee_name = assignee.name or assignee.email
+
+    # Build deadline display
+    deadline = ticket.sla_deadline
+    if deadline is not None:
+        if deadline.tzinfo is None:
+            deadline = deadline.replace(tzinfo=timezone.utc)
+        deadline_str = deadline.strftime("%H:%M UTC")
+    else:
+        deadline_str = "unknown"
+
+    _PRIORITY_EMOJI = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🔵"}
+    priority_str = ticket.priority.value if hasattr(ticket.priority, "value") else str(ticket.priority)
+    emoji = _PRIORITY_EMOJI.get(priority_str, "⚪")
+
+    thread_hint = ""
+    if ticket.slack_channel_id and ticket.slack_message_ts:
+        thread_hint = "\n_Reply in the original Slack thread or open the web portal._"
+
+    text = (
+        f"⚠️ *SLA breach in ~15 minutes*\n"
+        f"*{ticket.display_id}* · {ticket.title}\n"
+        f"Priority: {emoji} {priority_str.capitalize()} · "
+        f"Assignee: {assignee_name} · "
+        f"Deadline: {deadline_str}"
+        f"{thread_hint}"
+    )
+
+    for tech in technicians:
+        try:
+            await client.chat_postMessage(
+                channel=tech.slack_user_id,  # DM when channel = user ID
+                text=text,
+            )
+            logger.debug("Sent SLA warning DM to %s for ticket %s", tech.slack_user_id, ticket.display_id)
+        except Exception:
+            logger.exception("Failed to send SLA warning DM to %s", tech.slack_user_id)
