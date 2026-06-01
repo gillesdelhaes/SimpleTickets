@@ -1,12 +1,12 @@
 """
-SLA Engine — Chunk 11.
+SLA Engine.
 
 Responsibilities:
   1. Breach detection: every minute, find tickets whose sla_deadline has
      passed and mark them sla_breached=True.
-  2. Pause / resume: when a ticket enters pending_user status the SLA clock
-     stops; when it leaves, accumulated paused seconds are recorded and the
-     deadline is extended accordingly.
+  2. Pause / resume: when a ticket enters a status with pauses_sla=True the
+     SLA clock stops; when it leaves, accumulated paused seconds are recorded
+     and the deadline is extended accordingly.
   3. Status endpoint helper: compute current SLA state for a single ticket
      without touching the database.
 
@@ -22,13 +22,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
 from app.models import Ticket, TicketHistory
-from app.models.enums import TicketStatus
+from app.models.ticket_status_config import TicketStatusConfig
 
 logger = logging.getLogger(__name__)
-
-_ACTIVE_STATUSES = {TicketStatus.open, TicketStatus.in_progress}
-_PAUSED_STATUS = TicketStatus.pending_user
-_CLOSED_STATUSES = {TicketStatus.resolved, TicketStatus.closed}
 
 
 # ── Public SLA state helpers ───────────────────────────────────────────────────
@@ -48,12 +44,10 @@ def sla_remaining_seconds(ticket: Ticket) -> int | None:
 
     # If currently paused, the clock hasn't advanced since sla_paused_at
     if ticket.sla_paused_at is not None:
-        # Freeze effective time at the moment the ticket was paused
         effective_now = ticket.sla_paused_at
     else:
         effective_now = now
 
-    # Make deadline timezone-aware if stored as naive UTC
     if deadline.tzinfo is None:
         deadline = deadline.replace(tzinfo=timezone.utc)
     if effective_now.tzinfo is None:
@@ -92,19 +86,28 @@ def sla_status_label(ticket: Ticket) -> str:
 # ── Pause / resume ─────────────────────────────────────────────────────────────
 
 
-def apply_sla_status_change(ticket: Ticket, new_status: TicketStatus) -> None:
+async def apply_sla_status_change(
+    ticket: Ticket, new_status: str, session: AsyncSession
+) -> None:
     """
     Call this whenever a ticket's status changes to update SLA pause state.
+    Looks up pauses_sla from the ticket_statuses table.
     Mutates the ticket object in place — caller must commit.
     """
+    result = await session.execute(
+        select(TicketStatusConfig).where(TicketStatusConfig.name == new_status)
+    )
+    status_cfg = result.scalar_one_or_none()
+    pauses = status_cfg.pauses_sla if status_cfg else False
+
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
-    if new_status == _PAUSED_STATUS and ticket.sla_paused_at is None:
-        # Entering pending_user — freeze the clock
+    if pauses and ticket.sla_paused_at is None:
+        # Entering a pausing status — freeze the clock
         ticket.sla_paused_at = now
 
-    elif new_status != _PAUSED_STATUS and ticket.sla_paused_at is not None:
-        # Leaving pending_user — extend deadline by time spent paused
+    elif not pauses and ticket.sla_paused_at is not None:
+        # Leaving a pausing status — extend deadline by time spent paused
         paused_delta = now - ticket.sla_paused_at
         paused_secs = int(paused_delta.total_seconds())
         ticket.sla_paused_seconds = (ticket.sla_paused_seconds or 0) + paused_secs
@@ -121,19 +124,27 @@ async def _check_sla_breaches() -> None:
     """
     Scheduled job: mark tickets whose SLA deadline has passed as breached.
     Runs every minute via APScheduler.
-    Skips paused tickets (pending_user) and already-breached ones.
+    Skips paused tickets and already-breached ones.
+    Skips tickets in resolved/closed states (is_resolved_state=True).
     """
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
-    # Build a fresh async session for this background task
     async for session in get_session():
         try:
+            # Resolved status names — breach detection doesn't apply to them
+            resolved_result = await session.execute(
+                select(TicketStatusConfig.name).where(
+                    TicketStatusConfig.is_resolved_state == True  # noqa: E712
+                )
+            )
+            resolved_names = [row[0] for row in resolved_result.all()]
+
             result = await session.execute(
                 select(Ticket).where(
                     Ticket.sla_deadline.isnot(None),
                     Ticket.sla_breached == False,  # noqa: E712
-                    Ticket.sla_paused_at.is_(None),   # not paused
-                    Ticket.status.not_in(list(_CLOSED_STATUSES)),
+                    Ticket.sla_paused_at.is_(None),
+                    Ticket.status.not_in(resolved_names) if resolved_names else True,
                     Ticket.sla_deadline <= now,
                 )
             )
@@ -147,7 +158,7 @@ async def _check_sla_breaches() -> None:
                 session.add(
                     TicketHistory(
                         ticket_id=ticket.id,
-                        actor_id=None,  # system action
+                        actor_id=None,
                         field_changed="sla_breached",
                         old_value="false",
                         new_value="true",
@@ -170,7 +181,6 @@ _scheduler: AsyncIOScheduler | None = None
 
 
 def start_scheduler() -> None:
-    """Start the APScheduler AsyncIOScheduler. Called once at app startup."""
     global _scheduler
     _scheduler = AsyncIOScheduler(timezone="UTC")
     _scheduler.add_job(
@@ -178,15 +188,14 @@ def start_scheduler() -> None:
         trigger="interval",
         minutes=1,
         id="sla_breach_check",
-        max_instances=1,       # never run two breach checks concurrently
-        coalesce=True,         # skip missed fires if previous run was slow
+        max_instances=1,
+        coalesce=True,
     )
     _scheduler.start()
     logger.info("SLA scheduler started — breach check every 60 s")
 
 
 def stop_scheduler() -> None:
-    """Graceful shutdown. Called in FastAPI lifespan teardown."""
     global _scheduler
     if _scheduler and _scheduler.running:
         _scheduler.shutdown(wait=False)

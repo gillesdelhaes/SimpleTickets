@@ -8,20 +8,12 @@ import CreateTicketModal from '../components/tickets/CreateTicketModal'
 import { useTickets } from '../hooks/useTickets'
 import { useAuth } from '../contexts/AuthContext'
 import { useUnreadReplies } from '../hooks/useUnreadReplies'
-import { PRIORITY_ORDER, timeAgo, type Priority, type TicketStatus } from '../types/ticket'
+import { PRIORITY_ORDER, getAllStatuses, timeAgo, type Priority } from '../types/ticket'
+import { useAppConfig } from '../hooks/useAppConfig'
 
 const PAGE_SIZE = 25
 
-const ALL_STATUSES: TicketStatus[] = ['open', 'in_progress', 'pending_user', 'resolved', 'closed']
 const ALL_PRIORITIES: Priority[] = ['critical', 'high', 'medium', 'low']
-
-const STATUS_LABELS: Record<TicketStatus, string> = {
-  open: 'Open',
-  in_progress: 'In Progress',
-  pending_user: 'Pending',
-  resolved: 'Resolved',
-  closed: 'Closed',
-}
 
 const PRIORITY_LABELS: Record<Priority, string> = {
   critical: 'Critical',
@@ -134,20 +126,21 @@ function Pagination({ page, total, pageSize, onPrev, onNext }: PaginationProps) 
 type SortCol = 'priority' | 'status' | 'created_at'
 type SortDir = 'asc' | 'desc'
 
-const STATUS_ORDER: Record<string, number> = {
-  open: 0, in_progress: 1, pending_user: 2, resolved: 3, closed: 4,
-}
-
 export default function Queue() {
   const navigate = useNavigate()
   const { user } = useAuth()
+  const { data: appConfig } = useAppConfig()
+  const allStatuses = appConfig?.statuses ?? getAllStatuses()
+  const statusOrder: Record<string, number> = Object.fromEntries(
+    allStatuses.map((s, i) => [s.name, i])
+  )
   const [searchParams, setSearchParams] = useSearchParams()
   const [sortCol, setSortCol] = useState<SortCol>('priority')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [createOpen, setCreateOpen] = useState(false)
 
   // Read filters from URL
-  const selectedStatuses = searchParams.getAll('status') as TicketStatus[]
+  const selectedStatuses = searchParams.getAll('status')
   const selectedPriorities = searchParams.getAll('priority') as Priority[]
   const assigneeFilter = searchParams.get('assignee') ?? 'all'
   const page = parseInt(searchParams.get('page') ?? '0', 10)
@@ -182,7 +175,7 @@ export default function Queue() {
     })
   }
 
-  function toggleStatus(s: TicketStatus) {
+  function toggleStatus(s: string) {
     const next = selectedStatuses.includes(s)
       ? selectedStatuses.filter(x => x !== s)
       : [...selectedStatuses, s]
@@ -219,7 +212,7 @@ export default function Queue() {
         if (sortCol === 'priority') {
           cmp = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]
         } else if (sortCol === 'status') {
-          cmp = (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99)
+          cmp = (statusOrder[a.status] ?? 99) - (statusOrder[b.status] ?? 99)
         } else {
           cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         }
@@ -285,18 +278,13 @@ export default function Queue() {
               active={selectedStatuses.length === 0}
               onClick={() => setParam('status', [])}
             />
-            {ALL_STATUSES.map(s => (
+            {allStatuses.map(s => (
               <Pill
-                key={s}
-                label={STATUS_LABELS[s]}
-                active={selectedStatuses.includes(s)}
-                color={
-                  s === 'open' ? '#3B82F6' :
-                  s === 'in_progress' ? '#FF4713' :
-                  s === 'pending_user' ? '#F59E0B' :
-                  s === 'resolved' ? '#10B981' : '#737373'
-                }
-                onClick={() => toggleStatus(s)}
+                key={s.name}
+                label={s.label}
+                active={selectedStatuses.includes(s.name)}
+                color={s.color}
+                onClick={() => toggleStatus(s.name)}
               />
             ))}
           </div>

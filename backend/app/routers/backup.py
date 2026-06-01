@@ -27,6 +27,7 @@ from app.models.ticket_attachment import TicketAttachment
 from app.models.ticket_history import TicketHistory
 from app.models.ticket_read_marker import TicketReadMarker
 from app.models.ticket_reply import TicketReply
+from app.models.ticket_status_config import TicketStatusConfig
 from app.models.user import User
 
 router = APIRouter(prefix="/admin", tags=["backup"])
@@ -40,6 +41,7 @@ _SECRET_KEYS = frozenset({
 
 # Export in dependency order (referenced tables before referencing tables)
 _EXPORT_MODELS: list[tuple[str, Any]] = [
+    ("ticket_statuses", TicketStatusConfig),
     ("users", User),
     ("categories", Category),
     ("sla_policies", SLAPolicy),
@@ -53,6 +55,7 @@ _EXPORT_MODELS: list[tuple[str, Any]] = [
 
 # Datetime column names per table (used during restore deserialization)
 _DT_COLS: dict[str, set[str]] = {
+    "ticket_statuses":     set(),
     "users":               {"created_at", "last_login_at"},
     "categories":          {"created_at"},
     "sla_policies":        set(),

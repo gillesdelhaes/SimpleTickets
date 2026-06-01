@@ -21,8 +21,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings, settings_manager
 from app.database import AsyncSessionLocal
 from app.models import Category, SLAPolicy, Ticket, TicketHistory, TicketReply, User
-from app.models.enums import Priority, TicketStatus
+from app.models.enums import Priority
 from app.models.ticket_attachment import TicketAttachment
+from app.models.ticket_status_config import TicketStatusConfig
 
 logger = logging.getLogger(__name__)
 
@@ -103,10 +104,16 @@ async def create_ticket_from_slack(
             sla_deadline = now + timedelta(minutes=sla_policy.resolution_minutes)
             first_response_deadline = now + timedelta(minutes=sla_policy.first_response_minutes)
 
+        # Use the default status for new tickets
+        default_status_result = await session.execute(
+            select(TicketStatusConfig.name).where(TicketStatusConfig.is_default == True)  # noqa: E712
+        )
+        default_status = default_status_result.scalar_one_or_none() or "open"
+
         ticket = Ticket(
             title=title[:255],
             description=description,
-            status=TicketStatus.open,
+            status=default_status,
             priority=priority,
             category_id=category_id,
             submitter_id=submitter_id,
@@ -350,10 +357,15 @@ async def handle_slack_thread_message(
         now = _utcnow()
 
         # Re-open resolved/closed tickets when the user replies from Slack
-        _CLOSED_STATUSES = {TicketStatus.resolved, TicketStatus.closed}
-        if ticket.status in _CLOSED_STATUSES:
+        resolved_result = await session.execute(
+            select(TicketStatusConfig.name).where(
+                TicketStatusConfig.is_resolved_state == True  # noqa: E712
+            )
+        )
+        resolved_names = {row[0] for row in resolved_result.all()} or {"resolved", "closed"}
+        if ticket.status in resolved_names:
             old_status = ticket.status
-            ticket.status = TicketStatus.in_progress
+            ticket.status = "in_progress"
             ticket.resolved_at = None
             ticket.updated_at = now
             session.add(
@@ -361,8 +373,8 @@ async def handle_slack_thread_message(
                     ticket_id=ticket.id,
                     actor_id=None,
                     field_changed="status",
-                    old_value=old_status.value,
-                    new_value=TicketStatus.in_progress.value,
+                    old_value=old_status,
+                    new_value="in_progress",
                     created_at=now,
                 )
             )
@@ -417,20 +429,26 @@ _HOME_PRIORITY_EMOJI: dict[str, str] = {
     "critical": "🔴",
 }
 
-_OPEN_STATUSES = [TicketStatus.open, TicketStatus.in_progress, TicketStatus.pending_user]
-
-
 async def build_home_view(slack_user_id: str, client: Any) -> dict:
     """
     Build the Block Kit view for a user's App Home tab.
     Shows their open tickets with a button to jump to each Slack thread.
     """
     async with AsyncSessionLocal() as session:
+        # Non-resolved statuses — tickets still active for this user
+        open_result = await session.execute(
+            select(TicketStatusConfig.name).where(
+                TicketStatusConfig.is_resolved_state == False,  # noqa: E712
+                TicketStatusConfig.is_archived == False,  # noqa: E712
+            )
+        )
+        open_status_names = [row[0] for row in open_result.all()] or ["open", "in_progress", "pending_user"]
+
         result = await session.execute(
             select(Ticket)
             .where(
                 Ticket.slack_submitter_id == slack_user_id,
-                Ticket.status.in_(_OPEN_STATUSES),
+                Ticket.status.in_(open_status_names),
             )
             .order_by(Ticket.created_at.desc())
             .limit(20)

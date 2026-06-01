@@ -3,7 +3,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, computed_field, field_validator
 
-from app.models.enums import Priority, TicketStatus
+from app.models.enums import Priority
 
 
 class TicketCreate(BaseModel):
@@ -43,7 +43,7 @@ class TicketUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     priority: Optional[Priority] = None
-    status: Optional[TicketStatus] = None
+    status: Optional[str] = None
     category_id: Optional[int] = None
     assignee_id: Optional[int] = None
 
@@ -73,7 +73,7 @@ class TicketRead(BaseModel):
     display_id: str
     title: str
     description: str
-    status: TicketStatus
+    status: str
     priority: Priority
 
     category_id: Optional[int]

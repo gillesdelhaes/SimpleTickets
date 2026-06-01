@@ -20,6 +20,7 @@ from app.routers import (
     reports,
     search,
     sla_policies,
+    ticket_statuses,
     tickets,
 )
 from app.routers import setup, settings as settings_router, slack_users
@@ -78,3 +79,4 @@ app.include_router(reports.router,         prefix="/api")
 app.include_router(slack_users.router,     prefix="/api")
 app.include_router(activity.router,        prefix="/api")
 app.include_router(backup.router,          prefix="/api")
+app.include_router(ticket_statuses.router, prefix="/api")

@@ -1,10 +1,10 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import Column, Enum as SAEnum, Text
+from sqlalchemy import Column, Enum as SAEnum, String, Text
 from sqlmodel import Field, SQLModel
 
-from app.models.enums import Priority, TicketStatus
+from app.models.enums import Priority
 
 
 def utcnow() -> datetime:
@@ -19,13 +19,8 @@ class Ticket(SQLModel, table=True):
     # Core fields
     title: str
     description: str = Field(sa_column=Column(Text, nullable=False))
-    status: TicketStatus = Field(
-        sa_column=Column(
-            SAEnum(TicketStatus, native_enum=False, name="ticket_status"),
-            nullable=False,
-            default=TicketStatus.open,
-            index=True,
-        )
+    status: str = Field(
+        sa_column=Column(String, nullable=False, default="open", index=True)
     )
     priority: Priority = Field(
         sa_column=Column(

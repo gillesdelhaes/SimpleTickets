@@ -72,6 +72,17 @@ function IconSLA() {
   )
 }
 
+function IconStatuses() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="5" cy="5" r="2.5" />
+      <circle cx="13" cy="9" r="2.5" />
+      <circle cx="5" cy="13" r="2.5" />
+      <path d="M7.5 5h6M7.5 13h6M2.5 9h3.5" />
+    </svg>
+  )
+}
+
 function IconAudit() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -162,6 +173,7 @@ const NAV_ADMIN = [
   { to: '/admin/users', label: 'Users', icon: <IconUsers /> },
   { to: '/admin/categories', label: 'Categories', icon: <IconCategories /> },
   { to: '/admin/sla', label: 'SLA Policies', icon: <IconSLA /> },
+  { to: '/admin/statuses', label: 'Statuses', icon: <IconStatuses /> },
   { to: '/admin/audit', label: 'Audit Log', icon: <IconAudit /> },
   { to: '/admin/slack-setup', label: 'Slack Setup', icon: <IconSlack /> },
   { to: '/admin/backup', label: 'Backup & Restore', icon: <IconBackup /> },

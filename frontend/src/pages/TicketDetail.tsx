@@ -13,14 +13,15 @@ import { useAgents } from '../hooks/useAgents'
 import { useAuth } from '../contexts/AuthContext'
 import { useMarkTicketRead } from '../hooks/useUnreadReplies'
 import api from '../lib/api'
+import { useAppConfig } from '../hooks/useAppConfig'
 import {
-  STATUS_COLORS,
-  STATUS_LABELS,
+  getAllStatuses,
+  statusColor,
+  statusLabel,
   PRIORITY_COLORS,
   PRIORITY_LABELS,
   timeAgo,
   type TicketRead,
-  type TicketStatus,
   type Priority,
 } from '../types/ticket'
 
@@ -598,19 +599,8 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
         {/* Status */}
         <MetaRow label="Status">
           <div style={{ position: 'relative' }}>
-            <select
-              value={ticket.status}
-              onChange={e => patch('status', e.target.value)}
-              style={{
-                ...selectStyle,
-                fontWeight: 600,
-                color: STATUS_COLORS[ticket.status as TicketStatus],
-              }}
-            >
-              {(Object.entries(STATUS_LABELS) as [TicketStatus, string][]).map(([v, l]) => (
-                <option key={v} value={v}>{l}</option>
-              ))}
-            </select>
+            <StatusDropdown ticket={ticket} patch={patch} />
+            {/* StatusDropdown is defined below — uses dynamic statuses */}
             <SavedFlash show={savedField === 'status'} />
           </div>
         </MetaRow>
@@ -809,31 +799,41 @@ const FIELD_LABELS: Record<string, string> = {
   category_id: 'category',
 }
 
-const STATUS_DISPLAY: Record<string, string> = {
-  open: 'Open', in_progress: 'In Progress', pending_user: 'Pending',
-  resolved: 'Resolved', closed: 'Closed',
-}
-
-const STATUS_CHIP_COLORS: Record<string, string> = {
-  open: '#3B82F6', in_progress: '#FF4713', pending_user: '#F59E0B',
-  resolved: '#10B981', closed: '#737373',
-}
-
 function formatHistoryValue(field: string, value: string | null): React.ReactNode {
   if (value == null) return <em style={{ color: '#A3A3A3' }}>none</em>
   if (field === 'status') {
-    const color = STATUS_CHIP_COLORS[value] ?? '#737373'
+    const color = statusColor(value)
     return (
       <span style={{
         display: 'inline-block', padding: '1px 7px', borderRadius: 999,
         fontSize: 11, fontWeight: 600,
         background: `${color}18`, color, border: `1px solid ${color}40`,
       }}>
-        {STATUS_DISPLAY[value] ?? value}
+        {statusLabel(value)}
       </span>
     )
   }
   return <strong style={{ color: '#262626' }}>{value}</strong>
+}
+
+function StatusDropdown({ ticket, patch }: { ticket: TicketRead; patch: (field: string, value: string) => void }) {
+  const { data: appConfig } = useAppConfig()
+  const statuses = appConfig?.statuses ?? getAllStatuses()
+  return (
+    <select
+      value={ticket.status}
+      onChange={e => patch('status', e.target.value)}
+      style={{ ...selectStyle, fontWeight: 600, color: statusColor(ticket.status) }}
+    >
+      {statuses.map(s => (
+        <option key={s.name} value={s.name}>{s.label}</option>
+      ))}
+      {/* If ticket has a status not in the current list (e.g. archived), show it anyway */}
+      {!statuses.find(s => s.name === ticket.status) && (
+        <option value={ticket.status}>{statusLabel(ticket.status)}</option>
+      )}
+    </select>
+  )
 }
 
 function HistoryEventRow({ event }: { event: HistoryEvent }) {

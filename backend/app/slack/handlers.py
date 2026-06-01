@@ -19,7 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings_manager
 from app.database import AsyncSessionLocal
 from app.models import Category, Ticket
-from app.models.enums import Priority, TicketStatus
+from app.models.enums import Priority
+from app.models.ticket_status_config import TicketStatusConfig
 from app.slack.service import (
     _download_slack_files,
     build_home_view,
@@ -311,11 +312,17 @@ def register_handlers(app: Any) -> None:
             # If so, treat the message as a follow-up reply rather than a new ticket.
             active_ticket: Ticket | None = None
             async with AsyncSessionLocal() as session:
+                resolved_result = await session.execute(
+                    select(TicketStatusConfig.name).where(
+                        TicketStatusConfig.is_resolved_state == True  # noqa: E712
+                    )
+                )
+                resolved_names = [row[0] for row in resolved_result.all()] or ["resolved", "closed"]
                 result = await session.execute(
                     select(Ticket)
                     .where(
                         Ticket.slack_channel_id == channel_id,
-                        Ticket.status.not_in([TicketStatus.resolved, TicketStatus.closed]),
+                        Ticket.status.not_in(resolved_names),
                     )
                     .order_by(Ticket.created_at.desc())
                     .limit(1)

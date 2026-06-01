@@ -13,6 +13,7 @@ import AdminSettings from './pages/admin/Settings'
 import AdminAudit from './pages/admin/Audit'
 import SlackSetup from './pages/admin/SlackSetup'
 import BackupRestore from './pages/admin/BackupRestore'
+import TicketStatuses from './pages/admin/TicketStatuses'
 import Search from './pages/Search'
 import Reports from './pages/Reports'
 import SetupWizard from './pages/setup/SetupWizard'
@@ -44,6 +45,7 @@ export default function App() {
             <Route path="/admin/audit" element={<AdminAudit />} />
             <Route path="/admin/slack-setup" element={<SlackSetup />} />
             <Route path="/admin/backup" element={<BackupRestore />} />
+            <Route path="/admin/statuses" element={<TicketStatuses />} />
           </Route>
         </Routes>
       </SetupGuard>

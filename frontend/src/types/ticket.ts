@@ -1,6 +1,16 @@
-export type TicketStatus = 'open' | 'in_progress' | 'pending_user' | 'resolved' | 'closed'
+export type TicketStatus = string   // dynamic — any slug from ticket_statuses table
 export type Priority = 'low' | 'medium' | 'high' | 'critical'
 export type Channel = 'web' | 'slack' | 'email'
+
+export interface StatusConfig {
+  name: string
+  label: string
+  color: string
+  pauses_sla: boolean
+  is_default: boolean
+  is_resolved_state: boolean
+  sort_order: number
+}
 
 export interface TicketRead {
   id: number
@@ -34,23 +44,39 @@ export interface TicketListResponse {
   total: number
 }
 
-// ── Display helpers ────────────────────────────────────────────────────────────
+// ── Dynamic status registry (populated by useAppConfig) ───────────────────────
 
-export const STATUS_COLORS: Record<TicketStatus, string> = {
-  open: '#3B82F6',
-  in_progress: '#FF4713',
-  pending_user: '#F59E0B',
-  resolved: '#10B981',
-  closed: '#737373',
+let _statusMap: Map<string, StatusConfig> = new Map([
+  ['open',         { name: 'open',         label: 'Open',         color: '#3B82F6', pauses_sla: false, is_default: true,  is_resolved_state: false, sort_order: 0 }],
+  ['in_progress',  { name: 'in_progress',  label: 'In Progress',  color: '#FF4713', pauses_sla: false, is_default: false, is_resolved_state: false, sort_order: 1 }],
+  ['pending_user', { name: 'pending_user', label: 'Pending User', color: '#F59E0B', pauses_sla: true,  is_default: false, is_resolved_state: false, sort_order: 2 }],
+  ['resolved',     { name: 'resolved',     label: 'Resolved',     color: '#10B981', pauses_sla: false, is_default: false, is_resolved_state: true,  sort_order: 3 }],
+  ['closed',       { name: 'closed',       label: 'Closed',       color: '#737373', pauses_sla: false, is_default: false, is_resolved_state: true,  sort_order: 4 }],
+])
+
+export function setStatuses(statuses: StatusConfig[]) {
+  _statusMap = new Map(statuses.map(s => [s.name, s]))
 }
 
-export const STATUS_LABELS: Record<TicketStatus, string> = {
-  open: 'Open',
-  in_progress: 'In Progress',
-  pending_user: 'Pending',
-  resolved: 'Resolved',
-  closed: 'Closed',
+export function getAllStatuses(): StatusConfig[] {
+  return [..._statusMap.values()].sort((a, b) => a.sort_order - b.sort_order)
 }
+
+export function statusColor(name: string): string {
+  return _statusMap.get(name)?.color ?? '#737373'
+}
+
+export function statusLabel(name: string): string {
+  return _statusMap.get(name)?.label ?? name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
+// Legacy constants kept for backward compat — backed by the dynamic map
+export const STATUS_COLORS: Record<string, string> = new Proxy({} as Record<string, string>, {
+  get: (_t, name: string) => statusColor(name),
+})
+export const STATUS_LABELS: Record<string, string> = new Proxy({} as Record<string, string>, {
+  get: (_t, name: string) => statusLabel(name),
+})
 
 export const PRIORITY_COLORS: Record<Priority, string> = {
   low: '#3B82F6',

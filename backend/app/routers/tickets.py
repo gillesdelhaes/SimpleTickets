@@ -16,7 +16,8 @@ from sqlalchemy.orm import aliased
 from app.auth.deps import get_current_user
 from app.database import get_session
 from app.models import Category, SLAPolicy, Ticket, TicketHistory, User
-from app.models.enums import Priority, TicketStatus
+from app.models.enums import Priority
+from app.models.ticket_status_config import TicketStatusConfig
 from app.schemas.ticket import TicketCreate, TicketListResponse, TicketRead, TicketUpdate
 from app.services.sla import apply_sla_status_change
 
@@ -25,9 +26,22 @@ _HISTORY_DISPLAY_FIELDS = {"status", "assignee_id", "priority", "category_id"}
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
-# ── helpers ────────────────────────────────────────────────────────────────────
 
-_RESOLVED_STATUSES = {TicketStatus.resolved, TicketStatus.closed}
+async def _get_resolved_status_names(session: AsyncSession) -> set[str]:
+    """Return the set of status slugs that have is_resolved_state=True."""
+    result = await session.execute(
+        select(TicketStatusConfig.name).where(TicketStatusConfig.is_resolved_state == True)  # noqa: E712
+    )
+    return {row[0] for row in result.all()} or {"resolved", "closed"}
+
+
+async def _get_default_status(session: AsyncSession) -> str:
+    """Return the slug of the is_default status, falling back to 'open'."""
+    result = await session.execute(
+        select(TicketStatusConfig.name).where(TicketStatusConfig.is_default == True)  # noqa: E712
+    )
+    row = result.scalar_one_or_none()
+    return row or "open"
 
 
 def _utcnow() -> datetime:
@@ -192,10 +206,12 @@ async def create_ticket(
     # submitter_id stays None and we store the Slack identity instead.
     slack_reporter = body.slack_reporter_id or None
 
+    default_status = await _get_default_status(session)
+
     ticket = Ticket(
         title=body.title,
         description=body.description,
-        status=TicketStatus.open,
+        status=default_status,
         priority=body.priority,
         category_id=body.category_id,
         submitter_id=None if slack_reporter else current_user.id,
@@ -212,7 +228,7 @@ async def create_ticket(
     await session.flush()  # get ticket.id before history insert
 
     # Seed history entry for creation
-    _record_history(session, ticket.id, current_user.id, {"status": (None, TicketStatus.open.value)})
+    _record_history(session, ticket.id, current_user.id, {"status": (None, default_status)})
 
     await session.commit()
     await session.refresh(ticket)
@@ -240,7 +256,7 @@ async def create_ticket(
 
 @router.get("", response_model=TicketListResponse)
 async def list_tickets(
-    status_filter: list[TicketStatus] = Query(default=[], alias="status"),
+    status_filter: list[str] = Query(default=[], alias="status"),
     priority_filter: list[Priority] = Query(default=[], alias="priority"),
     category_id: int | None = Query(default=None),
     assignee_id: int | None = Query(default=None),
@@ -365,17 +381,18 @@ async def update_ticket(
     # status
     if "status" in provided and body.status is not None:
         if ticket.status != body.status:
-            changes["status"] = (ticket.status.value, body.status.value)
+            resolved_names = await _get_resolved_status_names(session)
+            changes["status"] = (ticket.status, body.status)
             old_status = ticket.status
             ticket.status = body.status
 
-            # SLA pause/resume on pending_user transitions
-            apply_sla_status_change(ticket, body.status)
+            # SLA pause/resume based on the new status's pauses_sla flag
+            await apply_sla_status_change(ticket, body.status, session)
 
             # Track resolved_at transitions
-            if body.status in _RESOLVED_STATUSES and old_status not in _RESOLVED_STATUSES:
+            if body.status in resolved_names and old_status not in resolved_names:
                 ticket.resolved_at = now
-            elif body.status not in _RESOLVED_STATUSES and old_status in _RESOLVED_STATUSES:
+            elif body.status not in resolved_names and old_status in resolved_names:
                 ticket.resolved_at = None
 
     # assignee_id
@@ -421,7 +438,7 @@ async def update_ticket(
                 category_name=enriched.category_name,
             )
         except Exception:  # noqa: BLE001
-            pass
+            logger.exception("Failed to post field update to Slack for ticket %s", ticket_id)
 
     return enriched
 
