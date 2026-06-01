@@ -63,6 +63,22 @@ def upgrade() -> None:
     )
     op.create_index("ix_sla_policies_priority", "sla_policies", ["priority"], unique=False)
 
+    # ── ticket_statuses ────────────────────────────────────────────────────────
+    op.create_table(
+        "ticket_statuses",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("name", sa.String(), nullable=False),
+        sa.Column("label", sa.String(), nullable=False),
+        sa.Column("color", sa.String(), nullable=False),
+        sa.Column("pauses_sla", sa.Boolean(), nullable=False),
+        sa.Column("is_default", sa.Boolean(), nullable=False),
+        sa.Column("is_resolved_state", sa.Boolean(), nullable=False),
+        sa.Column("sort_order", sa.Integer(), nullable=False),
+        sa.Column("is_archived", sa.Boolean(), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index("ix_ticket_statuses_name", "ticket_statuses", ["name"], unique=True)
+
     # ── tickets ────────────────────────────────────────────────────────────────
     op.create_table(
         "tickets",
@@ -81,12 +97,14 @@ def upgrade() -> None:
         sa.Column("sla_breached", sa.Boolean(), nullable=False),
         sa.Column("sla_paused_at", sa.DateTime(), nullable=True),
         sa.Column("sla_paused_seconds", sa.Integer(), nullable=False),
+        sa.Column("sla_breach_warned_at", sa.DateTime(), nullable=True),
         sa.Column("source", sa.String(10), nullable=False, server_default="slack"),
         sa.Column("slack_channel_id", sqlmodel.AutoString(), nullable=True),
         sa.Column("slack_message_ts", sqlmodel.AutoString(), nullable=True),
         sa.Column("duplicate_of_id", sa.Integer(), nullable=True),
         sa.Column("first_response_deadline", sa.DateTime(), nullable=True),
         sa.Column("first_responded_at", sa.DateTime(), nullable=True),
+        sa.Column("first_response_warned_at", sa.DateTime(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.Column("resolved_at", sa.DateTime(), nullable=True),
@@ -237,6 +255,28 @@ def upgrade() -> None:
         ],
     )
 
+    # ── seed: ticket_statuses ──────────────────────────────────────────────────
+    op.bulk_insert(
+        sa.table(
+            "ticket_statuses",
+            sa.column("name", sa.String),
+            sa.column("label", sa.String),
+            sa.column("color", sa.String),
+            sa.column("pauses_sla", sa.Boolean),
+            sa.column("is_default", sa.Boolean),
+            sa.column("is_resolved_state", sa.Boolean),
+            sa.column("sort_order", sa.Integer),
+            sa.column("is_archived", sa.Boolean),
+        ),
+        [
+            {"name": "open",         "label": "Open",         "color": "#3B82F6", "pauses_sla": False, "is_default": True,  "is_resolved_state": False, "sort_order": 0, "is_archived": False},
+            {"name": "in_progress",  "label": "In Progress",  "color": "#FF4713", "pauses_sla": False, "is_default": False, "is_resolved_state": False, "sort_order": 1, "is_archived": False},
+            {"name": "pending_user", "label": "Pending User", "color": "#F59E0B", "pauses_sla": True,  "is_default": False, "is_resolved_state": False, "sort_order": 2, "is_archived": False},
+            {"name": "resolved",     "label": "Resolved",     "color": "#10B981", "pauses_sla": False, "is_default": False, "is_resolved_state": True,  "sort_order": 3, "is_archived": False},
+            {"name": "closed",       "label": "Closed",       "color": "#737373", "pauses_sla": False, "is_default": False, "is_resolved_state": True,  "sort_order": 4, "is_archived": False},
+        ],
+    )
+
     # ── seed: app_settings ─────────────────────────────────────────────────────
     op.bulk_insert(
         sa.table(
@@ -248,14 +288,14 @@ def upgrade() -> None:
             sa.column("updated_at", sa.DateTime),
         ),
         [
-            {"key": "setup_complete",       "value": None,     "is_secret": False, "group_name": "app",   "updated_at": _now},
-            {"key": "app_secret_key",       "value": None,     "is_secret": False, "group_name": "app",   "updated_at": _now},
-            {"key": "slack_bot_token",      "value": None,     "is_secret": True,  "group_name": "slack", "updated_at": _now},
-            {"key": "slack_app_token",      "value": None,     "is_secret": True,  "group_name": "slack", "updated_at": _now},
-            {"key": "slack_signing_secret", "value": None,     "is_secret": True,  "group_name": "slack", "updated_at": _now},
+            {"key": "setup_complete",       "value": None,        "is_secret": False, "group_name": "app",   "updated_at": _now},
+            {"key": "app_secret_key",       "value": None,        "is_secret": False, "group_name": "app",   "updated_at": _now},
+            {"key": "slack_bot_token",      "value": None,        "is_secret": True,  "group_name": "slack", "updated_at": _now},
+            {"key": "slack_app_token",      "value": None,        "is_secret": True,  "group_name": "slack", "updated_at": _now},
+            {"key": "slack_signing_secret", "value": None,        "is_secret": True,  "group_name": "slack", "updated_at": _now},
             {"key": "slack_trigger_emoji",  "value": "clipboard", "is_secret": False, "group_name": "slack", "updated_at": _now},
-            {"key": "slack_two_way_sync",   "value": "true",   "is_secret": False, "group_name": "slack", "updated_at": _now},
-            {"key": "timezone",             "value": "UTC",    "is_secret": False, "group_name": "app",   "updated_at": _now},
+            {"key": "slack_two_way_sync",   "value": "true",      "is_secret": False, "group_name": "slack", "updated_at": _now},
+            {"key": "timezone",             "value": "UTC",       "is_secret": False, "group_name": "app",   "updated_at": _now},
         ],
     )
 
@@ -268,6 +308,7 @@ def downgrade() -> None:
     op.drop_table("ticket_history")
     op.drop_table("ticket_replies")
     op.drop_table("tickets")
+    op.drop_table("ticket_statuses")
     op.drop_table("sla_policies")
     op.drop_table("categories")
     op.drop_table("users")
