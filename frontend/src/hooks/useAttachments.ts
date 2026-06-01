@@ -16,6 +16,7 @@ export function useAttachments(ticketId: number) {
     queryKey: ['attachments', ticketId],
     queryFn: async () => (await api.get(`/tickets/${ticketId}/attachments`)).data,
     staleTime: 30_000,
+    refetchInterval: 15_000,
   })
 }
 

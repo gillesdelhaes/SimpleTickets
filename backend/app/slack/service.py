@@ -145,6 +145,31 @@ async def create_ticket_from_slack(
 # ── Web → Slack sync ───────────────────────────────────────────────────────────
 
 
+async def notify_assignee_dm(ticket: Ticket, assignee_slack_user_id: str, actor_name: str) -> None:
+    """DM a technician when they are assigned a ticket."""
+    if not settings_manager.slack_two_way_sync:
+        return
+    from app.slack.bot import get_slack_client
+    client = get_slack_client()
+    if client is None:
+        return
+
+    priority_str = ticket.priority.value if hasattr(ticket.priority, "value") else str(ticket.priority)
+    emoji = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🔵"}.get(priority_str, "⚪")
+
+    try:
+        await client.chat_postMessage(
+            channel=assignee_slack_user_id,
+            text=(
+                f"🎫 *You've been assigned a ticket*\n"
+                f"*{ticket.display_id}* — {ticket.title}\n"
+                f"Priority: {emoji} {priority_str.capitalize()} · Assigned by {actor_name}"
+            ),
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("notify_assignee_dm: failed to DM assignee %s", assignee_slack_user_id)
+
+
 async def notify_reporter_dm(ticket: Ticket, slack_user_id: str) -> None:
     """
     Send a DM to a Slack user when a ticket is opened on their behalf via the web portal.

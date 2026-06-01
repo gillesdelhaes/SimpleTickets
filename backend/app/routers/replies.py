@@ -120,10 +120,12 @@ async def create_reply(
 
     # Public reply on a resolved/closed ticket → re-open
     old_status = ticket.status
+    reopened = False
     if old_status in resolved_names and not is_internal:
         ticket.status = reopen_status
         ticket.resolved_at = None
         ticket.updated_at = now
+        reopened = True
         session.add(
             TicketHistory(
                 ticket_id=ticket.id,
@@ -156,7 +158,16 @@ async def create_reply(
     # returned Slack ts as reply.slack_ts so inbound dedup works correctly.
     if not is_internal and ticket.slack_channel_id and ticket.slack_message_ts:
         try:
-            from app.slack.service import post_reply_to_slack
+            from app.slack.service import post_reply_to_slack, post_ticket_update_to_slack
+
+            # If the ticket was re-opened, post the status change first
+            if reopened:
+                await post_ticket_update_to_slack(
+                    ticket,
+                    {"status": (old_status if isinstance(old_status, str) else old_status.value, reopen_status)},
+                    current_user.name,
+                )
+
             slack_ts = await post_reply_to_slack(ticket, body.body, current_user.name)
             if slack_ts and reply.slack_ts is None:
                 reply.slack_ts = slack_ts

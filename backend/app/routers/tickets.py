@@ -396,6 +396,7 @@ async def update_ticket(
                 ticket.resolved_at = None
 
     # assignee_id
+    new_assignee_slack_id: str | None = None
     if "assignee_id" in provided:
         new_assignee = body.assignee_id
         if new_assignee is not None:
@@ -405,6 +406,7 @@ async def update_ticket(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail="Assignee not found or inactive",
                 )
+            new_assignee_slack_id = assignee.slack_user_id
         if ticket.assignee_id != new_assignee:
             changes["assignee_id"] = (
                 str(ticket.assignee_id) if ticket.assignee_id else None,
@@ -439,6 +441,14 @@ async def update_ticket(
             )
         except Exception:  # noqa: BLE001
             logger.exception("Failed to post field update to Slack for ticket %s", ticket_id)
+
+    # DM the newly assigned technician if they have a Slack account
+    if "assignee_id" in changes and new_assignee_slack_id:
+        try:
+            from app.slack.service import notify_assignee_dm
+            await notify_assignee_dm(ticket, new_assignee_slack_id, current_user.name)
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to notify assignee for ticket %s", ticket_id)
 
     return enriched
 
