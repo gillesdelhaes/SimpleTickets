@@ -10,5 +10,6 @@ export function useTicket(id: number) {
       return data
     },
     staleTime: 15_000,
+    refetchInterval: 15_000, // poll every 15 s
   })
 }

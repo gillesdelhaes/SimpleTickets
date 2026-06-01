@@ -26,6 +26,7 @@ export function useReplies(ticketId: number) {
       return data
     },
     staleTime: 10_000,
+    refetchInterval: 15_000, // poll every 15 s
   })
 }
 

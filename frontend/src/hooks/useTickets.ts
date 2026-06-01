@@ -35,6 +35,7 @@ export function useTickets(params: UseTicketsParams = {}) {
       const { data } = await api.get<TicketListResponse>(`/tickets?${p.toString()}`)
       return data
     },
-    staleTime: 30_000, // 30 s — queue doesn't need to be real-time
+    staleTime: 30_000,
+    refetchInterval: 30_000, // poll every 30 s
   })
 }
