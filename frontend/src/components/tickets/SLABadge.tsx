@@ -1,13 +1,15 @@
-import { parseSLABar, type TicketRead } from '../../types/ticket'
+import { parseSLABar, type SLABarResult, type TicketRead } from '../../types/ticket'
 
 interface Props {
-  ticket: TicketRead
+  ticket?: TicketRead
+  /** Pre-computed SLA result — overrides ticket-based computation when provided */
+  slaResult?: SLABarResult | null
   /** 'bar' = inline progress bar (for tables), 'pill' = text pill (for detail views) */
   variant?: 'bar' | 'pill'
 }
 
-export default function SLABadge({ ticket, variant = 'bar' }: Props) {
-  const sla = parseSLABar(ticket)
+export default function SLABadge({ ticket, slaResult, variant = 'bar' }: Props) {
+  const sla = slaResult !== undefined ? slaResult : (ticket ? parseSLABar(ticket) : null)
 
   if (!sla) {
     return (
@@ -17,33 +19,42 @@ export default function SLABadge({ ticket, variant = 'bar' }: Props) {
 
   if (variant === 'pill') {
     return (
-      <span
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '5px',
-          padding: '2px 8px',
-          borderRadius: '999px',
-          fontSize: '11px',
-          fontWeight: 600,
-          color: sla.color,
-          background: `${sla.color}18`,
-          border: `1px solid ${sla.color}30`,
-          animation: sla.breached ? 'sla-pulse 1.5s ease-in-out infinite' : 'none',
-        }}
-      >
+      <>
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '5px',
+            padding: '2px 8px',
+            borderRadius: '999px',
+            fontSize: '11px',
+            fontWeight: 600,
+            color: sla.color,
+            background: `${sla.color}18`,
+            border: `1px solid ${sla.color}30`,
+            animation: sla.breached ? 'sla-pulse 1.5s ease-in-out infinite' : 'none',
+          }}
+        >
+          {sla.breached && (
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: sla.color, flexShrink: 0 }} />
+          )}
+          {sla.label}
+        </span>
         {sla.breached && (
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: sla.color, flexShrink: 0 }} />
+          <style>{`
+            @keyframes sla-pulse {
+              0%, 100% { opacity: 1; }
+              50% { opacity: 0.55; }
+            }
+          `}</style>
         )}
-        {sla.label}
-      </span>
+      </>
     )
   }
 
-  // Bar variant — slim progress bar with time label
+  // Bar variant — progress bar with time/breach label below
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', minWidth: 90 }}>
-      {/* Progress track */}
       <div
         style={{
           width: '100%',
@@ -64,11 +75,10 @@ export default function SLABadge({ ticket, variant = 'bar' }: Props) {
             borderRadius: 2,
             background: sla.color,
             transition: 'width 0.3s ease',
-            animation: sla.breached ? 'sla-pulse-opacity 1.5s ease-in-out infinite' : 'none',
+            animation: sla.breached ? 'sla-bar-pulse 1.5s ease-in-out infinite' : 'none',
           }}
         />
       </div>
-      {/* Time label */}
       <span
         style={{
           fontSize: '10px',
@@ -82,17 +92,14 @@ export default function SLABadge({ ticket, variant = 'bar' }: Props) {
         {sla.label}
       </span>
 
-      {/* Keyframe styles injected once */}
-      <style>{`
-        @keyframes sla-pulse-opacity {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.4; }
-        }
-        @keyframes sla-pulse {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.7; transform: scale(0.97); }
-        }
-      `}</style>
+      {sla.breached && (
+        <style>{`
+          @keyframes sla-bar-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+          }
+        `}</style>
+      )}
     </div>
   )
 }

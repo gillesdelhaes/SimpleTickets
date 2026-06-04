@@ -111,23 +111,24 @@ export function formatDuration(ms: number): string {
   return `${mins}m`
 }
 
-export function parseSLABar(ticket: TicketRead): {
-  pct: number
-  label: string
-  color: string
-  breached: boolean
-} | null {
-  if (!ticket.sla_deadline || !ticket.created_at) return null
+export type SLABarResult = { pct: number; label: string; color: string; breached: boolean }
 
-  if (ticket.sla_breached) {
+export function parseSLABarRaw(
+  deadline: string | null,
+  created_at: string,
+  preBreached = false,
+): SLABarResult | null {
+  if (!deadline || !created_at) return null
+
+  if (preBreached) {
     return { pct: 0, label: 'Breached', color: '#EF4444', breached: true }
   }
 
   const now = Date.now()
-  const created = new Date(ticket.created_at + 'Z').getTime()
-  const deadline = new Date(ticket.sla_deadline + 'Z').getTime()
-  const total = deadline - created
-  const remaining = deadline - now
+  const created = new Date(created_at + 'Z').getTime()
+  const dl = new Date(deadline + 'Z').getTime()
+  const total = dl - created
+  const remaining = dl - now
 
   if (remaining <= 0) {
     return { pct: 0, label: 'Overdue', color: '#EF4444', breached: true }
@@ -136,6 +137,10 @@ export function parseSLABar(ticket: TicketRead): {
   const pct = Math.max(0, Math.min(1, remaining / total))
   const color = pct > 0.5 ? '#10B981' : pct > 0.2 ? '#F59E0B' : '#EF4444'
   return { pct, label: formatDuration(remaining), color, breached: false }
+}
+
+export function parseSLABar(ticket: TicketRead): SLABarResult | null {
+  return parseSLABarRaw(ticket.sla_deadline, ticket.created_at, ticket.sla_breached)
 }
 
 let _timezone = 'UTC'

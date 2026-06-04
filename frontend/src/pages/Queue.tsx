@@ -123,7 +123,7 @@ function Pagination({ page, total, pageSize, onPrev, onNext }: PaginationProps) 
 
 // ── Queue page ─────────────────────────────────────────────────────────────────
 
-type SortCol = 'priority' | 'status' | 'created_at'
+type SortCol = 'priority' | 'status' | 'created_at' | 'sla'
 type SortDir = 'asc' | 'desc'
 
 export default function Queue() {
@@ -145,8 +145,9 @@ export default function Queue() {
   const assigneeFilter = searchParams.get('assignee') ?? 'all'
   const page = parseInt(searchParams.get('page') ?? '0', 10)
 
-  // Derive API params
-  const statusParam = selectedStatuses.length > 0 ? selectedStatuses : undefined
+  // Derive API params — default to non-resolved statuses when no explicit filter is set
+  const activeStatusNames = allStatuses.filter(s => !s.is_resolved_state).map(s => s.name)
+  const statusParam = selectedStatuses.length > 0 ? selectedStatuses : activeStatusNames
   const priorityParam = selectedPriorities.length > 0 ? selectedPriorities : undefined
   const assigneeIdParam: number | undefined =
     assigneeFilter === 'mine' ? (user?.id ?? undefined) : undefined
@@ -213,6 +214,10 @@ export default function Queue() {
           cmp = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]
         } else if (sortCol === 'status') {
           cmp = (statusOrder[a.status] ?? 99) - (statusOrder[b.status] ?? 99)
+        } else if (sortCol === 'sla') {
+          const aMs = a.sla_deadline ? new Date(a.sla_deadline + 'Z').getTime() : Infinity
+          const bMs = b.sla_deadline ? new Date(b.sla_deadline + 'Z').getTime() : Infinity
+          cmp = aMs - bMs
         } else {
           cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         }
@@ -274,7 +279,7 @@ export default function Queue() {
               Status
             </span>
             <Pill
-              label="All"
+              label="Active"
               active={selectedStatuses.length === 0}
               onClick={() => setParam('status', [])}
             />
@@ -373,7 +378,7 @@ export default function Queue() {
                     { label: 'Priority', col: 'priority' as SortCol },
                     { label: 'Status', col: 'status' as SortCol },
                     { label: 'Assignee', col: null },
-                    { label: 'SLA', col: null },
+                    { label: 'SLA', col: 'sla' as SortCol },
                     { label: 'Created', col: 'created_at' as SortCol },
                   ] as { label: string; col: SortCol | null }[]).map(({ label, col }) => (
                     <th

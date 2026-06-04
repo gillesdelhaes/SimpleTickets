@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import AppShell from '../components/layout/AppShell'
 import AuthImage from '../components/AuthImage'
 import SLABadge from '../components/tickets/SLABadge'
+import { parseSLABarRaw } from '../types/ticket'
 import { useTicket } from '../hooks/useTicket'
 import { useReplies, useAddReply, type ReplyRead } from '../hooks/useReplies'
 import { useTicketHistory, type HistoryEvent } from '../hooks/useTicketHistory'
@@ -687,37 +688,19 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
           </div>
         </MetaRow>
 
-        {/* SLA — resolution */}
-        {ticket.sla_deadline && (
-          <MetaRow label="SLA">
-            <SLABadge ticket={ticket} variant="pill" />
-          </MetaRow>
-        )}
-
-        {/* SLA — first response */}
-        {ticket.first_response_deadline && (
-          <MetaRow label="1st response">
-            {ticket.first_responded_at ? (
-              (() => {
-                const onTime = new Date(ticket.first_responded_at) <= new Date(ticket.first_response_deadline)
-                return (
-                  <span style={{ fontSize: 12, color: onTime ? '#10B981' : '#EF4444', fontWeight: 600 }}>
-                    {onTime ? '✓' : '✗'} {timeAgo(ticket.first_responded_at)}
-                  </span>
-                )
-              })()
-            ) : (
-              (() => {
-                const overdue = Date.now() > new Date(ticket.first_response_deadline + 'Z').getTime()
-                return (
-                  <span style={{ fontSize: 12, color: overdue ? '#EF4444' : '#F59E0B', fontWeight: 500 }}>
-                    {overdue ? 'Overdue' : 'Pending'}
-                  </span>
-                )
-              })()
-            )}
-          </MetaRow>
-        )}
+        {/* SLA — context-aware: first-response until replied, resolution after */}
+        {(ticket.first_response_deadline || ticket.sla_deadline) && (() => {
+          const awaitingFirstResponse = !ticket.first_responded_at && ticket.first_response_deadline
+          const slaResult = awaitingFirstResponse
+            ? parseSLABarRaw(ticket.first_response_deadline, ticket.created_at)
+            : parseSLABarRaw(ticket.sla_deadline, ticket.created_at, ticket.sla_breached)
+          const label = awaitingFirstResponse ? '1st response' : 'SLA'
+          return (
+            <MetaRow label={label}>
+              <SLABadge slaResult={slaResult} variant="pill" />
+            </MetaRow>
+          )
+        })()}
 
         {/* Channel */}
         <MetaRow label="Channel">
