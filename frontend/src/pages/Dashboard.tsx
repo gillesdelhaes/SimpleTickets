@@ -5,8 +5,9 @@ import PriorityBadge from '../components/tickets/PriorityBadge'
 import { useTickets } from '../hooks/useTickets'
 import { useUnreadReplies } from '../hooks/useUnreadReplies'
 import { useActivity, type ActivityEvent } from '../hooks/useActivity'
+import { useAppConfig } from '../hooks/useAppConfig'
 import { useAuth } from '../contexts/AuthContext'
-import { timeAgo, type TicketRead } from '../types/ticket'
+import { getAllStatuses, timeAgo, type TicketRead } from '../types/ticket'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -90,9 +91,13 @@ function AttentionItem({ ticket, reason, onClick }: { ticket: TicketRead; reason
 
 function NeedsAttention({ userId }: { userId: number }) {
   const navigate = useNavigate()
+  const { data: appConfig } = useAppConfig()
+  const activeStatuses = (appConfig?.statuses ?? getAllStatuses())
+    .filter(s => !s.is_resolved_state)
+    .map(s => s.name)
   const { data: myTickets, isLoading } = useTickets({
     assignee_id: userId,
-    status: ['open', 'in_progress', 'pending_user'],
+    status: activeStatuses,
     limit: 100,
   })
   const { data: unreadData } = useUnreadReplies()
@@ -163,7 +168,11 @@ function NeedsAttention({ userId }: { userId: number }) {
 
 function UnassignedBanner() {
   const navigate = useNavigate()
-  const { data } = useTickets({ unassigned: true, status: ['open', 'in_progress'], limit: 1 })
+  const { data: bannerConfig } = useAppConfig()
+  const bannerActiveStatuses = (bannerConfig?.statuses ?? getAllStatuses())
+    .filter(s => !s.is_resolved_state)
+    .map(s => s.name)
+  const { data } = useTickets({ unassigned: true, status: bannerActiveStatuses, limit: 1 })
   const count = data?.total ?? 0
 
   return (
