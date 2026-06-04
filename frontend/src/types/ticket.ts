@@ -141,6 +141,15 @@ export function parseSLABarRaw(
 }
 
 export function parseSLABar(ticket: TicketRead): SLABarResult | null {
+  const statusConfig = _statusMap.get(ticket.status)
+  if (statusConfig?.pauses_sla) {
+    if (!ticket.sla_deadline || !ticket.created_at) return null
+    const dl      = new Date(ticket.sla_deadline + 'Z').getTime()
+    const created = new Date(ticket.created_at   + 'Z').getTime()
+    const now     = Date.now()
+    const pct     = Math.max(0, Math.min(1, (dl - now) / (dl - created)))
+    return { pct, label: 'Paused', color: statusConfig.color, breached: false }
+  }
   return parseSLABarRaw(ticket.sla_deadline, ticket.created_at, ticket.sla_breached)
 }
 
