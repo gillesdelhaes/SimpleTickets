@@ -367,6 +367,32 @@ export default function Users() {
     },
   })
 
+  const [setPasswordFor, setSetPasswordFor] = useState<number | null>(null)
+  const [newPassword, setNewPassword] = useState('')
+  const [setPasswordState, setSetPasswordState] = useState<'idle' | 'saving' | 'ok' | 'error'>('idle')
+
+  async function handleSetPassword(userId: number) {
+    if (newPassword.length < 8) return
+    setSetPasswordState('saving')
+    try {
+      await api.post(`/admin/users/${userId}/set-password`, { new_password: newPassword })
+      setSetPasswordState('ok')
+      setTimeout(() => {
+        setSetPasswordFor(null)
+        setNewPassword('')
+        setSetPasswordState('idle')
+      }, 1500)
+    } catch {
+      setSetPasswordState('error')
+    }
+  }
+
+  function openSetPassword(userId: number) {
+    setSetPasswordFor(userId)
+    setNewPassword('')
+    setSetPasswordState('idle')
+  }
+
   const FILTER_PILLS = [
     { id: 'all', label: 'All' },
     { id: 'technician', label: 'Technician' },
@@ -516,14 +542,44 @@ export default function Users() {
                     </td>
                     {/* Actions */}
                     <td style={{ padding: '11px 16px' }}>
-                      <button
-                        onClick={() => toggleActive.mutate({ id: user.id, is_active: !user.is_active })}
-                        style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #E5E5E5', background: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer', color: user.is_active ? '#EF4444' : '#10B981', transition: 'all 0.12s', whiteSpace: 'nowrap' }}
-                        onMouseEnter={e => { e.currentTarget.style.borderColor = user.is_active ? '#FECACA' : '#6EE7B7'; e.currentTarget.style.background = user.is_active ? '#FEF2F2' : '#F0FDF4' }}
-                        onMouseLeave={e => { e.currentTarget.style.borderColor = '#E5E5E5'; e.currentTarget.style.background = '#fff' }}
-                      >
-                        {user.is_active ? 'Deactivate' : 'Reactivate'}
-                      </button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <button
+                          onClick={() => toggleActive.mutate({ id: user.id, is_active: !user.is_active })}
+                          style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #E5E5E5', background: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer', color: user.is_active ? '#EF4444' : '#10B981', transition: 'all 0.12s', whiteSpace: 'nowrap' }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor = user.is_active ? '#FECACA' : '#6EE7B7'; e.currentTarget.style.background = user.is_active ? '#FEF2F2' : '#F0FDF4' }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = '#E5E5E5'; e.currentTarget.style.background = '#fff' }}
+                        >
+                          {user.is_active ? 'Deactivate' : 'Reactivate'}
+                        </button>
+                        <button
+                          onClick={() => setPasswordFor === user.id ? (setSetPasswordFor(null), setNewPassword(''), setSetPasswordState('idle')) : openSetPassword(user.id)}
+                          style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #E5E5E5', background: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer', color: '#737373', transition: 'all 0.12s', whiteSpace: 'nowrap' }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor = '#C0C0C0'; e.currentTarget.style.background = '#F9F9F9' }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = '#E5E5E5'; e.currentTarget.style.background = '#fff' }}
+                        >
+                          Set password
+                        </button>
+                      </div>
+                      {setPasswordFor === user.id && (
+                        <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <input
+                            type="password"
+                            value={newPassword}
+                            onChange={e => { setNewPassword(e.target.value); setSetPasswordState('idle') }}
+                            placeholder="New password (min 8)"
+                            autoFocus
+                            style={{ ...inp, width: 180, padding: '5px 8px', fontSize: 12 }}
+                          />
+                          <button
+                            onClick={() => handleSetPassword(user.id)}
+                            disabled={newPassword.length < 8 || setPasswordState === 'saving'}
+                            style={{ padding: '5px 10px', borderRadius: 6, border: 'none', fontSize: 11, fontWeight: 600, cursor: newPassword.length >= 8 ? 'pointer' : 'not-allowed', background: newPassword.length >= 8 ? '#0A0A0A' : '#F2F2F2', color: newPassword.length >= 8 ? '#fff' : '#A3A3A3', whiteSpace: 'nowrap' }}
+                          >
+                            {setPasswordState === 'saving' ? '…' : setPasswordState === 'ok' ? '✓ Saved' : 'Save'}
+                          </button>
+                          {setPasswordState === 'error' && <span style={{ fontSize: 11, color: '#EF4444' }}>Failed</span>}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))

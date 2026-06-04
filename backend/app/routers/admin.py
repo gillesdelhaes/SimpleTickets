@@ -83,6 +83,30 @@ async def create_local_user(
     return UserRead.model_validate(user)
 
 
+# ── POST /admin/users/{id}/set-password ───────────────────────────────────────
+
+
+class SetPasswordRequest(BaseModel):
+    new_password: str
+
+
+@router.post("/users/{user_id}/set-password", status_code=status.HTTP_204_NO_CONTENT)
+async def set_user_password(
+    user_id: int,
+    body: SetPasswordRequest,
+    admin: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Set a user's password directly. Admin only."""
+    if not body.new_password or len(body.new_password) < 8:
+        raise HTTPException(status_code=422, detail="Password must be at least 8 characters")
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.hashed_password = hash_password(body.new_password)
+    await session.commit()
+
+
 # ── GET /admin/users ───────────────────────────────────────────────────────────
 
 

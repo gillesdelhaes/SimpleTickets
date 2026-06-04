@@ -256,6 +256,10 @@ export default function AppShell({ title, children }: AppShellProps) {
             <NavItem key={item.to} {...item} collapsed={collapsed} />
           ))}
 
+          {!isAdmin && (
+            <NavItem to="/admin/settings" label="My Account" icon={<IconSettings />} collapsed={collapsed} />
+          )}
+
           {isAdmin && (
             <>
               {/* Admin section divider */}

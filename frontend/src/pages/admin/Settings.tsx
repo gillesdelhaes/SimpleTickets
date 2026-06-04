@@ -2,19 +2,25 @@ import { useState, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import AppShell from '../../components/layout/AppShell'
+import { useAuth } from '../../contexts/AuthContext'
 import api from '../../lib/api'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Tab = 'general' | 'slack' | 'categories' | 'sla' | 'statuses' | 'backup'
+type Tab = 'general' | 'slack' | 'categories' | 'sla' | 'statuses' | 'backup' | 'account'
 
-const TABS: { id: Tab; label: string }[] = [
+const ADMIN_TABS: { id: Tab; label: string }[] = [
   { id: 'general', label: 'General' },
   { id: 'slack', label: 'Slack' },
   { id: 'categories', label: 'Categories' },
   { id: 'sla', label: 'SLA Policies' },
   { id: 'statuses', label: 'Statuses' },
   { id: 'backup', label: 'Backup & Restore' },
+  { id: 'account', label: 'My Account' },
+]
+
+const USER_TABS: { id: Tab; label: string }[] = [
+  { id: 'account', label: 'My Account' },
 ]
 
 type Priority = 'low' | 'medium' | 'high' | 'critical'
@@ -915,11 +921,138 @@ function Spin({ color = '#fff' }: { color?: string }) {
   return <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" style={{ animation: 'spin 0.8s linear infinite' }}><path d="M7 1a6 6 0 1 1-4.24 1.76" /></svg>
 }
 
+// ── Account tab ────────────────────────────────────────────────────────────────
+
+function AccountTab() {
+  const [current, setCurrent] = useState('')
+  const [next, setNext] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [showCurrent, setShowCurrent] = useState(false)
+  const [showNext, setShowNext] = useState(false)
+  const [status, setStatus] = useState<'idle' | 'saving' | 'ok' | 'error'>('idle')
+  const [errorMsg, setErrorMsg] = useState('')
+
+  const mismatch = next.length > 0 && confirm.length > 0 && next !== confirm
+  const canSubmit = current.length > 0 && next.length >= 8 && next === confirm && status !== 'saving'
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!canSubmit) return
+    setStatus('saving')
+    setErrorMsg('')
+    try {
+      await api.post('/auth/change-password', { current_password: current, new_password: next })
+      setStatus('ok')
+      setCurrent(''); setNext(''); setConfirm('')
+      setTimeout(() => setStatus('idle'), 3000)
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Something went wrong'
+      setErrorMsg(msg)
+      setStatus('error')
+    }
+  }
+
+  const eyeIcon = (visible: boolean) => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      {visible
+        ? <><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></>
+        : <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>
+      }
+    </svg>
+  )
+
+  return (
+    <div style={{ maxWidth: 420 }}>
+      <Card>
+        <CardHeader><SectionLabel>Change Password</SectionLabel></CardHeader>
+        <form onSubmit={handleSubmit}>
+          <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#737373' }}>Current password</label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showCurrent ? 'text' : 'password'}
+                  value={current}
+                  onChange={e => setCurrent(e.target.value)}
+                  autoComplete="current-password"
+                  style={{ ...inp, paddingRight: 36 }}
+                />
+                <button type="button" onClick={() => setShowCurrent(v => !v)}
+                  style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#A3A3A3', padding: 2, display: 'flex' }}>
+                  {eyeIcon(showCurrent)}
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#737373' }}>New password <span style={{ fontWeight: 400, color: '#A3A3A3' }}>(min 8 characters)</span></label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showNext ? 'text' : 'password'}
+                  value={next}
+                  onChange={e => setNext(e.target.value)}
+                  autoComplete="new-password"
+                  style={{ ...inp, paddingRight: 36 }}
+                />
+                <button type="button" onClick={() => setShowNext(v => !v)}
+                  style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#A3A3A3', padding: 2, display: 'flex' }}>
+                  {eyeIcon(showNext)}
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#737373' }}>Confirm new password</label>
+              <input
+                type="password"
+                value={confirm}
+                onChange={e => setConfirm(e.target.value)}
+                autoComplete="new-password"
+                style={{ ...inp, borderColor: mismatch ? '#EF4444' : undefined }}
+              />
+              {mismatch && <span style={{ fontSize: 12, color: '#EF4444' }}>Passwords don't match</span>}
+            </div>
+
+            {status === 'error' && (
+              <div style={{ background: '#FEF2F2', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 7, padding: '8px 12px', fontSize: 13, color: '#991B1B' }}>
+                {errorMsg}
+              </div>
+            )}
+            {status === 'ok' && (
+              <div style={{ background: '#F0FDF4', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 7, padding: '8px 12px', fontSize: 13, color: '#166534' }}>
+                Password updated successfully.
+              </div>
+            )}
+
+            <button type="submit" disabled={!canSubmit}
+              style={{
+                padding: '9px 20px', borderRadius: 8, border: 'none', alignSelf: 'flex-start',
+                background: canSubmit ? 'linear-gradient(135deg, #FF4713, #AD1164)' : '#F2F2F2',
+                color: canSubmit ? '#fff' : '#A3A3A3',
+                fontSize: 13, fontWeight: 600, cursor: canSubmit ? 'pointer' : 'not-allowed',
+                display: 'flex', alignItems: 'center', gap: 7,
+              }}>
+              {status === 'saving' && <Spin />}
+              Update password
+            </button>
+          </div>
+        </form>
+      </Card>
+    </div>
+  )
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────────
 
 export default function Settings() {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+  const tabs = isAdmin ? ADMIN_TABS : USER_TABS
+  const defaultTab: Tab = isAdmin ? 'general' : 'account'
+
   const [searchParams, setSearchParams] = useSearchParams()
-  const tab = (searchParams.get('tab') as Tab) ?? 'general'
+  const tab = (searchParams.get('tab') as Tab) ?? defaultTab
   function setTab(t: Tab) { setSearchParams({ tab: t }, { replace: true }) }
 
   return (
@@ -928,7 +1061,7 @@ export default function Settings() {
 
         {/* Tab bar */}
         <div style={{ display: 'flex', gap: 2, borderBottom: '1px solid #E5E5E5', marginBottom: 24 }}>
-          {TABS.map(t => (
+          {tabs.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
               style={{
                 padding: '8px 16px', borderRadius: '6px 6px 0 0', border: 'none',
@@ -943,12 +1076,13 @@ export default function Settings() {
           ))}
         </div>
 
-        {tab === 'general'    && <GeneralTab />}
-        {tab === 'slack'      && <SlackTab />}
-        {tab === 'categories' && <CategoriesTab />}
-        {tab === 'sla'        && <SLATab />}
-        {tab === 'statuses'   && <StatusesTab />}
-        {tab === 'backup'     && <BackupTab />}
+        {isAdmin && tab === 'general'    && <GeneralTab />}
+        {isAdmin && tab === 'slack'      && <SlackTab />}
+        {isAdmin && tab === 'categories' && <CategoriesTab />}
+        {isAdmin && tab === 'sla'        && <SLATab />}
+        {isAdmin && tab === 'statuses'   && <StatusesTab />}
+        {isAdmin && tab === 'backup'     && <BackupTab />}
+        {tab === 'account' && <AccountTab />}
       </div>
       <style>{`@keyframes shimmer{0%,100%{opacity:1}50%{opacity:.4}} @keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </AppShell>

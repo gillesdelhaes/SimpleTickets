@@ -6,11 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from pydantic import BaseModel
+
+from app.auth.deps import get_current_user
 from app.auth.jwt import create_access_token
 from app.database import get_session
 from app.models import User
 from app.schemas.auth import LoginRequest, TokenResponse
-from app.services.passwords import verify_password
+from app.services.passwords import hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -76,3 +79,23 @@ async def login(
 async def logout() -> dict:
     """JWT is stateless — token removal is handled client-side."""
     return {"message": "Logged out"}
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(
+    body: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Change the authenticated user's own password."""
+    if not body.new_password or len(body.new_password) < 8:
+        raise HTTPException(status_code=422, detail="New password must be at least 8 characters")
+    if not current_user.hashed_password or not verify_password(body.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    current_user.hashed_password = hash_password(body.new_password)
+    await session.commit()

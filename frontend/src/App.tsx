@@ -31,10 +31,14 @@ export default function App() {
             <Route path="/reports" element={<Reports />} />
           </Route>
 
+          {/* ── Settings: all logged-in users (admin tabs hidden for non-admins) ── */}
+          <Route element={<ProtectedRoute roles={['technician', 'admin']} />}>
+            <Route path="/admin/settings" element={<AdminSettings />} />
+          </Route>
+
           {/* ── Admin only ── */}
           <Route element={<ProtectedRoute roles={['admin']} />}>
             <Route path="/admin/users" element={<AdminUsers />} />
-            <Route path="/admin/settings" element={<AdminSettings />} />
             <Route path="/admin/audit" element={<AdminAudit />} />
           </Route>
         </Routes>
