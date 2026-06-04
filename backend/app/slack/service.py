@@ -170,6 +170,25 @@ async def notify_assignee_dm(ticket: Ticket, assignee_slack_user_id: str, actor_
         logger.exception("notify_assignee_dm: failed to DM assignee %s", assignee_slack_user_id)
 
 
+async def notify_duplicate_dm(ticket: Ticket, canonical: Ticket, submitter_slack_id: str) -> None:
+    """DM the ticket submitter when their ticket is closed as a duplicate."""
+    from app.slack.bot import get_slack_client
+    client = get_slack_client()
+    if client is None:
+        return
+    try:
+        await client.chat_postMessage(
+            channel=submitter_slack_id,
+            text=(
+                f"🔗 Your ticket *{ticket.display_id}* has been marked as a duplicate of "
+                f"*{canonical.display_id}* — {canonical.title}\n"
+                f"It has been closed. If you think this is incorrect, please reply here."
+            ),
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("notify_duplicate_dm: failed to DM %s", submitter_slack_id)
+
+
 async def notify_reporter_dm(ticket: Ticket, slack_user_id: str) -> None:
     """
     Send a DM to a Slack user when a ticket is opened on their behalf via the web portal.

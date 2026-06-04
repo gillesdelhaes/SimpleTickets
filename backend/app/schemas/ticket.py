@@ -34,6 +34,10 @@ class TicketCreate(BaseModel):
         return v
 
 
+class MarkDuplicateRequest(BaseModel):
+    duplicate_of_id: int
+
+
 class TicketUpdate(BaseModel):
     """
     All fields optional. Only fields present in the request body are applied.
@@ -90,6 +94,7 @@ class TicketRead(BaseModel):
     sla_breached: bool
 
     duplicate_of_id: Optional[int]
+    duplicate_of_title: Optional[str] = None
 
     source: str  # 'web' | 'slack'
 

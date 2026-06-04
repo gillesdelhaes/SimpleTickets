@@ -4,12 +4,13 @@ Ticket CRUD.
 Access: all endpoints require technician or admin role.
 """
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 logger = logging.getLogger(__name__)
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -18,11 +19,11 @@ from app.database import get_session
 from app.models import Category, SLAPolicy, Ticket, TicketHistory, User
 from app.models.enums import Priority
 from app.models.ticket_status_config import TicketStatusConfig
-from app.schemas.ticket import TicketCreate, TicketListResponse, TicketRead, TicketUpdate
+from app.schemas.ticket import MarkDuplicateRequest, TicketCreate, TicketListResponse, TicketRead, TicketUpdate
 from app.services.sla import apply_sla_status_change
 
 # Fields worth surfacing in the timeline
-_HISTORY_DISPLAY_FIELDS = {"status", "assignee_id", "priority", "category_id"}
+_HISTORY_DISPLAY_FIELDS = {"status", "assignee_id", "priority", "category_id", "duplicate_of"}
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
@@ -62,6 +63,7 @@ async def _fetch_enriched(
     """
     Submitter = aliased(User, flat=True)
     Assignee = aliased(User, flat=True)
+    DuplicateOf = aliased(Ticket, flat=True)
 
     base = (
         select(
@@ -69,10 +71,12 @@ async def _fetch_enriched(
             Submitter.name.label("submitter_name"),
             Assignee.name.label("assignee_name"),
             Category.name.label("category_name"),
+            DuplicateOf.title.label("duplicate_of_title"),
         )
         .outerjoin(Submitter, Ticket.submitter_id == Submitter.id)
         .outerjoin(Assignee, Ticket.assignee_id == Assignee.id)
         .outerjoin(Category, Ticket.category_id == Category.id)
+        .outerjoin(DuplicateOf, Ticket.duplicate_of_id == DuplicateOf.id)
     )
 
     for clause in where_clauses:
@@ -100,6 +104,7 @@ async def _fetch_enriched(
         sub_name: str | None = row[1]
         asg_name: str | None = row[2]
         cat_name: str | None = row[3]
+        dup_title: str | None = row[4]
 
         items.append(
             TicketRead(
@@ -119,6 +124,7 @@ async def _fetch_enriched(
                 sla_deadline=ticket.sla_deadline,
                 sla_breached=ticket.sla_breached,
                 duplicate_of_id=ticket.duplicate_of_id,
+                duplicate_of_title=dup_title,
                 source=ticket.source,
                 slack_channel_id=ticket.slack_channel_id,
                 slack_message_ts=ticket.slack_message_ts,
@@ -281,7 +287,11 @@ async def list_tickets(
     if unassigned:
         where.append(Ticket.assignee_id.is_(None))
     if q:
-        where.append(Ticket.title.ilike(f"%{q}%"))
+        search_clauses = [Ticket.title.ilike(f"%{q}%")]
+        tkt_match = re.match(r'^(?:TKT-)?(\d+)$', q.strip().upper())
+        if tkt_match:
+            search_clauses.append(Ticket.id == int(tkt_match.group(1)))
+        where.append(or_(*search_clauses))
 
     items, total = await _fetch_enriched(
         session,
@@ -527,3 +537,104 @@ async def get_ticket_history(
         }
         for row in rows
     ]
+
+
+# ── POST /tickets/{id}/mark-duplicate ─────────────────────────────────────────
+
+
+@router.post("/{ticket_id}/mark-duplicate", response_model=TicketRead)
+async def mark_duplicate(
+    ticket_id: int,
+    body: MarkDuplicateRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> TicketRead:
+    """Mark a ticket as a duplicate of another. Closes the duplicate ticket."""
+    ticket = await _get_ticket_or_404(session, ticket_id)
+    canonical = await _get_ticket_or_404(session, body.duplicate_of_id)
+
+    if ticket_id == body.duplicate_of_id:
+        raise HTTPException(status_code=400, detail="A ticket cannot be a duplicate of itself")
+    if canonical.duplicate_of_id is not None:
+        raise HTTPException(status_code=400, detail="Cannot link to a ticket that is itself a duplicate")
+
+    now = _utcnow()
+    changes: dict[str, tuple[str | None, str | None]] = {}
+
+    old_dup = ticket.duplicate_of_id
+    ticket.duplicate_of_id = body.duplicate_of_id
+    changes["duplicate_of"] = (
+        f"TKT-{old_dup:04d}" if old_dup else None,
+        canonical.display_id,
+    )
+
+    # Close the duplicate
+    resolved_names = await _get_resolved_status_names(session)
+    closed_status = (
+        "closed" if "closed" in resolved_names
+        else "resolved" if "resolved" in resolved_names
+        else next(iter(resolved_names), "closed")
+    )
+    if ticket.status not in resolved_names:
+        changes["status"] = (ticket.status, closed_status)
+        ticket.status = closed_status
+        ticket.resolved_at = now
+        await apply_sla_status_change(ticket, closed_status, session)
+
+    ticket.updated_at = now
+    _record_history(session, ticket.id, current_user.id, changes)
+    await session.commit()
+    await session.refresh(ticket)
+
+    # DM the submitter
+    submitter_slack_id: str | None = ticket.slack_submitter_id
+    if not submitter_slack_id and ticket.submitter_id:
+        submitter = await session.get(User, ticket.submitter_id)
+        submitter_slack_id = submitter.slack_user_id if submitter else None
+    if submitter_slack_id:
+        try:
+            from app.slack.service import notify_duplicate_dm
+            await notify_duplicate_dm(ticket, canonical, submitter_slack_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to send duplicate DM for ticket %s", ticket_id)
+
+    items, _ = await _fetch_enriched(session, [Ticket.id == ticket_id])
+    return items[0]
+
+
+# ── DELETE /tickets/{id}/mark-duplicate ───────────────────────────────────────
+
+
+@router.delete("/{ticket_id}/mark-duplicate", response_model=TicketRead)
+async def unmark_duplicate(
+    ticket_id: int,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> TicketRead:
+    """Remove a duplicate link and re-open the ticket."""
+    ticket = await _get_ticket_or_404(session, ticket_id)
+
+    if ticket.duplicate_of_id is None:
+        raise HTTPException(status_code=400, detail="Ticket is not marked as a duplicate")
+
+    now = _utcnow()
+    default_status = await _get_default_status(session)
+
+    changes: dict[str, tuple[str | None, str | None]] = {
+        "duplicate_of": (f"TKT-{ticket.duplicate_of_id:04d}", None),
+    }
+    ticket.duplicate_of_id = None
+
+    resolved_names = await _get_resolved_status_names(session)
+    if ticket.status in resolved_names:
+        changes["status"] = (ticket.status, default_status)
+        ticket.status = default_status
+        ticket.resolved_at = None
+        await apply_sla_status_change(ticket, default_status, session)
+
+    ticket.updated_at = now
+    _record_history(session, ticket.id, current_user.id, changes)
+    await session.commit()
+
+    items, _ = await _fetch_enriched(session, [Ticket.id == ticket_id])
+    return items[0]

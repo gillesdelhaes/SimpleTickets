@@ -5,6 +5,7 @@ import AppShell from '../components/layout/AppShell'
 import AuthImage from '../components/AuthImage'
 import SLABadge from '../components/tickets/SLABadge'
 import { parseSLABarRaw } from '../types/ticket'
+import { useMarkDuplicate, useUnmarkDuplicate } from '../hooks/useDuplicate'
 import { useTicket } from '../hooks/useTicket'
 import { useReplies, useAddReply, type ReplyRead } from '../hooks/useReplies'
 import { useTicketHistory, type HistoryEvent } from '../hooks/useTicketHistory'
@@ -498,6 +499,144 @@ function SavedFlash({ show }: { show: boolean }) {
   )
 }
 
+// ── Duplicate picker ───────────────────────────────────────────────────────────
+
+function DuplicatePickerRow({ ticket }: { ticket: TicketRead }) {
+  const navigate = useNavigate()
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<TicketRead[]>([])
+  const [open, setOpen] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const markDuplicate = useMarkDuplicate(ticket.id)
+  const unmarkDuplicate = useUnmarkDuplicate(ticket.id)
+
+  function handleQueryChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const val = e.target.value
+    setQuery(val)
+    if (timerRef.current) clearTimeout(timerRef.current)
+    if (!val.trim()) { setResults([]); setOpen(false); return }
+    timerRef.current = setTimeout(async () => {
+      try {
+        const res = await api.get<{ items: TicketRead[] }>('/tickets', {
+          params: { q: val, limit: 8 },
+        })
+        const filtered = res.data.items.filter(t => t.id !== ticket.id)
+        setResults(filtered)
+        setOpen(filtered.length > 0)
+      } catch { /* ignore */ }
+    }, 300)
+  }
+
+  function selectResult(t: TicketRead) {
+    setOpen(false)
+    setQuery('')
+    setResults([])
+    markDuplicate.mutate(t.id)
+  }
+
+  if (ticket.duplicate_of_id) {
+    const displayId = `TKT-${String(ticket.duplicate_of_id).padStart(4, '0')}`
+    return (
+      <MetaRow label="Duplicate of">
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+          <button
+            onClick={() => navigate(`/tickets/${ticket.duplicate_of_id}`)}
+            style={{
+              background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+              textAlign: 'left', flex: 1,
+            }}
+          >
+            <span style={{
+              fontFamily: 'JetBrains Mono, monospace', fontSize: 11,
+              fontWeight: 700, color: '#F59E0B',
+            }}>
+              {displayId}
+            </span>
+            {ticket.duplicate_of_title && (
+              <span style={{ display: 'block', fontSize: 12, color: '#737373', marginTop: 2, lineHeight: 1.4 }}>
+                {ticket.duplicate_of_title}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => unmarkDuplicate.mutate()}
+            disabled={unmarkDuplicate.isPending}
+            title="Unlink duplicate"
+            style={{
+              background: 'none', border: '1px solid #E5E5E5', borderRadius: 5,
+              padding: '2px 7px', fontSize: 11, color: '#A3A3A3',
+              cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+            }}
+            onMouseEnter={e => { e.currentTarget.style.color = '#EF4444'; e.currentTarget.style.borderColor = '#EF4444' }}
+            onMouseLeave={e => { e.currentTarget.style.color = '#A3A3A3'; e.currentTarget.style.borderColor = '#E5E5E5' }}
+          >
+            Unlink
+          </button>
+        </div>
+      </MetaRow>
+    )
+  }
+
+  return (
+    <MetaRow label="Duplicate of">
+      <div style={{ position: 'relative' }}>
+        <input
+          type="text"
+          value={query}
+          onChange={handleQueryChange}
+          onFocus={() => results.length > 0 && setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          placeholder="Search by ID or title…"
+          style={{
+            width: '100%', padding: '6px 10px', borderRadius: 6,
+            border: '1px solid #E5E5E5', fontSize: 12, color: '#262626',
+            background: '#fff', outline: 'none', boxSizing: 'border-box',
+            fontFamily: 'Inter, system-ui, sans-serif',
+          }}
+        />
+        {markDuplicate.isPending && (
+          <span style={{
+            position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+            width: 10, height: 10, borderRadius: '50%',
+            border: '2px solid #E5E5E5', borderTopColor: '#FF4713',
+            display: 'inline-block', animation: 'spin 0.7s linear infinite',
+          }} />
+        )}
+        {open && (
+          <div style={{
+            position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20,
+            background: '#fff', border: '1px solid #E5E5E5', borderRadius: 8,
+            marginTop: 4, boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
+            overflow: 'hidden',
+          }}>
+            {results.map(t => (
+              <button
+                key={t.id}
+                onMouseDown={() => selectResult(t)}
+                style={{
+                  display: 'block', width: '100%', padding: '8px 12px',
+                  background: 'none', border: 'none', textAlign: 'left',
+                  cursor: 'pointer', borderBottom: '1px solid #F2F2F2',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = '#F9F9F9')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+              >
+                <span style={{
+                  fontFamily: 'JetBrains Mono, monospace', fontSize: 10,
+                  color: '#A3A3A3', marginRight: 6,
+                }}>
+                  {t.display_id}
+                </span>
+                <span style={{ fontSize: 12, color: '#262626' }}>{t.title}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </MetaRow>
+  )
+}
+
 // ── Metadata sidebar ───────────────────────────────────────────────────────────
 
 interface MetaSidebarProps {
@@ -727,6 +866,9 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
           </span>
         </MetaRow>
 
+        {/* Duplicate link */}
+        <DuplicatePickerRow ticket={ticket} />
+
         {/* Submitter */}
         {ticket.submitter_name && (
           <MetaRow label="Submitted by">
@@ -780,6 +922,7 @@ const FIELD_LABELS: Record<string, string> = {
   priority: 'priority',
   assignee_id: 'assignee',
   category_id: 'category',
+  duplicate_of: 'duplicate link',
 }
 
 function formatHistoryValue(field: string, value: string | null): React.ReactNode {
@@ -794,6 +937,13 @@ function formatHistoryValue(field: string, value: string | null): React.ReactNod
       }}>
         {statusLabel(value)}
       </span>
+    )
+  }
+  if (field === 'duplicate_of') {
+    return (
+      <strong style={{ color: '#F59E0B', fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>
+        {value}
+      </strong>
     )
   }
   return <strong style={{ color: '#262626' }}>{value}</strong>
@@ -1129,6 +1279,42 @@ export default function TicketDetail() {
                       .
                     </>
                 }
+              </span>
+            </div>
+          )}
+
+          {/* Duplicate banner */}
+          {ticket.duplicate_of_id && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '8px 14px',
+                marginBottom: 20,
+                background: '#FFFBEB',
+                border: '1px solid #FDE68A',
+                borderLeft: '3px solid #F59E0B',
+                borderRadius: '0 8px 8px 0',
+                fontSize: 12,
+                color: '#78350F',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+              </svg>
+              <span>
+                This ticket is a duplicate of{' '}
+                <Link
+                  to={`/tickets/${ticket.duplicate_of_id}`}
+                  style={{ color: '#B45309', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
+                >
+                  TKT-{String(ticket.duplicate_of_id).padStart(4, '0')}
+                </Link>
+                {ticket.duplicate_of_title && (
+                  <> — {ticket.duplicate_of_title}</>
+                )}
               </span>
             </div>
           )}
