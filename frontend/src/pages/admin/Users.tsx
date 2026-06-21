@@ -356,14 +356,22 @@ export default function Users() {
   })
 
   const toggleActive = useMutation({
-    mutationFn: ({ id, is_active }: { id: number; is_active: boolean }) =>
-      api.patch<UserRead>(`/admin/users/${id}`, { is_active }).then(r => r.data),
+    mutationFn: ({ id, is_active, force = false }: { id: number; is_active: boolean; force?: boolean }) =>
+      api.patch<UserRead>(`/admin/users/${id}${force ? '?force=true' : ''}`, { is_active }).then(r => r.data),
     onSuccess: updated => {
       queryClient.setQueryData<UserListResponse>(
         ['admin-users', { debouncedSearch, roleFilter, activeFilter, page }],
         old => old ? { ...old, items: old.items.map(u => u.id === updated.id ? updated : u) } : old
       )
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+    },
+    onError: (err: unknown, variables) => {
+      const res = (err as { response?: { data?: { detail?: string }; status?: number } })?.response
+      if (res?.status === 409 && variables.is_active === false) {
+        if (window.confirm(res.data?.detail ?? 'This technician has open tickets. Deactivate anyway?')) {
+          toggleActive.mutate({ ...variables, force: true })
+        }
+      }
     },
   })
 

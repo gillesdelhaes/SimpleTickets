@@ -149,6 +149,7 @@ async def update_user(
     user_id: int,
     body: UserAdminUpdate,
     request: Request,
+    force: bool = Query(default=False),
     admin: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> UserRead:
@@ -193,6 +194,20 @@ async def update_user(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You cannot deactivate your own account",
             )
+        if body.is_active is False and user.is_active and not force:
+            open_count: int = (await session.execute(
+                select(func.count()).select_from(
+                    select(Ticket).where(
+                        Ticket.assignee_id == user_id,
+                        Ticket.resolved_at.is_(None),
+                    ).subquery()
+                )
+            )).scalar_one()
+            if open_count > 0:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"This technician has {open_count} open ticket(s) assigned. Deactivate anyway?",
+                )
         if user.is_active != body.is_active:
             action = "user.activated" if body.is_active else "user.deactivated"
             changes["is_active"] = {"from": user.is_active, "to": body.is_active}
