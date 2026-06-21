@@ -6,14 +6,6 @@ class Role(str, Enum):
     admin = "admin"
 
 
-class TicketStatus(str, Enum):
-    open = "open"
-    in_progress = "in_progress"
-    pending_user = "pending_user"
-    resolved = "resolved"
-    closed = "closed"
-
-
 class Priority(str, Enum):
     low = "low"
     medium = "medium"
