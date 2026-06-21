@@ -34,19 +34,34 @@ interface SearchResponse {
 }
 
 // ── Highlighted snippet ────────────────────────────────────────────────────────
-// The backend returns ts_headline output with <b>…</b> tags for matches.
-// We render this as HTML safely — the content is server-generated from
-// trusted DB data, not user-supplied HTML.
+// The backend returns ts_headline output with <b>…</b> tags around matched terms.
+// We split on those tags, HTML-escape the text segments, then replace <b>/<b> with
+// <mark> so arbitrary ticket content cannot inject HTML.
+
+function sanitizeHeadline(html: string): string {
+  return html
+    .split(/(<b>|<\/b>)/g)
+    .map(part => {
+      if (part === '<b>' || part === '</b>') return part
+      return part
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+    })
+    .join('')
+}
 
 function Headline({ html }: { html: string }) {
   if (!html) return null
+  const safe = sanitizeHeadline(html)
+    .replace(/<b>/g, '<mark style="background:rgba(255,71,19,0.12);color:#CC3300;border-radius:2px;padding:0 2px;font-weight:600">')
+    .replace(/<\/b>/g, '</mark>')
   return (
     <p
       style={{ margin: 0, fontSize: 12, color: '#737373', lineHeight: 1.6 }}
-      // biome-ignore lint/security/noDangerouslySetInnerHtml: ts_headline output, not user HTML
-      dangerouslySetInnerHTML={{
-        __html: html.replace(/<b>/g, '<mark style="background:rgba(255,71,19,0.12);color:#CC3300;border-radius:2px;padding:0 2px;font-weight:600">').replace(/<\/b>/g, '</mark>'),
-      }}
+      // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitized — only <mark> tags remain
+      dangerouslySetInnerHTML={{ __html: safe }}
     />
   )
 }

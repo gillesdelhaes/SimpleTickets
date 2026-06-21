@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.config import settings, settings_manager
 from app.database import AsyncSessionLocal
@@ -54,13 +54,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# nginx proxies all /api requests so the browser sees a single origin — no CORS needed.
+# ProxyHeadersMiddleware trusts X-Real-IP / X-Forwarded-For from the nginx container
+# so the rate limiter and audit log see real client IPs instead of the proxy IP.
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 app.include_router(health.router,          prefix="/api")
 app.include_router(setup.router,           prefix="/api")

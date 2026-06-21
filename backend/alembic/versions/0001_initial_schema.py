@@ -162,6 +162,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("ticket_id", sa.Integer(), nullable=False),
         sa.Column("reply_id", sa.Integer(), nullable=True),
+        sa.Column("uploader_id", sa.Integer(), nullable=True),
         sa.Column("filename", sqlmodel.AutoString(), nullable=False),
         sa.Column("storage_path", sqlmodel.AutoString(), nullable=False),
         sa.Column("mime_type", sqlmodel.AutoString(), nullable=False),
@@ -170,6 +171,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(["reply_id"], ["ticket_replies.id"]),
         sa.ForeignKeyConstraint(["ticket_id"], ["tickets.id"]),
+        sa.ForeignKeyConstraint(["uploader_id"], ["users.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_ticket_attachments_ticket_id", "ticket_attachments", ["ticket_id"], unique=False)

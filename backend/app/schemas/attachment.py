@@ -8,6 +8,7 @@ class AttachmentRead(BaseModel):
     id: int
     ticket_id: int
     reply_id: Optional[int]
+    uploader_id: Optional[int]
     filename: str
     mime_type: str
     size_bytes: int

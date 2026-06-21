@@ -16,7 +16,7 @@ from sqlalchemy import insert as sa_insert, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import require_admin
-from app.config import settings
+from app.config import settings, settings_manager
 from app.database import get_session
 from app.models.app_setting import AppSetting
 from app.models.audit_log import AuditLog
@@ -171,7 +171,10 @@ async def restore_backup(
     if not fname.endswith(".zip"):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Upload must be a .zip file")
 
-    raw = await file.read()
+    _MAX_RESTORE_BYTES = 500 * 1024 * 1024  # 500 MB
+    raw = await file.read(_MAX_RESTORE_BYTES + 1)
+    if len(raw) > _MAX_RESTORE_BYTES:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Backup file exceeds 500 MB limit")
 
     try:
         zf = zipfile.ZipFile(io.BytesIO(raw))
@@ -214,6 +217,15 @@ async def restore_backup(
             deserialized = [_deserialize_row(r, "app_settings") for r in app_settings_rows]
             await session.execute(sa_insert(AppSetting.__table__), deserialized)
 
+        # Verify the restored data includes at least one admin — a corrupt backup must
+        # not lock out the current user with no recovery path.
+        restored_users = tables.get("users", [])
+        if not any(u.get("role") == "admin" for u in restored_users):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "Backup contains no admin users — restore aborted to prevent lockout",
+            )
+
         # Advance each sequence past the largest inserted ID so new rows get correct IDs.
         # When the table is empty MAX(id) is NULL: set sequence to 1 with is_called=false
         # so the next nextval() returns 1. When rows exist: set to max(id) with is_called=true
@@ -225,6 +237,7 @@ async def restore_backup(
             ))
 
         await session.commit()
+        settings_manager.invalidate()
     except Exception as exc:
         await session.rollback()
         raise HTTPException(
@@ -233,12 +246,14 @@ async def restore_backup(
         ) from exc
 
     # ── Restore attachment files ──────────────────────────────────────────────
-    storage_root = Path(settings.storage_local_path)
+    storage_root = Path(settings.storage_local_path).resolve()
     restored_files = 0
     for name in zf.namelist():
         if name.startswith("attachments/") and not name.endswith("/"):
             rel = name[len("attachments/"):]
-            dest = storage_root / rel
+            dest = (storage_root / rel).resolve()
+            if not dest.is_relative_to(storage_root):
+                continue  # skip path-traversal attempts
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(zf.read(name))
             restored_files += 1
