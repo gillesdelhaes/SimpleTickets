@@ -164,6 +164,38 @@ function NeedsAttention({ userId }: { userId: number }) {
   )
 }
 
+// ── Slack unconfigured notice ──────────────────────────────────────────────────
+
+function SlackUnconfiguredBanner() {
+  const navigate = useNavigate()
+  const { data: config } = useAppConfig()
+  if (!config || config.slack_configured) return null
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '12px 18px', marginBottom: 16,
+      background: '#FFFBEB', border: '1px solid #FDE68A',
+      borderRadius: 10, gap: 12,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+        <span style={{ fontSize: 13, color: '#92400E' }}>
+          Slack is not configured — your team won't receive alerts for new tickets.
+        </span>
+      </div>
+      <button
+        onClick={() => navigate('/admin/settings')}
+        style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid #FDE68A', background: '#FEF3C7', fontSize: 12, fontWeight: 600, color: '#92400E', cursor: 'pointer', whiteSpace: 'nowrap' }}
+      >
+        Configure Slack →
+      </button>
+    </div>
+  )
+}
+
 // ── Unassigned counter ─────────────────────────────────────────────────────────
 
 function UnassignedBanner() {
@@ -374,6 +406,8 @@ export default function Dashboard() {
   return (
     <AppShell title="Dashboard">
       <div style={{ padding: '28px 32px', maxWidth: 1200 }}>
+
+        <SlackUnconfiguredBanner />
 
         {/* Unassigned banner */}
         <div style={{ marginBottom: 20 }}>

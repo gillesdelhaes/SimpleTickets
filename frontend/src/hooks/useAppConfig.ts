@@ -5,6 +5,7 @@ import { setStatuses, setTimezone, type StatusConfig } from '../types/ticket'
 interface AppConfig {
   timezone: string
   statuses: StatusConfig[]
+  slack_configured: boolean
 }
 
 export function useAppConfig() {

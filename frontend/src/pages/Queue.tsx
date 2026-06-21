@@ -1,15 +1,18 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import AppShell from '../components/layout/AppShell'
 import StatusBadge from '../components/tickets/StatusBadge'
 import PriorityBadge from '../components/tickets/PriorityBadge'
 import SLABadge from '../components/tickets/SLABadge'
 import CreateTicketModal from '../components/tickets/CreateTicketModal'
 import { useTickets } from '../hooks/useTickets'
+import { useCategories } from '../hooks/useCategories'
 import { useAuth } from '../contexts/AuthContext'
 import { useUnreadReplies } from '../hooks/useUnreadReplies'
 import { getAllStatuses, timeAgo, type Priority } from '../types/ticket'
 import { useAppConfig } from '../hooks/useAppConfig'
+import api from '../lib/api'
 
 const PAGE_SIZE = 25
 
@@ -128,8 +131,10 @@ type SortDir = 'asc' | 'desc'
 
 export default function Queue() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { user } = useAuth()
   const { data: appConfig } = useAppConfig()
+  const { data: categories } = useCategories()
   const allStatuses = appConfig?.statuses ?? getAllStatuses()
   const statusOrder: Record<string, number> = Object.fromEntries(
     allStatuses.map((s, i) => [s.name, i])
@@ -143,6 +148,7 @@ export default function Queue() {
   const selectedStatuses = searchParams.getAll('status')
   const selectedPriorities = searchParams.getAll('priority') as Priority[]
   const assigneeFilter = searchParams.get('assignee') ?? 'all'
+  const categoryFilter = searchParams.get('category') ?? 'all'
   const page = parseInt(searchParams.get('page') ?? '0', 10)
 
   // Derive API params — default to non-resolved statuses when no explicit filter is set
@@ -152,6 +158,8 @@ export default function Queue() {
   const assigneeIdParam: number | undefined =
     assigneeFilter === 'mine' ? (user?.id ?? undefined) : undefined
   const unassignedParam = assigneeFilter === 'unassigned'
+  const categoryIdParam: number | undefined =
+    categoryFilter !== 'all' ? Number(categoryFilter) : undefined
 
   // Map UI sort column to API sort param (status stays client-side — dynamic ordering)
   const apiSort = sortCol === 'status' ? undefined : sortCol === 'sla' ? 'sla_deadline' : sortCol
@@ -162,6 +170,7 @@ export default function Queue() {
     priority: priorityParam,
     assignee_id: assigneeIdParam,
     unassigned: unassignedParam,
+    category_id: categoryIdParam,
     sort: apiSort,
     sort_dir: apiSortDir,
     limit: PAGE_SIZE,
@@ -203,6 +212,21 @@ export default function Queue() {
       next.set('page', '0')
       return next
     })
+  }
+
+  function setCategory(val: string) {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.set('category', val)
+      next.set('page', '0')
+      return next
+    })
+  }
+
+  async function handleClaim(e: React.MouseEvent, ticketId: number) {
+    e.stopPropagation()
+    await api.patch(`/tickets/${ticketId}`, { assignee_id: user?.id })
+    queryClient.invalidateQueries({ queryKey: ['tickets'] })
   }
 
   function setPage(p: number) {
@@ -331,6 +355,24 @@ export default function Queue() {
               />
             ))}
           </div>
+
+          {/* Category pills — only rendered when categories exist */}
+          {categories && categories.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: '#A3A3A3', textTransform: 'uppercase', letterSpacing: '0.06em', marginRight: 4, whiteSpace: 'nowrap' }}>
+                Category
+              </span>
+              <Pill label="All" active={categoryFilter === 'all'} onClick={() => setCategory('all')} />
+              {categories.map(c => (
+                <Pill
+                  key={c.id}
+                  label={c.name}
+                  active={categoryFilter === String(c.id)}
+                  onClick={() => setCategory(String(c.id))}
+                />
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Table */}
@@ -506,7 +548,17 @@ export default function Queue() {
                       <td style={{ padding: '9px 16px', whiteSpace: 'nowrap' }}>
                         {ticket.assignee_name
                           ? <span style={{ fontSize: 12, color: '#262626', fontWeight: 500 }}>{ticket.assignee_name}</span>
-                          : <span style={{ fontSize: 12, color: '#A3A3A3', fontStyle: 'italic' }}>Unassigned</span>
+                          : (
+                            <button
+                              type="button"
+                              onClick={e => handleClaim(e, ticket.id)}
+                              style={{ padding: '3px 8px', borderRadius: 5, border: '1px solid #E5E5E5', background: '#fff', fontSize: 11, fontWeight: 500, color: '#FF4713', cursor: 'pointer' }}
+                              onMouseEnter={e => (e.currentTarget.style.background = '#FFF5F0')}
+                              onMouseLeave={e => (e.currentTarget.style.background = '#fff')}
+                            >
+                              Claim
+                            </button>
+                          )
                         }
                       </td>
                       <td style={{ padding: '9px 16px' }}>

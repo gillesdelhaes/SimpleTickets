@@ -26,6 +26,7 @@ class StatusConfigRead(BaseModel):
 class AppConfig(BaseModel):
     timezone: str
     statuses: list[StatusConfigRead]
+    slack_configured: bool
 
 
 @router.get("/app-config", response_model=AppConfig)
@@ -33,6 +34,7 @@ async def get_app_config(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> AppConfig:
+    from app.config import settings_manager
     tz = await get_setting("timezone", session, default="UTC")
     rows = (
         await session.execute(
@@ -53,4 +55,4 @@ async def get_app_config(
         )
         for r in rows
     ]
-    return AppConfig(timezone=tz, statuses=statuses)
+    return AppConfig(timezone=tz, statuses=statuses, slack_configured=settings_manager.is_slack_configured())
