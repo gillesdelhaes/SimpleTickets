@@ -230,7 +230,11 @@ async def get_technicians(
             ).label("sla_pct"),
         )
         .join(User, Ticket.assignee_id == User.id)
-        .where(Ticket.created_at >= start, Ticket.created_at <= end)
+        .where(
+            Ticket.resolved_at.isnot(None),
+            Ticket.resolved_at >= start,
+            Ticket.resolved_at <= end,
+        )
         .group_by(User.id, User.name)
         .order_by(func.count(Ticket.id).desc())
     )

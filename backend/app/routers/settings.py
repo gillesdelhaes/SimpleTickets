@@ -110,6 +110,13 @@ async def update_settings(
             detail=f"Unknown or read-only settings keys: {invalid}",
         )
 
+    for item in body.settings:
+        if item.key == "slack_trigger_emoji" and not (item.value or "").strip():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="slack_trigger_emoji cannot be empty",
+            )
+
     slack_changed = False
     for item in body.settings:
         await set_setting(item.key, item.value, session)

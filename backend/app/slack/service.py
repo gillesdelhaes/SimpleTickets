@@ -225,6 +225,20 @@ async def notify_reporter_dm(ticket: Ticket, slack_user_id: str) -> None:
         logger.exception("notify_reporter_dm: failed to DM user %s", slack_user_id)
 
 
+async def _get_submitter_slack_id(ticket: Ticket) -> str | None:
+    """Return the Slack user ID for DM notifications.
+    Uses slack_submitter_id if present; falls back to the linked User.slack_user_id
+    for tickets submitted via the portal where only submitter_id is set."""
+    if ticket.slack_submitter_id:
+        return ticket.slack_submitter_id
+    if ticket.submitter_id:
+        async with AsyncSessionLocal() as session:
+            user = await session.get(User, ticket.submitter_id)
+            if user and user.slack_user_id:
+                return user.slack_user_id
+    return None
+
+
 async def post_reply_to_slack(
     ticket: Ticket,
     reply_body: str,
@@ -269,10 +283,11 @@ async def post_reply_to_slack(
         )
 
     # Top-level DM so the submitter sees an unread notification
-    if notify_submitter and ticket.slack_submitter_id:
+    submitter_slack_id = await _get_submitter_slack_id(ticket)
+    if notify_submitter and submitter_slack_id:
         try:
             await client.chat_postMessage(
-                channel=ticket.slack_submitter_id,
+                channel=submitter_slack_id,
                 text=(
                     f"💬 *New reply on {ticket.display_id}*\n"
                     f"*{author_name}:* {reply_body}\n"
@@ -356,10 +371,11 @@ async def post_ticket_update_to_slack(
         )
 
     # Top-level DM so the submitter sees an unread notification
-    if notify_submitter and ticket.slack_submitter_id:
+    submitter_slack_id = await _get_submitter_slack_id(ticket)
+    if notify_submitter and submitter_slack_id:
         try:
             await client.chat_postMessage(
-                channel=ticket.slack_submitter_id,
+                channel=submitter_slack_id,
                 text=text,
             )
         except Exception:  # noqa: BLE001

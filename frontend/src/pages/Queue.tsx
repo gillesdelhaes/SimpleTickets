@@ -153,11 +153,17 @@ export default function Queue() {
     assigneeFilter === 'mine' ? (user?.id ?? undefined) : undefined
   const unassignedParam = assigneeFilter === 'unassigned'
 
+  // Map UI sort column to API sort param (status stays client-side — dynamic ordering)
+  const apiSort = sortCol === 'status' ? undefined : sortCol === 'sla' ? 'sla_deadline' : sortCol
+  const apiSortDir = sortCol === 'status' ? undefined : sortDir
+
   const { data, isLoading } = useTickets({
     status: statusParam,
     priority: priorityParam,
     assignee_id: assigneeIdParam,
     unassigned: unassignedParam,
+    sort: apiSort,
+    sort_dir: apiSortDir,
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
   })
@@ -207,23 +213,14 @@ export default function Queue() {
     })
   }
 
-  const sortedItems = data?.items
+  // Status sort is client-side only (dynamic ordering from appConfig); everything
+  // else is sorted by the server via sort/sort_dir query params.
+  const sortedItems = sortCol === 'status' && data?.items
     ? [...data.items].sort((a, b) => {
-        let cmp = 0
-        if (sortCol === 'priority') {
-          cmp = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]
-        } else if (sortCol === 'status') {
-          cmp = (statusOrder[a.status] ?? 99) - (statusOrder[b.status] ?? 99)
-        } else if (sortCol === 'sla') {
-          const aMs = a.sla_deadline ? new Date(a.sla_deadline + 'Z').getTime() : Infinity
-          const bMs = b.sla_deadline ? new Date(b.sla_deadline + 'Z').getTime() : Infinity
-          cmp = aMs - bMs
-        } else {
-          cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        }
+        const cmp = (statusOrder[a.status] ?? 99) - (statusOrder[b.status] ?? 99)
         return sortDir === 'asc' ? cmp : -cmp
       })
-    : []
+    : (data?.items ?? [])
 
   function handleSort(col: SortCol) {
     if (sortCol === col) {

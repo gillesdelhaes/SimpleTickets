@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 logger = logging.getLogger(__name__)
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -26,6 +26,12 @@ from app.services.sla import apply_sla_status_change
 _HISTORY_DISPLAY_FIELDS = {"status", "assignee_id", "priority", "category_id", "duplicate_of"}
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
+
+_PRIORITY_ORDER = case(
+    {"critical": 0, "high": 1, "medium": 2, "low": 3},
+    value=Ticket.priority,
+    else_=4,
+)
 
 
 async def _get_resolved_status_names(session: AsyncSession) -> set[str]:
@@ -268,6 +274,8 @@ async def list_tickets(
     assignee_id: int | None = Query(default=None),
     unassigned: bool = Query(default=False),
     q: str | None = Query(default=None, description="Search in title"),
+    sort: str = Query(default="created_at"),
+    sort_dir: str = Query(default="desc"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     current_user: User = Depends(get_current_user),
@@ -293,9 +301,19 @@ async def list_tickets(
             search_clauses.append(Ticket.id == int(tkt_match.group(1)))
         where.append(or_(*search_clauses))
 
+    _sort_cols = {
+        "created_at": Ticket.created_at,
+        "updated_at": Ticket.updated_at,
+        "sla_deadline": Ticket.sla_deadline,
+        "priority": _PRIORITY_ORDER,
+    }
+    sort_col_expr = _sort_cols.get(sort, Ticket.created_at)
+    order_expr = sort_col_expr.asc() if sort_dir == "asc" else sort_col_expr.desc()
+
     items, total = await _fetch_enriched(
         session,
         where,
+        order_by=order_expr,
         limit=limit,
         offset=offset,
     )
