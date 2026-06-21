@@ -8,7 +8,7 @@ import CreateTicketModal from '../components/tickets/CreateTicketModal'
 import { useTickets } from '../hooks/useTickets'
 import { useAuth } from '../contexts/AuthContext'
 import { useUnreadReplies } from '../hooks/useUnreadReplies'
-import { PRIORITY_ORDER, getAllStatuses, timeAgo, type Priority } from '../types/ticket'
+import { getAllStatuses, timeAgo, type Priority } from '../types/ticket'
 import { useAppConfig } from '../hooks/useAppConfig'
 
 const PAGE_SIZE = 25
