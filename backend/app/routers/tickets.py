@@ -5,7 +5,7 @@ Access: all endpoints require technician or admin role.
 """
 import logging
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -21,6 +21,7 @@ from app.models.enums import Priority
 from app.models.ticket_status_config import TicketStatusConfig
 from app.schemas.ticket import MarkDuplicateRequest, TicketCreate, TicketListResponse, TicketRead, TicketUpdate
 from app.services.sla import apply_sla_status_change
+from app.utils import get_ticket_or_404, utcnow
 
 # Fields worth surfacing in the timeline
 _HISTORY_DISPLAY_FIELDS = {"status", "assignee_id", "priority", "category_id", "duplicate_of"}
@@ -49,10 +50,6 @@ async def _get_default_status(session: AsyncSession) -> str:
     )
     row = result.scalar_one_or_none()
     return row or "open"
-
-
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 async def _fetch_enriched(
@@ -145,12 +142,6 @@ async def _fetch_enriched(
     return items, total
 
 
-async def _get_ticket_or_404(session: AsyncSession, ticket_id: int) -> Ticket:
-    ticket = await session.get(Ticket, ticket_id)
-    if ticket is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
-    return ticket
-
 
 def _record_history(
     session: AsyncSession,
@@ -159,7 +150,7 @@ def _record_history(
     changes: dict[str, tuple[str | None, str | None]],
 ) -> None:
     """Queue TicketHistory rows (one per changed field) without flushing."""
-    now = _utcnow()
+    now = utcnow()
     for field, (old, new) in changes.items():
         session.add(
             TicketHistory(
@@ -189,7 +180,7 @@ async def create_ticket(
       the bot sends them a DM and saves the thread anchor for future sync.
     - SLA deadline is calculated from the matching SLA policy (if any).
     """
-    now = _utcnow()
+    now = utcnow()
 
     # Validate category if provided
     if body.category_id is not None:
@@ -272,6 +263,7 @@ async def list_tickets(
     priority_filter: list[Priority] = Query(default=[], alias="priority"),
     category_id: int | None = Query(default=None),
     assignee_id: int | None = Query(default=None),
+    submitter_id: int | None = Query(default=None),
     unassigned: bool = Query(default=False),
     q: str | None = Query(default=None, description="Search in title"),
     sort: str = Query(default="created_at"),
@@ -292,6 +284,8 @@ async def list_tickets(
         where.append(Ticket.category_id == category_id)
     if assignee_id is not None:
         where.append(Ticket.assignee_id == assignee_id)
+    if submitter_id is not None:
+        where.append(Ticket.submitter_id == submitter_id)
     if unassigned:
         where.append(Ticket.assignee_id.is_(None))
     if q:
@@ -330,7 +324,7 @@ async def get_ticket(
     session: AsyncSession = Depends(get_session),
 ) -> TicketRead:
     """Get a single ticket by ID."""
-    await _get_ticket_or_404(session, ticket_id)
+    await get_ticket_or_404(session, ticket_id)
     items, _ = await _fetch_enriched(session, [Ticket.id == ticket_id])
     return items[0]
 
@@ -346,7 +340,7 @@ async def update_ticket(
     session: AsyncSession = Depends(get_session),
 ) -> TicketRead:
     """Update a ticket. All fields are editable by technicians and admins."""
-    ticket = await _get_ticket_or_404(session, ticket_id)
+    ticket = await get_ticket_or_404(session, ticket_id)
 
     provided = body.model_fields_set  # fields explicitly included in request body
     if not provided:
@@ -356,7 +350,7 @@ async def update_ticket(
         )
 
     changes: dict[str, tuple[str | None, str | None]] = {}
-    now = _utcnow()
+    now = utcnow()
 
     # title
     if "title" in provided and body.title is not None:
@@ -502,7 +496,7 @@ async def get_ticket_history(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     """Return timeline events for a ticket (status/priority/assignee/category changes)."""
-    await _get_ticket_or_404(session, ticket_id)
+    await get_ticket_or_404(session, ticket_id)
 
     Actor = aliased(User, flat=True)
 
@@ -579,15 +573,15 @@ async def mark_duplicate(
     session: AsyncSession = Depends(get_session),
 ) -> TicketRead:
     """Mark a ticket as a duplicate of another. Closes the duplicate ticket."""
-    ticket = await _get_ticket_or_404(session, ticket_id)
-    canonical = await _get_ticket_or_404(session, body.duplicate_of_id)
+    ticket = await get_ticket_or_404(session, ticket_id)
+    canonical = await get_ticket_or_404(session, body.duplicate_of_id)
 
     if ticket_id == body.duplicate_of_id:
         raise HTTPException(status_code=400, detail="A ticket cannot be a duplicate of itself")
     if canonical.duplicate_of_id is not None:
         raise HTTPException(status_code=400, detail="Cannot link to a ticket that is itself a duplicate")
 
-    now = _utcnow()
+    now = utcnow()
     changes: dict[str, tuple[str | None, str | None]] = {}
 
     old_dup = ticket.duplicate_of_id
@@ -641,12 +635,12 @@ async def unmark_duplicate(
     session: AsyncSession = Depends(get_session),
 ) -> TicketRead:
     """Remove a duplicate link and re-open the ticket."""
-    ticket = await _get_ticket_or_404(session, ticket_id)
+    ticket = await get_ticket_or_404(session, ticket_id)
 
     if ticket.duplicate_of_id is None:
         raise HTTPException(status_code=400, detail="Ticket is not marked as a duplicate")
 
-    now = _utcnow()
+    now = utcnow()
     default_status = await _get_default_status(session)
 
     changes: dict[str, tuple[str | None, str | None]] = {

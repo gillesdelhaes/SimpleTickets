@@ -9,8 +9,6 @@ POST /api/tickets/{ticket_id}/mark-read
   Upserts a TicketReadMarker so subsequent calls to /unread no longer include
   replies that arrived before this moment.
 """
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Depends, HTTPException, status as http_status
 from pydantic import BaseModel
 from sqlalchemy import and_, or_, select
@@ -20,12 +18,9 @@ from app.auth.deps import get_current_user
 from app.database import get_session
 from app.models import Ticket, TicketReadMarker, User
 from app.models.ticket_reply import TicketReply
+from app.utils import utcnow
 
 router = APIRouter(tags=["notifications"])
-
-
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class UnreadTicketSummary(BaseModel):
@@ -119,7 +114,7 @@ async def mark_read(
     """Upsert the read marker for the current user on a ticket."""
     if not await session.get(Ticket, ticket_id):
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Ticket not found")
-    now = _utcnow()
+    now = utcnow()
 
     result = await session.execute(
         select(TicketReadMarker).where(

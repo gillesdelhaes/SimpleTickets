@@ -17,7 +17,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import logging
-from datetime import datetime, timezone
 from typing import Optional
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -26,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.app_setting import AppSetting
+from app.utils import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -64,10 +64,6 @@ def decrypt_value(token: str) -> str:
 # ── CRUD ───────────────────────────────────────────────────────────────────────
 
 
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
-
-
 async def get_setting(key: str, session: AsyncSession, default: str = "") -> str:
     """
     Return the decrypted value for a settings key.
@@ -94,7 +90,7 @@ async def set_setting(key: str, value: str, session: AsyncSession) -> None:
 
     stored = encrypt_value(value) if row.is_secret else value
     row.value = stored
-    row.updated_at = _utcnow()
+    row.updated_at = utcnow()
     # No commit here — caller owns the transaction
 
 

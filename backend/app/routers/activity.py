@@ -4,13 +4,14 @@ Activity feed — unified stream of recent events across all tickets.
 Returns ticket creations, field changes, and public replies merged and sorted
 newest-first. Used by the dashboard activity feed.
 """
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import aliased
 
 from app.auth.deps import get_current_user
+from app.utils import utcnow
 from app.database import get_session
 from app.models import Category, Ticket, TicketHistory, TicketReply, User
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,10 +21,6 @@ router = APIRouter(tags=["activity"], prefix="/activity")
 _DISPLAY_FIELDS = {"status", "assignee_id", "priority", "category_id"}
 
 
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
-
-
 @router.get("")
 async def get_activity(
     limit: int = Query(default=20, le=50),
@@ -31,7 +28,7 @@ async def get_activity(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     """Unified activity feed: ticket creations, field changes, public replies."""
-    cutoff = _utcnow() - timedelta(days=14)
+    cutoff = utcnow() - timedelta(days=14)
     events: list[dict] = []
 
     # ── Ticket creations ───────────────────────────────────────────────────────

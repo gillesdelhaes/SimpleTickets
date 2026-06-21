@@ -1,8 +1,7 @@
 """Ticket Replies — list and create replies with Slack two-way sync."""
 import logging
-from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -12,21 +11,11 @@ from app.database import get_session
 from app.models import Ticket, TicketHistory, TicketReply, User
 from app.models.ticket_status_config import TicketStatusConfig
 from app.schemas.reply import ReplyCreate, ReplyRead
+from app.utils import get_ticket_or_404, utcnow
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["replies"])
-
-
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
-
-
-async def _get_ticket_or_404(session: AsyncSession, ticket_id: int) -> Ticket:
-    ticket = await session.get(Ticket, ticket_id)
-    if ticket is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
-    return ticket
 
 
 def _to_read(reply: TicketReply, author_name: str | None, author_avatar: str | None) -> ReplyRead:
@@ -53,7 +42,7 @@ async def list_replies(
     session: AsyncSession = Depends(get_session),
 ) -> list[ReplyRead]:
     """List replies for a ticket, ordered oldest-first."""
-    await _get_ticket_or_404(session, ticket_id)
+    await get_ticket_or_404(session, ticket_id)
 
     Author = aliased(User, flat=True)
 
@@ -87,8 +76,8 @@ async def create_reply(
     Add a reply to a ticket.
     Replying to a resolved ticket with a public reply re-opens it to in_progress.
     """
-    ticket = await _get_ticket_or_404(session, ticket_id)
-    now = _utcnow()
+    ticket = await get_ticket_or_404(session, ticket_id)
+    now = utcnow()
 
     is_internal = body.is_internal
 

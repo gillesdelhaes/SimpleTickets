@@ -10,14 +10,12 @@ Access rules (mirrors ticket access):
   POST   /tickets/{id}/attachments    any authenticated user on accessible ticket
   GET    /tickets/{id}/attachments    any authenticated user on accessible ticket
   GET    /attachments/{id}/download   any authenticated user on accessible ticket
-  DELETE /attachments/{id}            uploader OR technician/admin
 """
 import logging
 import magic
 import os
 import re
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -33,6 +31,7 @@ from app.config import settings
 from app.database import get_session
 from app.models import Ticket, TicketAttachment, User
 from app.schemas.attachment import AttachmentRead
+from app.utils import get_ticket_or_404, utcnow
 
 router = APIRouter(tags=["attachments"])
 
@@ -53,10 +52,6 @@ _ALLOWED_MIME_EXACT = {
 _UNSAFE_CHARS = re.compile(r"[^\w.\-]")
 
 
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
-
-
 def _sanitize_filename(name: str) -> str:
     """Strip path components and replace unsafe characters."""
     name = Path(name).name  # strip any directory traversal
@@ -72,13 +67,6 @@ def _is_allowed_mime(mime: str) -> bool:
 
 def _storage_dir(ticket_id: int) -> Path:
     return Path(settings.storage_local_path) / str(ticket_id)
-
-
-async def _get_ticket_or_404(session: AsyncSession, ticket_id: int) -> Ticket:
-    ticket = await session.get(Ticket, ticket_id)
-    if ticket is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
-    return ticket
 
 
 # ── POST /tickets/{id}/attachments ────────────────────────────────────────────
@@ -100,7 +88,7 @@ async def upload_attachment(
     Upload a file attachment to a ticket (or to a specific reply).
     Max size: {max_mb} MB. Allowed types: images, PDF, office docs, plain text.
     """
-    await _get_ticket_or_404(session, ticket_id)
+    await get_ticket_or_404(session, ticket_id)
 
     max_bytes = 10 * 1024 * 1024  # 10 MB hard limit
 
@@ -156,7 +144,7 @@ async def upload_attachment(
         storage_path=relative_path,
         mime_type=mime_type,
         size_bytes=len(contents),
-        created_at=_utcnow(),
+        created_at=utcnow(),
     )
     session.add(attachment)
     await session.commit()
@@ -166,7 +154,7 @@ async def upload_attachment(
     # and ticket-level (reply_id=None) attachments as long as the ticket has a thread anchor.
     try:
         from app.slack.service import upload_attachments_to_slack
-        ticket_obj = await _get_ticket_or_404(session, ticket_id)
+        ticket_obj = await get_ticket_or_404(session, ticket_id)
         if ticket_obj.slack_channel_id and ticket_obj.slack_message_ts:
             await upload_attachments_to_slack(ticket_obj, reply_id)
     except Exception:  # noqa: BLE001
@@ -185,7 +173,7 @@ async def list_attachments(
     session: AsyncSession = Depends(get_session),
 ) -> list[AttachmentRead]:
     """List all attachments for a ticket."""
-    await _get_ticket_or_404(session, ticket_id)
+    await get_ticket_or_404(session, ticket_id)
 
     result = await session.execute(
         select(TicketAttachment)
@@ -209,7 +197,7 @@ async def download_attachment(
     if attachment is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
 
-    await _get_ticket_or_404(session, attachment.ticket_id)
+    await get_ticket_or_404(session, attachment.ticket_id)
 
     abs_path = Path(settings.storage_local_path) / attachment.storage_path
     if not abs_path.exists():

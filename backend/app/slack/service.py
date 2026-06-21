@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings, settings_manager
+from app.utils import utcnow
 from app.database import AsyncSessionLocal
 from app.models import Category, SLAPolicy, Ticket, TicketHistory, TicketReply, User
 from app.models.enums import Priority
@@ -43,10 +44,6 @@ _PRIORITY_LABELS: dict[str, str] = {
     "high": "High",
     "critical": "Critical 🚨",
 }
-
-
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 # ── User lookup ────────────────────────────────────────────────────────────────
@@ -83,7 +80,7 @@ async def create_ticket_from_slack(
     Opens its own DB session — safe to call from Bolt async handlers.
     """
     async with AsyncSessionLocal() as session:
-        now = _utcnow()
+        now = utcnow()
 
         # Validate category
         if category_id is not None:
@@ -454,7 +451,7 @@ async def handle_slack_thread_message(
                     "handle_slack_thread_message: user lookup failed for %s", slack_user_id
                 )
 
-        now = _utcnow()
+        now = utcnow()
 
         # Re-open resolved/closed tickets when the user replies from Slack
         resolved_result = await session.execute(
@@ -850,7 +847,7 @@ async def _download_slack_files(
                 mime_type=mimetype,
                 size_bytes=len(content),
                 slack_file_id=slack_file_id,
-                created_at=_utcnow(),
+                created_at=utcnow(),
             ))
 
         await session.commit()
