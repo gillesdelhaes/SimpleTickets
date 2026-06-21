@@ -1,13 +1,12 @@
 """
-Admin Panel API — Chunk 13 (expands Chunk 04 stub).
+Admin Panel API.
 
 Endpoints:
-  POST  /admin/users                      create local account (Chunk 04)
+  POST  /admin/users                      create local account
+  POST  /admin/users/{id}/set-password    set a user's password directly
   GET   /admin/users                      list all users with filters + pagination
-  GET   /admin/users/{id}                 get a single user
-  PATCH /admin/users/{id}                 update role, is_active, name (writes audit entry)
+  PATCH /admin/users/{id}                 update role, is_active, name, slack_user_id (writes audit entry)
   GET   /admin/audit                      paginated, filterable audit log
-  POST  /admin/tickets/{id}/link-user     link an unmatched Slack ticket to a user
 """
 from typing import Optional
 

@@ -116,8 +116,14 @@ class SettingsManager:
             return
         from app.services.settings_service import set_setting
         new_secret = secrets.token_hex(32)
-        await set_setting("jwt_secret", new_secret, session)
-        await session.commit()
+        try:
+            await set_setting("jwt_secret", new_secret, session)
+            await session.commit()
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to persist JWT secret to the database: {exc}. "
+                "The application cannot start safely without a persistent JWT secret."
+            ) from exc
         self._cache["jwt_secret"] = new_secret
         logger.info("Generated new JWT secret and persisted to DB")
 

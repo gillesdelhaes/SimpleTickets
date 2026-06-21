@@ -13,7 +13,7 @@ Access rules (mirrors ticket access):
   DELETE /attachments/{id}            uploader OR technician/admin
 """
 import logging
-import mimetypes
+import magic
 import os
 import re
 import uuid
@@ -117,12 +117,9 @@ async def upload_attachment(
             detail="Uploaded file is empty",
         )
 
-    # Determine MIME type — prefer the sniffed type over what the client claims
     original_name = file.filename or "upload"
-    mime_type = file.content_type or ""
-    if not mime_type or mime_type == "application/octet-stream":
-        guessed, _ = mimetypes.guess_type(original_name)
-        mime_type = guessed or "application/octet-stream"
+    # Detect MIME from actual file bytes — never trust the client-supplied content-type
+    mime_type = magic.from_buffer(contents, mime=True)
 
     if not _is_allowed_mime(mime_type):
         raise HTTPException(
