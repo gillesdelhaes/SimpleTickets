@@ -1005,6 +1005,8 @@ function ThreadColumn({ ticket, isTech, currentUserId }: ThreadColumnProps) {
   const { data: replies, isLoading } = useReplies(ticket.id)
   const { data: historyEvents } = useTicketHistory(ticket.id)
   const { data: allAttachments } = useAttachments(ticket.id)
+  const { data: appConfig } = useAppConfig()
+  const statuses = appConfig?.statuses ?? getAllStatuses()
   const bottomRef = useRef<HTMLDivElement>(null)
 
   // Group attachments by reply_id; null = ticket-level (initial message)
