@@ -5,7 +5,6 @@ from app.models.enums import (  # noqa: F401
     AuthProvider,
     Priority,
     Role,
-    TicketStatus,
 )
 from app.models.user import User  # noqa: F401
 from app.models.category import Category  # noqa: F401
@@ -23,7 +22,6 @@ __all__ = [
     "AuthProvider",
     "Priority",
     "Role",
-    "TicketStatus",
     "User",
     "Category",
     "SLAPolicy",

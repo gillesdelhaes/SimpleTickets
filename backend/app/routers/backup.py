@@ -69,7 +69,6 @@ _DT_COLS: dict[str, set[str]] = {
     "ticket_attachments":  {"created_at"},
     "audit_log":           {"created_at"},
     "ticket_read_markers": {"last_read_at"},
-    "app_settings":        {"updated_at"},
 }
 
 
