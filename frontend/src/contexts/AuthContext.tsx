@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-export type UserRole = 'end_user' | 'technician' | 'admin'
+export type UserRole = 'technician' | 'admin'
 
 export interface AuthUser {
   id: number

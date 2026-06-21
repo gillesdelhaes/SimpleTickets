@@ -315,7 +315,8 @@ async def post_ticket_update_to_slack(
 
     if "status" in changes:
         _, new_val = changes["status"]
-        label = _STATUS_LABELS.get(new_val or "", new_val or "")
+        slug = new_val or ""
+        label = _STATUS_LABELS.get(slug, slug.replace("_", " ").title())
         lines.append(f"• Status → *{label}*")
 
     if "priority" in changes:

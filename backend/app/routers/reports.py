@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.deps import get_current_user
 from app.database import get_session
 from app.models import Category, Ticket, User
-from app.models.enums import TicketStatus
+from app.models.ticket_status_config import TicketStatusConfig
 
 router = APIRouter(tags=["reports"], prefix="/reports")
 
@@ -44,13 +44,17 @@ async def get_overview(
 ) -> dict:
     start, end = _date_range(from_date, to_date)
 
-    closed = [TicketStatus.resolved, TicketStatus.closed]
+    resolved_subq = (
+        select(TicketStatusConfig.name)
+        .where(TicketStatusConfig.is_resolved_state == True)  # noqa: E712
+        .scalar_subquery()
+    )
 
     result = await session.execute(
         select(
             func.count().label("total"),
-            func.count(case((Ticket.status.in_(closed), 1))).label("resolved"),
-            func.count(case((~Ticket.status.in_(closed), 1))).label("open"),
+            func.count(case((Ticket.status.in_(resolved_subq), 1))).label("resolved"),
+            func.count(case((~Ticket.status.in_(resolved_subq), 1))).label("open"),
             func.count(case((
                 (Ticket.sla_deadline.isnot(None)) &
                 (Ticket.resolved_at.isnot(None)) &
@@ -143,7 +147,7 @@ async def get_by_status(
         .group_by(Ticket.status)
         .order_by(func.count().desc())
     )
-    return [{"status": row.status.value, "count": row.count} for row in result.all()]
+    return [{"status": row.status, "count": row.count} for row in result.all()]
 
 
 # ── GET /api/reports/by-category ──────────────────────────────────────────────
@@ -199,13 +203,17 @@ async def get_technicians(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     start, end = _date_range(from_date, to_date)
-    closed = [TicketStatus.resolved, TicketStatus.closed]
+    resolved_subq = (
+        select(TicketStatusConfig.name)
+        .where(TicketStatusConfig.is_resolved_state == True)  # noqa: E712
+        .scalar_subquery()
+    )
 
     result = await session.execute(
         select(
             User.name,
             func.count(Ticket.id).label("total"),
-            func.count(case((Ticket.status.in_(closed), 1))).label("resolved"),
+            func.count(case((Ticket.status.in_(resolved_subq), 1))).label("resolved"),
             func.avg(
                 func.extract("epoch", Ticket.resolved_at - Ticket.created_at) / 3600
             ).filter(Ticket.resolved_at.isnot(None)).label("avg_hours"),

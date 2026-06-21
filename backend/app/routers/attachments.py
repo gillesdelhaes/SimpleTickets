@@ -32,6 +32,7 @@ from app.auth.deps import get_current_user
 from app.config import settings
 from app.database import get_session
 from app.models import Ticket, TicketAttachment, User
+from app.models.enums import Role
 from app.schemas.attachment import AttachmentRead
 
 router = APIRouter(tags=["attachments"])
@@ -104,7 +105,7 @@ async def upload_attachment(
 
     max_bytes = 10 * 1024 * 1024  # 10 MB hard limit
 
-    contents = await file.read()
+    contents = await file.read(max_bytes + 1)
     if len(contents) > max_bytes:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -155,6 +156,7 @@ async def upload_attachment(
     attachment = TicketAttachment(
         ticket_id=ticket_id,
         reply_id=reply_id,
+        uploader_id=current_user.id,
         filename=original_name,
         storage_path=relative_path,
         mime_type=mime_type,
@@ -226,3 +228,33 @@ async def download_attachment(
         media_type=attachment.mime_type,
         filename=attachment.filename,
     )
+
+
+# ── DELETE /attachments/{id} ──────────────────────────────────────────────────
+
+
+@router.delete("/attachments/{attachment_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_attachment(
+    attachment_id: int,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Delete an attachment. Allowed for the uploader or any technician/admin."""
+    attachment = await session.get(TicketAttachment, attachment_id)
+    if attachment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
+
+    is_privileged = current_user.role in (Role.technician, Role.admin)
+    is_uploader = attachment.uploader_id == current_user.id
+    if not is_privileged and not is_uploader:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed")
+
+    abs_path = Path(settings.storage_local_path) / attachment.storage_path
+    await session.delete(attachment)
+    await session.commit()
+
+    if abs_path.exists():
+        try:
+            abs_path.unlink()
+        except OSError:
+            logger.warning("Could not delete attachment file %s", abs_path)
