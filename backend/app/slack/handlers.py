@@ -656,6 +656,15 @@ def register_handlers(app: Any) -> None:
                     author_id = db_user.id
                     author_name = db_user.name or db_user.email
 
+                # Only the ticket's Slack submitter or a linked DB user may reply via App Home
+                is_submitter = ticket.slack_submitter_id and ticket.slack_submitter_id == slack_user_id
+                if not is_submitter and db_user is None:
+                    logger.warning(
+                        "home_reply_modal: unauthorized reply attempt by %s on ticket %d",
+                        slack_user_id, ticket_id,
+                    )
+                    return
+
                 # Create reply in DB — no self-notification, the user sent this themselves
                 slack_ts = await post_reply_to_slack(ticket, reply_text, author_name, notify_submitter=False)
                 reply = TicketReply(

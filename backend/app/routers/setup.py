@@ -115,11 +115,11 @@ class TestSlackRequest(BaseModel):
 
 
 @router.post("/test-slack")
-async def test_slack(body: TestSlackRequest) -> dict:
-    """
-    Verify Slack tokens by calling auth.test.
-    Does NOT require setup to be incomplete — reused from the settings page too.
-    """
+async def test_slack(
+    body: TestSlackRequest,
+    session: AsyncSession = Depends(_require_setup_incomplete),
+) -> dict:
+    """Verify Slack tokens during the setup wizard. Blocked once setup is complete."""
     import asyncio
     try:
         from slack_sdk import WebClient
