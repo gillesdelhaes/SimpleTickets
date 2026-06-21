@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import AdminPageShell from '../../components/admin/AdminPageShell'
 import api from '../../lib/api'
@@ -71,6 +72,7 @@ const PAGE_SIZE = 50
 const ENTITY_TYPES = ['', 'user', 'ticket', 'reply', 'category', 'sla_policy']
 
 export default function Audit() {
+  const navigate = useNavigate()
   const [actionFilter, setActionFilter] = useState('')
   const [entityType, setEntityType] = useState('')
   const [actorSearch, setActorSearch] = useState('')
@@ -216,9 +218,18 @@ export default function Audit() {
                         {entry.entity_type}
                       </span>
                       {entry.entity_id && (
-                        <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#A3A3A3', marginLeft: 5 }}>
-                          #{entry.entity_id}
-                        </span>
+                        entry.entity_type === 'ticket' ? (
+                          <span
+                            onClick={() => navigate(`/tickets/${entry.entity_id}`)}
+                            style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6366F1', marginLeft: 5, cursor: 'pointer', textDecoration: 'underline' }}
+                          >
+                            #{entry.entity_id}
+                          </span>
+                        ) : (
+                          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#A3A3A3', marginLeft: 5 }}>
+                            #{entry.entity_id}
+                          </span>
+                        )
                       )}
                     </td>
                     {/* IP */}
