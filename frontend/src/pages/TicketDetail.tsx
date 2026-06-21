@@ -1034,7 +1034,7 @@ function ThreadColumn({ ticket, isTech, currentUserId }: ThreadColumnProps) {
     new Date(a.data.created_at).getTime() - new Date(b.data.created_at).getTime()
   )
 
-  const isClosed = ticket.status === 'resolved' || ticket.status === 'closed'
+  const isClosed = statuses.find(s => s.name === ticket.status)?.is_resolved_state ?? false
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>

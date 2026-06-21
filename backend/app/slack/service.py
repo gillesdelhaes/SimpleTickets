@@ -449,7 +449,18 @@ async def handle_slack_thread_message(
         resolved_names = {row[0] for row in resolved_result.all()} or {"resolved", "closed"}
         if ticket.status in resolved_names:
             old_status = ticket.status
-            ticket.status = "in_progress"
+            reopen_result = await session.execute(
+                select(TicketStatusConfig.name)
+                .where(
+                    TicketStatusConfig.is_resolved_state == False,  # noqa: E712
+                    TicketStatusConfig.pauses_sla == False,  # noqa: E712
+                    TicketStatusConfig.is_archived == False,  # noqa: E712
+                )
+                .order_by(TicketStatusConfig.sort_order)
+                .limit(1)
+            )
+            reopen_status = reopen_result.scalar_one_or_none() or "in_progress"
+            ticket.status = reopen_status
             ticket.resolved_at = None
             ticket.updated_at = now
             session.add(
@@ -458,13 +469,13 @@ async def handle_slack_thread_message(
                     actor_id=None,
                     field_changed="status",
                     old_value=old_status,
-                    new_value="in_progress",
+                    new_value=reopen_status,
                     created_at=now,
                 )
             )
             logger.info(
-                "Re-opened ticket %s (was %s) due to Slack reply from %s",
-                ticket.display_id, old_status.value, author_name_fallback,
+                "Re-opened ticket %s (was %s → %s) due to Slack reply from %s",
+                ticket.display_id, old_status, reopen_status, author_name_fallback,
             )
 
         # Record first response if this is a tech/admin replying and none recorded yet
@@ -776,15 +787,10 @@ async def _download_slack_files(
                 continue
 
             filename = file_info.get("name", "attachment")
-            mimetype = file_info.get("mimetype", "application/octet-stream")
             size = file_info.get("size", 0)
 
             if size > 10 * 1024 * 1024:
                 logger.warning("Skipping oversized Slack file %s (%d bytes)", slack_file_id, size)
-                continue
-
-            if not _allowed_mime(mimetype):
-                logger.debug("Skipping disallowed MIME %s for Slack file %s", mimetype, slack_file_id)
                 continue
 
             try:
@@ -798,6 +804,13 @@ async def _download_slack_files(
                     content = resp.content
             except Exception:
                 logger.exception("Failed to download Slack file %s", slack_file_id)
+                continue
+
+            # Detect MIME from actual bytes — don't trust Slack's metadata
+            import magic as _magic
+            mimetype = _magic.from_buffer(content, mime=True)
+            if not _allowed_mime(mimetype):
+                logger.debug("Skipping disallowed MIME %s for Slack file %s", mimetype, slack_file_id)
                 continue
 
             safe_name = _UNSAFE_CHARS.sub("_", Path(filename).name)[:200] or "file"

@@ -4,6 +4,9 @@ from typing import Optional
 from pydantic import BaseModel, field_validator
 
 
+_MAX_REPLY_CHARS = 20_000
+
+
 class ReplyCreate(BaseModel):
     body: str
     is_internal: bool = False
@@ -14,6 +17,8 @@ class ReplyCreate(BaseModel):
         v = v.strip()
         if not v:
             raise ValueError("Reply body cannot be blank")
+        if len(v) > _MAX_REPLY_CHARS:
+            raise ValueError(f"Reply body cannot exceed {_MAX_REPLY_CHARS:,} characters")
         return v
 
 

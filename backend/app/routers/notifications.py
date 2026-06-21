@@ -11,7 +11,7 @@ POST /api/tickets/{ticket_id}/mark-read
 """
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status as http_status
 from pydantic import BaseModel
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -117,6 +117,8 @@ async def mark_read(
     session: AsyncSession = Depends(get_session),
 ) -> None:
     """Upsert the read marker for the current user on a ticket."""
+    if not await session.get(Ticket, ticket_id):
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Ticket not found")
     now = _utcnow()
 
     result = await session.execute(

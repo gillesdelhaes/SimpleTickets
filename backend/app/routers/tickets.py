@@ -391,6 +391,17 @@ async def update_ticket(
     # status
     if "status" in provided and body.status is not None:
         if ticket.status != body.status:
+            valid_status = await session.execute(
+                select(TicketStatusConfig.name).where(
+                    TicketStatusConfig.name == body.status,
+                    TicketStatusConfig.is_archived == False,  # noqa: E712
+                )
+            )
+            if valid_status.scalar_one_or_none() is None:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Status '{body.status}' does not exist or is archived",
+                )
             resolved_names = await _get_resolved_status_names(session)
             changes["status"] = (ticket.status, body.status)
             old_status = ticket.status
