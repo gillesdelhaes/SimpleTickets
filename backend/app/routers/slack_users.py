@@ -3,7 +3,9 @@ Slack Users — list workspace members for the reporter picker.
 
 GET /slack/users  returns a name-sorted list of non-bot workspace members.
 Returns an empty list when Slack is not configured.
+Results are cached in-memory for 5 minutes to avoid repeated workspace pagination.
 """
+import time
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
@@ -12,6 +14,10 @@ from app.models import User
 from app.slack.bot import get_slack_client
 
 router = APIRouter(prefix="/slack", tags=["slack"])
+
+_CACHE_TTL = 300  # 5 minutes
+_cache: list["SlackUser"] = []
+_cache_at: float = 0.0
 
 
 class SlackUser(BaseModel):
@@ -26,7 +32,13 @@ async def list_slack_users(
     """
     List Slack workspace users for the ticket reporter picker.
     Filters out bots and deleted accounts. Requires Slack to be configured.
+    Results are cached for 5 minutes.
     """
+    global _cache, _cache_at
+
+    if _cache and time.monotonic() - _cache_at < _CACHE_TTL:
+        return _cache
+
     client = get_slack_client()
     if client is None:
         return []
@@ -61,4 +73,6 @@ async def list_slack_users(
             break
 
     users.sort(key=lambda u: u.name.lower())
+    _cache = users
+    _cache_at = time.monotonic()
     return users

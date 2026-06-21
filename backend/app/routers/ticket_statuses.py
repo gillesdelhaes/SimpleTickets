@@ -5,10 +5,11 @@ POST   /api/admin/ticket-statuses        create
 PATCH  /api/admin/ticket-statuses/{id}   update
 DELETE /api/admin/ticket-statuses/{id}   archive (soft delete)
 """
+import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,6 +35,9 @@ class StatusRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+_SLUG_RE = re.compile(r'^[a-z0-9_]+$')
+
+
 class StatusCreate(BaseModel):
     name: str
     label: str
@@ -42,6 +46,16 @@ class StatusCreate(BaseModel):
     is_default: bool = False
     is_resolved_state: bool = False
     sort_order: int = 0
+
+    @field_validator("name")
+    @classmethod
+    def name_is_slug(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not _SLUG_RE.match(v):
+            raise ValueError("Status name must contain only lowercase letters, digits, and underscores")
+        if len(v) > 64:
+            raise ValueError("Status name cannot exceed 64 characters")
+        return v
 
 
 class StatusUpdate(BaseModel):

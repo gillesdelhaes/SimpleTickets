@@ -31,6 +31,8 @@ class TicketCreate(BaseModel):
         v = v.strip()
         if not v:
             raise ValueError("Description cannot be blank")
+        if len(v) > 10_000:
+            raise ValueError("Description cannot exceed 10,000 characters")
         return v
 
 
@@ -69,6 +71,8 @@ class TicketUpdate(BaseModel):
             v = v.strip()
             if not v:
                 raise ValueError("Description cannot be blank")
+            if len(v) > 10_000:
+                raise ValueError("Description cannot exceed 10,000 characters")
         return v
 
 
