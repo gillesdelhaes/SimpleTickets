@@ -688,13 +688,11 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
   const channelColors: Record<string, string> = {
     web: '#3B82F6',
     slack: '#10B981',
-    email: '#F59E0B',
   }
 
   const channelLabels: Record<string, string> = {
     web: 'Web',
     slack: 'Slack',
-    email: 'Email',
   }
 
   return (

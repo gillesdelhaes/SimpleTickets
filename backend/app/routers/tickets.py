@@ -5,7 +5,7 @@ Access: all endpoints require technician or admin role.
 """
 import logging
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 

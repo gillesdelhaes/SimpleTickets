@@ -4,8 +4,6 @@ import api from '../lib/api'
 export interface Category {
   id: number
   name: string
-  description: string | null
-  sla_policy_id: number | null
 }
 
 export function useCategories() {

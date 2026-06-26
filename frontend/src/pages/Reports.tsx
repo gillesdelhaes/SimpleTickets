@@ -6,6 +6,7 @@ import {
   ResponsiveContainer, Cell, PieChart, Pie, Legend,
 } from 'recharts'
 import AppShell from '../components/layout/AppShell'
+import { statusColor } from '../types/ticket'
 import api from '../lib/api'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -39,13 +40,6 @@ const PRIORITY_COLORS: Record<string, string> = {
   low:      '#3B82F6',
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  open:         '#3B82F6',
-  in_progress:  '#FF4713',
-  pending_user: '#EAB308',
-  resolved:     '#10B981',
-  closed:       '#737373',
-}
 
 const CATEGORY_COLOR = '#AD1164'
 
@@ -286,7 +280,7 @@ export default function Reports() {
                 <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
                 <Bar dataKey="count" radius={[4,4,0,0]}>
                   {(byStatus.data ?? []).map(entry => (
-                    <Cell key={entry.status} fill={STATUS_COLORS[entry.status] ?? '#E5E5E5'} />
+                    <Cell key={entry.status} fill={statusColor(entry.status)} />
                   ))}
                 </Bar>
               </BarChart>

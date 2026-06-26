@@ -15,12 +15,11 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import get_current_user
+from app.auth.deps import require_admin
 from app.database import get_session
 from app.models.app_setting import AppSetting
 from app.models.user import User
-from app.models.enums import Role
-from app.services.settings_service import decrypt_value, encrypt_value, set_setting
+from app.services.settings_service import set_setting
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin/settings", tags=["admin"])
@@ -41,10 +40,6 @@ _SLACK_KEYS = {
 }
 
 
-def _require_admin(current_user: User = Depends(get_current_user)) -> User:
-    if current_user.role != Role.admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only")
-    return current_user
 
 
 # ── Response types ─────────────────────────────────────────────────────────────
@@ -73,7 +68,7 @@ class SettingsPatchRequest(BaseModel):
 
 @router.get("", response_model=SettingsResponse)
 async def list_settings(
-    current_user: User = Depends(_require_admin),
+    current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> SettingsResponse:
     result = await session.execute(
@@ -100,7 +95,7 @@ async def list_settings(
 @router.patch("")
 async def update_settings(
     body: SettingsPatchRequest,
-    current_user: User = Depends(_require_admin),
+    current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     invalid = [s.key for s in body.settings if s.key not in _WRITABLE_KEYS]
@@ -149,7 +144,7 @@ class TestSlackRequest(BaseModel):
 @router.post("/test-slack")
 async def test_slack(
     body: TestSlackRequest,
-    current_user: User = Depends(_require_admin),
+    current_user: User = Depends(require_admin),
 ) -> dict:
     """Test Slack credentials without persisting. Same logic as /setup/test-slack."""
     import asyncio

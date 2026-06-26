@@ -6,10 +6,8 @@ export interface ReplyRead {
   ticket_id: number
   author_id: number | null
   author_name: string | null
-  author_avatar: string | null
   body: string
   is_internal: boolean
-  slack_ts: string | null
   created_at: string
 }
 

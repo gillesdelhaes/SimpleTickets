@@ -18,13 +18,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["replies"])
 
 
-def _to_read(reply: TicketReply, author_name: str | None, author_avatar: str | None) -> ReplyRead:
+def _to_read(reply: TicketReply, author_name: str | None) -> ReplyRead:
     return ReplyRead(
         id=reply.id,
         ticket_id=reply.ticket_id,
         author_id=reply.author_id,
         author_name=author_name or reply.slack_author_name,
-        author_avatar=author_avatar,
         body=reply.body,
         is_internal=reply.is_internal,
         slack_ts=reply.slack_ts,
@@ -47,7 +46,7 @@ async def list_replies(
     Author = aliased(User, flat=True)
 
     stmt = (
-        select(TicketReply, Author.name.label("author_name"), Author.avatar_url.label("author_avatar"))
+        select(TicketReply, Author.name.label("author_name"))
         .outerjoin(Author, TicketReply.author_id == Author.id)
         .where(TicketReply.ticket_id == ticket_id)
         .order_by(TicketReply.created_at.asc())
@@ -55,7 +54,7 @@ async def list_replies(
 
     rows = (await session.execute(stmt)).all()
 
-    return [_to_read(row[0], row[1], row[2]) for row in rows]
+    return [_to_read(row[0], row[1]) for row in rows]
 
 
 # ── POST /tickets/{id}/replies ─────────────────────────────────────────────────
@@ -166,4 +165,4 @@ async def create_reply(
                 "Failed to sync reply to Slack for ticket %s", ticket.display_id
             )
 
-    return _to_read(reply, current_user.name, current_user.avatar_url)
+    return _to_read(reply, current_user.name)

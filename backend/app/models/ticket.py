@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+from datetime import datetime
+from app.dt import utcnow
 from typing import Optional
 
 from sqlalchemy import Column, Enum as SAEnum, String, Text
@@ -7,8 +8,6 @@ from sqlmodel import Field, SQLModel
 from app.models.enums import Priority
 
 
-def utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class Ticket(SQLModel, table=True):

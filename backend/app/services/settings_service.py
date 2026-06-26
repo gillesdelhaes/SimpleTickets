@@ -43,10 +43,6 @@ def _fernet() -> Fernet:
     return _fernet_instance
 
 
-def invalidate_fernet_cache() -> None:
-    """Call after APP_SECRET_KEY changes so the Fernet key is re-derived."""
-    global _fernet_instance
-    _fernet_instance = None
 
 
 def encrypt_value(plain: str) -> str:

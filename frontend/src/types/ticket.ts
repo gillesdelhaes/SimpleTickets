@@ -1,6 +1,6 @@
 export type TicketStatus = string   // dynamic — any slug from ticket_statuses table
 export type Priority = 'low' | 'medium' | 'high' | 'critical'
-export type Channel = 'web' | 'slack' | 'email'
+export type Channel = 'web' | 'slack'
 
 export interface StatusConfig {
   name: string
@@ -26,7 +26,6 @@ export interface TicketRead {
   submitter_name: string | null
   assignee_id: number | null
   assignee_name: string | null
-  sla_policy_id: number | null
   sla_deadline: string | null
   sla_breached: boolean
   duplicate_of_id: number | null
@@ -93,12 +92,6 @@ export const PRIORITY_LABELS: Record<Priority, string> = {
   critical: 'Critical',
 }
 
-export const PRIORITY_ORDER: Record<Priority, number> = {
-  critical: 0,
-  high: 1,
-  medium: 2,
-  low: 3,
-}
 
 // Format milliseconds remaining into a human-readable duration
 export function formatDuration(ms: number): string {

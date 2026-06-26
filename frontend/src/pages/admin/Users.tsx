@@ -12,7 +12,6 @@ interface UserRead {
   id: number
   email: string
   name: string
-  avatar_url: string | null
   role: UserRole
   auth_provider: AuthProvider
   slack_user_id: string | null

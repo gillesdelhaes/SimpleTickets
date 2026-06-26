@@ -1,12 +1,11 @@
-from datetime import datetime, timezone
+from datetime import datetime
+from app.dt import utcnow
 from typing import Any, Optional
 
 from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel
 
 
-def utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class AuditLog(SQLModel, table=True):

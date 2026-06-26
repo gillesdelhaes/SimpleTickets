@@ -1,11 +1,10 @@
-from datetime import datetime, timezone
+from datetime import datetime
+from app.dt import utcnow
 from typing import Optional
 
 from sqlmodel import Field, SQLModel
 
 
-def utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class TicketHistory(SQLModel, table=True):
