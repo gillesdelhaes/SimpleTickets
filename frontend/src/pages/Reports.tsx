@@ -7,6 +7,7 @@ import {
 } from 'recharts'
 import AppShell from '../components/layout/AppShell'
 import { statusColor } from '../types/ticket'
+import { useAuth } from '../contexts/AuthContext'
 import api from '../lib/api'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -151,10 +152,25 @@ function Skeleton({ height = 200 }: { height?: number }) {
 
 // ── Main page ──────────────────────────────────────────────────────────────────
 
+interface Assignee { id: number; name: string }
+
 export default function Reports() {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const [range, setRange] = useState<Range>('30d')
+  const [assigneeId, setAssigneeId] = useState<number | null>(null)
   const [exporting, setExporting] = useState(false)
-  const params = rangeParams(range)
+
+  const params: Record<string, string> = {
+    ...rangeParams(range),
+    ...(assigneeId != null ? { assignee_id: String(assigneeId) } : {}),
+  }
+
+  const { data: assignees } = useQuery<Assignee[]>({
+    queryKey: ['reports-assignees'],
+    queryFn: () => api.get<Assignee[]>('/reports/assignees').then(r => r.data),
+    staleTime: 5 * 60_000,
+  })
 
   async function handleExport() {
     setExporting(true)
@@ -180,8 +196,13 @@ export default function Reports() {
   const techs      = useReport<TechRow[]>('technicians', params)
 
   const ov = overview.data
-
   const rangeLabels: Record<Range, string> = { '7d': 'Last 7 days', '30d': 'Last 30 days', '90d': 'Last 90 days' }
+
+  const filterLabel = assigneeId == null
+    ? 'All team'
+    : assigneeId === user?.id
+      ? 'My stats'
+      : (assignees?.find(a => a.id === assigneeId)?.name ?? 'Filtered')
 
   return (
     <AppShell title="Reports">
@@ -189,48 +210,91 @@ export default function Reports() {
         @keyframes shimmer { 0%,100%{opacity:1}50%{opacity:0.4} }
       `}</style>
 
-      {/* ── Date range filter + export ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24 }}>
+      {/* ── Toolbar: date range + technician filter + export ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
+        {/* Date range pills */}
         {(['7d', '30d', '90d'] as Range[]).map(r => (
-          <button
-            key={r}
-            onClick={() => setRange(r)}
-            style={{
-              padding: '6px 16px', borderRadius: 8, border: '1px solid',
-              fontSize: 13, fontWeight: range === r ? 600 : 400, cursor: 'pointer',
-              borderColor: range === r ? '#FF4713' : '#E5E5E5',
-              background: range === r ? 'rgba(255,71,19,0.06)' : '#fff',
-              color: range === r ? '#FF4713' : '#737373',
-              transition: 'all 0.12s',
-            }}
-          >
+          <button key={r} onClick={() => setRange(r)} style={{
+            padding: '6px 16px', borderRadius: 8, border: '1px solid',
+            fontSize: 13, fontWeight: range === r ? 600 : 400, cursor: 'pointer',
+            borderColor: range === r ? '#FF4713' : '#E5E5E5',
+            background: range === r ? 'rgba(255,71,19,0.06)' : '#fff',
+            color: range === r ? '#FF4713' : '#737373',
+            transition: 'all 0.12s',
+          }}>
             {rangeLabels[r]}
           </button>
         ))}
-        <span style={{ fontSize: 12, color: '#A3A3A3', marginLeft: 8 }}>
+        <span style={{ fontSize: 12, color: '#A3A3A3', marginLeft: 4 }}>
           {params.from_date} → {params.to_date}
         </span>
+
+        {/* Separator */}
+        <div style={{ width: 1, height: 20, background: '#E5E5E5', margin: '0 4px' }} />
+
+        {/* Technician filter */}
+        {isAdmin ? (
+          <select
+            value={assigneeId ?? ''}
+            onChange={e => setAssigneeId(e.target.value ? Number(e.target.value) : null)}
+            style={{
+              padding: '5px 10px', borderRadius: 8, border: '1px solid #E5E5E5',
+              fontSize: 13, color: assigneeId != null ? '#FF4713' : '#737373',
+              background: assigneeId != null ? 'rgba(255,71,19,0.04)' : '#fff',
+              borderColor: assigneeId != null ? '#FF4713' : '#E5E5E5',
+              cursor: 'pointer', outline: 'none',
+            }}
+          >
+            <option value="">All team</option>
+            {(assignees ?? []).map(a => (
+              <option key={a.id} value={a.id}>{a.name}</option>
+            ))}
+          </select>
+        ) : (
+          <>
+            {(['all', 'me'] as const).map(mode => {
+              const active = mode === 'all' ? assigneeId == null : assigneeId === user?.id
+              return (
+                <button key={mode} onClick={() => setAssigneeId(mode === 'all' ? null : (user?.id ?? null))}
+                  style={{
+                    padding: '5px 14px', borderRadius: 8, border: '1px solid', fontSize: 13,
+                    cursor: 'pointer', transition: 'all 0.12s', fontWeight: active ? 600 : 400,
+                    borderColor: active ? '#FF4713' : '#E5E5E5',
+                    background: active ? 'rgba(255,71,19,0.06)' : '#fff',
+                    color: active ? '#FF4713' : '#737373',
+                  }}>
+                  {mode === 'all' ? 'All team' : 'My stats'}
+                </button>
+              )
+            })}
+          </>
+        )}
+
+        {assigneeId != null && (
+          <span style={{ fontSize: 12, color: '#FF4713', fontWeight: 500 }}>
+            — {filterLabel}
+          </span>
+        )}
+
         <div style={{ flex: 1 }} />
-        <button
-          onClick={handleExport}
-          disabled={exporting}
-          style={{
+
+        {isAdmin && (
+          <button onClick={handleExport} disabled={exporting} style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
             padding: '6px 14px', borderRadius: 8,
             border: '1px solid #E5E5E5', background: '#fff',
             fontSize: 13, fontWeight: 500, cursor: exporting ? 'not-allowed' : 'pointer',
-            color: exporting ? '#A3A3A3' : '#262626',
-            transition: 'all 0.12s',
+            color: exporting ? '#A3A3A3' : '#262626', transition: 'all 0.12s',
           }}
-          onMouseOver={e => { if (!exporting) { e.currentTarget.style.borderColor = '#0A0A0A'; e.currentTarget.style.color = '#0A0A0A' } }}
-          onMouseOut={e => { e.currentTarget.style.borderColor = '#E5E5E5'; e.currentTarget.style.color = exporting ? '#A3A3A3' : '#262626' }}
-        >
-          <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M6.5 1v7M3.5 5.5l3 3 3-3" />
-            <path d="M1 10h11" />
-          </svg>
-          {exporting ? 'Exporting…' : 'Export CSV'}
-        </button>
+            onMouseOver={e => { if (!exporting) { e.currentTarget.style.borderColor = '#0A0A0A'; e.currentTarget.style.color = '#0A0A0A' } }}
+            onMouseOut={e => { e.currentTarget.style.borderColor = '#E5E5E5'; e.currentTarget.style.color = exporting ? '#A3A3A3' : '#262626' }}
+          >
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6.5 1v7M3.5 5.5l3 3 3-3" /><path d="M1 10h11" />
+            </svg>
+            {exporting ? 'Exporting…' : 'Export CSV'}
+          </button>
+        )}
       </div>
 
       {/* ── KPI row ── */}

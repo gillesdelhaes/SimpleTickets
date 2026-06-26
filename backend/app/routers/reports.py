@@ -3,6 +3,7 @@ Reporting endpoints — aggregated metrics for the Reports page.
 
 All endpoints accept optional `from_date` / `to_date` query params (ISO date strings).
 Defaults to the last 30 days when omitted.
+All chart endpoints accept an optional `assignee_id` to scope results to one technician.
 """
 import csv
 import io
@@ -14,9 +15,10 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import case, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import get_current_user, require_admin
+from app.auth.deps import get_current_user, require_admin, require_technician
 from app.database import get_session
 from app.models import Category, Ticket, User
+from app.models.enums import Role
 from app.models.ticket_status_config import TicketStatusConfig
 
 router = APIRouter(tags=["reports"], prefix="/reports")
@@ -29,11 +31,29 @@ def _date_range(
     today = datetime.now(timezone.utc).date()
     end = to_date or today
     start = from_date or (end - timedelta(days=29))
-    # inclusive: end of the to_date day
     return (
         datetime(start.year, start.month, start.day, 0, 0, 0),
         datetime(end.year, end.month, end.day, 23, 59, 59),
     )
+
+
+# ── GET /api/reports/assignees ─────────────────────────────────────────────────
+
+@router.get("/assignees")
+async def list_assignees(
+    _user: User = Depends(require_technician),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    """Return all active technicians/admins for the filter dropdown."""
+    result = await session.execute(
+        select(User.id, User.name)
+        .where(
+            User.is_active == True,  # noqa: E712
+            User.role.in_([Role.technician, Role.admin]),
+        )
+        .order_by(User.name)
+    )
+    return [{"id": row.id, "name": row.name} for row in result.all()]
 
 
 # ── GET /api/reports/overview ──────────────────────────────────────────────────
@@ -42,6 +62,7 @@ def _date_range(
 async def get_overview(
     from_date: Optional[date] = Query(default=None),
     to_date: Optional[date] = Query(default=None),
+    assignee_id: Optional[int] = Query(default=None),
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
@@ -53,29 +74,28 @@ async def get_overview(
         .scalar_subquery()
     )
 
-    result = await session.execute(
-        select(
-            func.count().label("total"),
-            func.count(case((Ticket.status.in_(resolved_subq), 1))).label("resolved"),
-            func.count(case((~Ticket.status.in_(resolved_subq), 1))).label("open"),
-            func.count(case((
-                (Ticket.sla_deadline.isnot(None)) &
-                (Ticket.resolved_at.isnot(None)) &
-                (Ticket.resolved_at <= Ticket.sla_deadline),
-                1
-            ))).label("sla_met"),
-            func.count(case((Ticket.sla_deadline.isnot(None), 1))).label("sla_total"),
-            func.avg(
-                func.extract("epoch", Ticket.resolved_at - Ticket.created_at) / 3600
-            ).filter(
-                Ticket.resolved_at.isnot(None)
-            ).label("avg_resolution_hours"),
-        ).where(
-            Ticket.created_at >= start,
-            Ticket.created_at <= end,
-        )
-    )
-    row = result.one()
+    stmt = select(
+        func.count().label("total"),
+        func.count(case((Ticket.status.in_(resolved_subq), 1))).label("resolved"),
+        func.count(case((~Ticket.status.in_(resolved_subq), 1))).label("open"),
+        func.count(case((
+            (Ticket.sla_deadline.isnot(None)) &
+            (Ticket.resolved_at.isnot(None)) &
+            (Ticket.resolved_at <= Ticket.sla_deadline),
+            1
+        ))).label("sla_met"),
+        func.count(case((Ticket.sla_deadline.isnot(None), 1))).label("sla_total"),
+        func.avg(
+            func.extract("epoch", Ticket.resolved_at - Ticket.created_at) / 3600
+        ).filter(
+            Ticket.resolved_at.isnot(None)
+        ).label("avg_resolution_hours"),
+    ).where(Ticket.created_at >= start, Ticket.created_at <= end)
+
+    if assignee_id is not None:
+        stmt = stmt.where(Ticket.assignee_id == assignee_id)
+
+    row = (await session.execute(stmt)).one()
 
     sla_pct = round(row.sla_met * 100 / row.sla_total, 1) if row.sla_total else None
     avg_h = round(row.avg_resolution_hours, 1) if row.avg_resolution_hours else None
@@ -95,12 +115,13 @@ async def get_overview(
 async def get_volume(
     from_date: Optional[date] = Query(default=None),
     to_date: Optional[date] = Query(default=None),
+    assignee_id: Optional[int] = Query(default=None),
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     start, end = _date_range(from_date, to_date)
 
-    result = await session.execute(
+    stmt = (
         select(
             func.date_trunc("day", Ticket.created_at).label("day"),
             func.count().label("count"),
@@ -109,10 +130,11 @@ async def get_volume(
         .group_by(text("day"))
         .order_by(text("day"))
     )
-    return [
-        {"date": row.day.strftime("%Y-%m-%d"), "count": row.count}
-        for row in result.all()
-    ]
+    if assignee_id is not None:
+        stmt = stmt.where(Ticket.assignee_id == assignee_id)
+
+    result = await session.execute(stmt)
+    return [{"date": row.day.strftime("%Y-%m-%d"), "count": row.count} for row in result.all()]
 
 
 # ── GET /api/reports/by-priority ──────────────────────────────────────────────
@@ -121,16 +143,20 @@ async def get_volume(
 async def get_by_priority(
     from_date: Optional[date] = Query(default=None),
     to_date: Optional[date] = Query(default=None),
+    assignee_id: Optional[int] = Query(default=None),
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     start, end = _date_range(from_date, to_date)
-    result = await session.execute(
+    stmt = (
         select(Ticket.priority, func.count().label("count"))
         .where(Ticket.created_at >= start, Ticket.created_at <= end)
         .group_by(Ticket.priority)
         .order_by(func.count().desc())
     )
+    if assignee_id is not None:
+        stmt = stmt.where(Ticket.assignee_id == assignee_id)
+    result = await session.execute(stmt)
     return [{"priority": row.priority.value, "count": row.count} for row in result.all()]
 
 
@@ -140,16 +166,20 @@ async def get_by_priority(
 async def get_by_status(
     from_date: Optional[date] = Query(default=None),
     to_date: Optional[date] = Query(default=None),
+    assignee_id: Optional[int] = Query(default=None),
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     start, end = _date_range(from_date, to_date)
-    result = await session.execute(
+    stmt = (
         select(Ticket.status, func.count().label("count"))
         .where(Ticket.created_at >= start, Ticket.created_at <= end)
         .group_by(Ticket.status)
         .order_by(func.count().desc())
     )
+    if assignee_id is not None:
+        stmt = stmt.where(Ticket.assignee_id == assignee_id)
+    result = await session.execute(stmt)
     return [{"status": row.status, "count": row.count} for row in result.all()]
 
 
@@ -159,11 +189,12 @@ async def get_by_status(
 async def get_by_category(
     from_date: Optional[date] = Query(default=None),
     to_date: Optional[date] = Query(default=None),
+    assignee_id: Optional[int] = Query(default=None),
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     start, end = _date_range(from_date, to_date)
-    result = await session.execute(
+    stmt = (
         select(
             func.coalesce(Category.name, "Uncategorised").label("category"),
             func.count().label("count"),
@@ -174,6 +205,9 @@ async def get_by_category(
         .group_by(Category.name)
         .order_by(func.count().desc())
     )
+    if assignee_id is not None:
+        stmt = stmt.where(Ticket.assignee_id == assignee_id)
+    result = await session.execute(stmt)
     return [{"category": row.category, "count": row.count} for row in result.all()]
 
 
@@ -183,16 +217,20 @@ async def get_by_category(
 async def get_by_source(
     from_date: Optional[date] = Query(default=None),
     to_date: Optional[date] = Query(default=None),
+    assignee_id: Optional[int] = Query(default=None),
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     start, end = _date_range(from_date, to_date)
-    result = await session.execute(
+    stmt = (
         select(Ticket.source, func.count().label("count"))
         .where(Ticket.created_at >= start, Ticket.created_at <= end)
         .group_by(Ticket.source)
         .order_by(func.count().desc())
     )
+    if assignee_id is not None:
+        stmt = stmt.where(Ticket.assignee_id == assignee_id)
+    result = await session.execute(stmt)
     return [{"source": row.source, "count": row.count} for row in result.all()]
 
 
@@ -202,7 +240,8 @@ async def get_by_source(
 async def get_technicians(
     from_date: Optional[date] = Query(default=None),
     to_date: Optional[date] = Query(default=None),
-    _admin: User = Depends(require_admin),
+    assignee_id: Optional[int] = Query(default=None),
+    _user: User = Depends(require_technician),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     start, end = _date_range(from_date, to_date)
@@ -212,8 +251,9 @@ async def get_technicians(
         .scalar_subquery()
     )
 
-    result = await session.execute(
+    stmt = (
         select(
+            User.id,
             User.name,
             func.count(Ticket.id).label("total"),
             func.count(case((Ticket.status.in_(resolved_subq), 1))).label("resolved"),
@@ -242,6 +282,10 @@ async def get_technicians(
         .order_by(func.count(Ticket.id).desc())
     )
 
+    if assignee_id is not None:
+        stmt = stmt.where(User.id == assignee_id)
+
+    result = await session.execute(stmt)
     return [
         {
             "name": row.name,
