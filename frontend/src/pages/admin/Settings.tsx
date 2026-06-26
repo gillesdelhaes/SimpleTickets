@@ -247,6 +247,32 @@ function SlackTab() {
 
 // ── Slack setup guide ─────────────────────────────────────────────────────────
 
+const SLACK_MANIFEST = JSON.stringify({
+  display_information: {
+    name: "SimpleTickets",
+    description: "Self-hosted IT helpdesk — submit and track support tickets without leaving Slack.",
+    background_color: "#111111",
+  },
+  features: {
+    bot_user: { display_name: "SimpleTickets", always_online: true },
+    slash_commands: [{ command: "/ticket", description: "Submit a support ticket", usage_hint: "[describe your issue]", should_escape: false }],
+    app_home: { home_tab_enabled: true, messages_tab_enabled: true, messages_tab_read_only_enabled: false },
+    shortcuts: [{ name: "Create ticket", type: "message", callback_id: "create_ticket_from_message", description: "Turn any Slack message into a support ticket" }],
+  },
+  oauth_config: {
+    scopes: {
+      bot: ["chat:write", "chat:write.public", "im:write", "im:history", "channels:history", "groups:history", "reactions:read", "files:read", "files:write", "users:read"],
+    },
+  },
+  settings: {
+    event_subscriptions: { bot_events: ["app_home_opened", "message.channels", "message.groups", "message.im", "reaction_added"] },
+    interactivity: { is_enabled: true },
+    org_deploy_enabled: false,
+    socket_mode_enabled: true,
+    token_rotation_enabled: false,
+  },
+}, null, 2)
+
 function CopyBtn({ value }: { value: string }) {
   const [copied, setCopied] = useState(false)
   return (
@@ -257,112 +283,58 @@ function CopyBtn({ value }: { value: string }) {
   )
 }
 
-function ScopeRow({ name, description }: { name: string; description: string }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', borderBottom: '1px solid rgba(255,255,255,0.04)', gap: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-        <code style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#FF4713', background: 'rgba(255,71,19,0.08)', border: '1px solid rgba(255,71,19,0.15)', borderRadius: 4, padding: '2px 7px', flexShrink: 0 }}>{name}</code>
-        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>{description}</span>
-      </div>
-      <CopyBtn value={name} />
-    </div>
-  )
-}
-
-function GuideStep({ number, title, children }: { number: number; title: string; children: React.ReactNode }) {
-  return (
-    <div style={{ background: '#111', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, overflow: 'hidden', marginBottom: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)' }}>
-        <div style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, background: 'linear-gradient(135deg, #FF4713, #AD1164)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff' }}>{number}</div>
-        <span style={{ fontSize: 14, fontWeight: 600, color: '#fff', margin: 0 }}>{title}</span>
-      </div>
-      <div style={{ padding: '14px 20px', fontSize: 13, color: 'rgba(255,255,255,0.5)', lineHeight: 1.7 }}>{children}</div>
-    </div>
-  )
-}
-
-function NavPath({ steps }: { steps: string[] }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 4, margin: '8px 0' }}>
-      {steps.map((s, i) => (
-        <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.75)', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 5, padding: '2px 9px' }}>{s}</span>
-          {i < steps.length - 1 && <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="1.5" strokeLinecap="round"><path d="M3 2l4 3-4 3" /></svg>}
-        </span>
-      ))}
-    </div>
-  )
-}
-
-const gp: React.CSSProperties = { margin: '5px 0', color: 'rgba(255,255,255,0.5)' }
-const em = (s: string) => <strong style={{ color: 'rgba(255,255,255,0.8)' }}>{s}</strong>
-const code = (s: string) => <code style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#FF4713' }}>{s}</code>
-
 function SlackGuide() {
   return (
     <div style={{ marginTop: 12, maxWidth: 720 }}>
-      <p style={{ fontSize: 13, color: '#737373', marginBottom: 16, lineHeight: 1.6 }}>
-        SimpleTickets uses a <strong>private Slack app</strong> installed in your workspace. Follow these steps to create it and get the required tokens.
+      <p style={{ fontSize: 13, color: '#737373', marginBottom: 20, lineHeight: 1.6 }}>
+        SimpleTickets uses a <strong>private Slack app</strong> installed in your workspace.
+        Instead of configuring it manually, use the manifest below — Slack will set everything up automatically.
       </p>
-      <GuideStep number={1} title="Create a new Slack app">
-        <p style={gp}>Go to {em('api.slack.com/apps')} → {em('Create New App → From scratch')}.</p>
-        <p style={gp}>Give it a name (e.g. SimpleTickets) and select your workspace.</p>
-      </GuideStep>
-      <GuideStep number={2} title="Enable Socket Mode">
-        <NavPath steps={['Settings', 'Socket Mode']} />
-        <p style={gp}>Toggle {em('Enable Socket Mode')} on. You'll be prompted to generate an {em('App-Level Token')} — add the {code('connections:write')} scope.</p>
-        <div style={{ background: 'rgba(255,71,19,0.06)', border: '1px solid rgba(255,71,19,0.18)', borderLeft: '3px solid #FF4713', borderRadius: '0 8px 8px 0', padding: '8px 12px', fontSize: 12, marginTop: 10 }}>
-          This token starts with {code('xapp-')} — copy it for the App-Level Token field above.
+
+      {/* Step 1 */}
+      <div style={{ display: 'flex', gap: 14, marginBottom: 16 }}>
+        <div style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, background: 'linear-gradient(135deg, #FF4713, #AD1164)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff', marginTop: 1 }}>1</div>
+        <div style={{ flex: 1 }}>
+          <p style={{ fontSize: 14, fontWeight: 600, color: '#fff', margin: '0 0 8px' }}>Copy the manifest and open the Slack App Console</p>
+          <div style={{ background: '#0A0A0A', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 10, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)' }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>slack-manifest.json</span>
+              <CopyBtn value={SLACK_MANIFEST} />
+            </div>
+            <pre style={{ margin: 0, padding: '14px 16px', fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'rgba(255,255,255,0.5)', overflowX: 'auto', lineHeight: 1.6, maxHeight: 220, overflowY: 'auto' }}>{SLACK_MANIFEST}</pre>
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <a href="https://api.slack.com/apps?new_app=1" target="_blank" rel="noreferrer"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: 'rgba(255,71,19,0.1)', border: '1px solid rgba(255,71,19,0.3)', borderRadius: 7, fontSize: 13, fontWeight: 600, color: '#FF4713', textDecoration: 'none', transition: 'all 0.15s' }}>
+              Open Slack App Console →
+            </a>
+          </div>
         </div>
-      </GuideStep>
-      <GuideStep number={3} title="Add Bot Token Scopes">
-        <NavPath steps={['Features', 'OAuth & Permissions', 'Scopes', 'Bot Token Scopes']} />
-        <div style={{ background: '#0A0A0A', borderRadius: 8, border: '1px solid rgba(255,255,255,0.07)', marginTop: 8, overflow: 'hidden' }}>
-          <ScopeRow name="chat:write"       description="Post messages to channels and DMs" />
-          <ScopeRow name="files:read"       description="Download files sent by users in Slack" />
-          <ScopeRow name="files:write"      description="Upload web attachments to Slack threads" />
-          <ScopeRow name="reactions:read"   description="Detect emoji reactions that create tickets" />
-          <ScopeRow name="users:read"       description="Fetch display names for Slack users" />
-          <ScopeRow name="channels:history" description="Read channel messages" />
-          <ScopeRow name="groups:history"   description="Same for private channels" />
-          <ScopeRow name="im:history"       description="Read DM messages from users" />
+      </div>
+
+      {/* Step 2 */}
+      <div style={{ display: 'flex', gap: 14, marginBottom: 16 }}>
+        <div style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, background: 'linear-gradient(135deg, #FF4713, #AD1164)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff', marginTop: 1 }}>2</div>
+        <div style={{ flex: 1 }}>
+          <p style={{ fontSize: 14, fontWeight: 600, color: '#fff', margin: '0 0 6px' }}>Create the app from the manifest</p>
+          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', margin: 0, lineHeight: 1.6 }}>
+            In the Slack App Console: <strong style={{ color: 'rgba(255,255,255,0.7)' }}>Create New App</strong> → <strong style={{ color: 'rgba(255,255,255,0.7)' }}>From a manifest</strong> → select your workspace → paste the manifest → click <strong style={{ color: 'rgba(255,255,255,0.7)' }}>Next</strong> → <strong style={{ color: 'rgba(255,255,255,0.7)' }}>Create</strong> → <strong style={{ color: 'rgba(255,255,255,0.7)' }}>Install to Workspace</strong>.
+          </p>
         </div>
-      </GuideStep>
-      <GuideStep number={4} title="Subscribe to Bot Events">
-        <NavPath steps={['Features', 'Event Subscriptions']} />
-        <p style={gp}>Enable Events, then under {em('Subscribe to bot events')} add:</p>
-        <div style={{ background: '#0A0A0A', borderRadius: 8, border: '1px solid rgba(255,255,255,0.07)', marginTop: 8, overflow: 'hidden' }}>
-          <ScopeRow name="message.im"       description="DM messages sent to the bot" />
-          <ScopeRow name="message.channels" description="Thread replies in public channels" />
-          <ScopeRow name="message.groups"   description="Thread replies in private channels" />
-          <ScopeRow name="reaction_added"   description="Emoji reactions that trigger ticket creation" />
-          <ScopeRow name="app_home_opened"  description="Render the App Home tab for end users" />
+      </div>
+
+      {/* Step 3 */}
+      <div style={{ display: 'flex', gap: 14 }}>
+        <div style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, background: 'linear-gradient(135deg, #FF4713, #AD1164)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff', marginTop: 1 }}>3</div>
+        <div style={{ flex: 1 }}>
+          <p style={{ fontSize: 14, fontWeight: 600, color: '#fff', margin: '0 0 6px' }}>Copy your three tokens into the fields above</p>
+          <div style={{ display: 'grid', gap: 6, fontSize: 13, color: 'rgba(255,255,255,0.45)', lineHeight: 1.6 }}>
+            <span><strong style={{ color: 'rgba(255,255,255,0.7)', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>Bot Token</strong> — OAuth & Permissions → Bot User OAuth Token (starts with <code style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#FF4713' }}>xoxb-</code>)</span>
+            <span><strong style={{ color: 'rgba(255,255,255,0.7)', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>App-Level Token</strong> — Basic Information → App-Level Tokens (starts with <code style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#FF4713' }}>xapp-</code>)</span>
+            <span><strong style={{ color: 'rgba(255,255,255,0.7)', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>Signing Secret</strong> — Basic Information → App Credentials → Signing Secret</span>
+          </div>
         </div>
-      </GuideStep>
-      <GuideStep number={5} title="Enable Interactivity">
-        <NavPath steps={['Features', 'Interactivity & Shortcuts']} />
-        <p style={gp}>Toggle {em('Interactivity')} on. Required for the {code('/ticket')} command and App Home buttons. Leave the Request URL blank — Socket Mode doesn't use it.</p>
-      </GuideStep>
-      <GuideStep number={6} title="Enable the App Home tab">
-        <NavPath steps={['Features', 'App Home']} />
-        <p style={gp}>Under {em('Show Tabs')}, enable the {em('Home Tab')}. Optionally enable the {em('Messages Tab')} so users can DM the bot.</p>
-      </GuideStep>
-      <GuideStep number={7} title="Add the /ticket slash command (optional)">
-        <NavPath steps={['Features', 'Slash Commands', 'Create New Command']} />
-        <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 14px', marginTop: 8 }}>
-          {[['Command', '/ticket'], ['Description', 'Submit a support ticket'], ['Usage hint', '[describe your issue]']].map(([k, v]) => (
-            <><span key={'k'+k} style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.3)', alignSelf: 'center' }}>{k}</span>
-              <div key={'v'+k} style={{ display: 'flex', alignItems: 'center', gap: 8 }}><code style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>{v}</code><CopyBtn value={v} /></div></>
-          ))}
-        </div>
-      </GuideStep>
-      <GuideStep number={8} title="Install the app and copy tokens">
-        <NavPath steps={['Settings', 'Install App', 'Install to Workspace']} />
-        <p style={gp}>Click {em('Install to Workspace')} and authorise. After installation, copy the {em('Bot User OAuth Token')}.</p>
-        <div style={{ background: 'rgba(255,71,19,0.06)', border: '1px solid rgba(255,71,19,0.18)', borderLeft: '3px solid #FF4713', borderRadius: '0 8px 8px 0', padding: '8px 12px', fontSize: 12, marginTop: 8 }}>
-          This token starts with {code('xoxb-')}. Paste it into {em('Bot Token')} above, along with the {code('xapp-')} token from Step 2 and the Signing Secret from {em('Basic Information → App Credentials')}.
-        </div>
-      </GuideStep>
+      </div>
     </div>
   )
 }
