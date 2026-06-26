@@ -27,6 +27,7 @@ class AppConfig(BaseModel):
     timezone: str
     statuses: list[StatusConfigRead]
     slack_configured: bool
+    slack_online: bool
 
 
 @router.get("/app-config", response_model=AppConfig)
@@ -55,4 +56,5 @@ async def get_app_config(
         )
         for r in rows
     ]
-    return AppConfig(timezone=tz, statuses=statuses, slack_configured=settings_manager.is_slack_configured())
+    from app.slack.bot import is_slack_online
+    return AppConfig(timezone=tz, statuses=statuses, slack_configured=settings_manager.is_slack_configured(), slack_online=is_slack_online())

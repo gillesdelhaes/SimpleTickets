@@ -135,7 +135,7 @@ const SIDEBAR_COLLAPSED_KEY = 'st_sidebar_collapsed'
 export default function AppShell({ title, children }: AppShellProps) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
-  useAppConfig() // loads timezone into module-level state
+  const { data: appConfig } = useAppConfig()
   const { data: unreadData } = useUnreadReplies()
   const myUnreadCount = unreadData?.my_unread_count ?? 0
   const myUnreadTickets = unreadData?.my_unread_tickets ?? []
@@ -541,6 +541,37 @@ export default function AppShell({ title, children }: AppShellProps) {
             )}
           </div>
         </header>
+
+        {/* ── Slack offline banner ── */}
+        {appConfig?.slack_configured && !appConfig?.slack_online && (
+          <div style={{
+            background: '#7C2D12',
+            color: '#FED7AA',
+            padding: '8px 20px',
+            fontSize: 13,
+            fontWeight: 500,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            position: 'sticky',
+            top: 56,
+            zIndex: 29,
+            flexShrink: 0,
+          }}>
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <path d="M7.5 1L14 13H1L7.5 1z" />
+              <path d="M7.5 6v3.5" />
+              <circle cx="7.5" cy="11.5" r="0.5" fill="currentColor" stroke="none" />
+            </svg>
+            <span>Slack bot is disconnected — ticket notifications from Slack are paused.</span>
+            <Link
+              to="/admin/settings"
+              style={{ color: '#FED7AA', textDecoration: 'underline', marginLeft: 4, whiteSpace: 'nowrap' }}
+            >
+              Go to Settings
+            </Link>
+          </div>
+        )}
 
         {/* ── Content ── */}
         <main style={{ flex: 1, padding: '24px 24px 40px', minWidth: 0 }}>

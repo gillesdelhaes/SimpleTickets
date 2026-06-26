@@ -96,6 +96,15 @@ async def reload_slack() -> None:
     await start_slack()
 
 
+def is_slack_online() -> bool:
+    """True if the Socket Mode handler is running and its task is alive."""
+    return (
+        _socket_handler is not None
+        and _socket_task is not None
+        and not _socket_task.done()
+    )
+
+
 def get_slack_client():
     """Return the Slack AsyncWebClient if the bot is running, else None."""
     if _slack_app is not None:

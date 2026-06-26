@@ -6,6 +6,7 @@ interface AppConfig {
   timezone: string
   statuses: StatusConfig[]
   slack_configured: boolean
+  slack_online: boolean
 }
 
 export function useAppConfig() {
@@ -17,6 +18,7 @@ export function useAppConfig() {
       setStatuses(data.statuses)
       return data
     },
-    staleTime: 60 * 1000,
+    staleTime: 30 * 1000,
+    refetchInterval: 30 * 1000,
   })
 }
