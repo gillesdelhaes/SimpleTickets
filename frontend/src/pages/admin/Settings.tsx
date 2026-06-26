@@ -316,17 +316,17 @@ function SlackGuide() {
       <div style={{ display: 'flex', gap: 14, marginBottom: 16 }}>
         <div style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, background: 'linear-gradient(135deg, #FF4713, #AD1164)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff', marginTop: 1 }}>1</div>
         <div style={{ flex: 1 }}>
-          <p style={{ fontSize: 14, fontWeight: 600, color: '#fff', margin: '0 0 8px' }}>Copy the manifest and open the Slack App Console</p>
-          <div style={{ background: '#0A0A0A', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 10, overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)' }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>slack-manifest.json</span>
+          <p style={{ fontSize: 14, fontWeight: 600, color: '#0A0A0A', margin: '0 0 8px' }}>Copy the manifest and open the Slack App Console</p>
+          <div style={{ background: '#0A0A0A', border: '1px solid #E5E5E5', borderRadius: 10, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.04)' }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>slack-manifest.json</span>
               <CopyBtn value={SLACK_MANIFEST} />
             </div>
-            <pre style={{ margin: 0, padding: '14px 16px', fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'rgba(255,255,255,0.5)', overflowX: 'auto', lineHeight: 1.6, maxHeight: 220, overflowY: 'auto' }}>{SLACK_MANIFEST}</pre>
+            <pre style={{ margin: 0, padding: '14px 16px', fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'rgba(255,255,255,0.55)', overflowX: 'auto', lineHeight: 1.6, maxHeight: 220, overflowY: 'auto' }}>{SLACK_MANIFEST}</pre>
           </div>
           <div style={{ marginTop: 10 }}>
             <a href="https://api.slack.com/apps?new_app=1" target="_blank" rel="noreferrer"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: 'rgba(255,71,19,0.1)', border: '1px solid rgba(255,71,19,0.3)', borderRadius: 7, fontSize: 13, fontWeight: 600, color: '#FF4713', textDecoration: 'none', transition: 'all 0.15s' }}>
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: 'rgba(255,71,19,0.08)', border: '1px solid rgba(255,71,19,0.3)', borderRadius: 7, fontSize: 13, fontWeight: 600, color: '#FF4713', textDecoration: 'none', transition: 'all 0.15s' }}>
               Open Slack App Console →
             </a>
           </div>
@@ -337,9 +337,9 @@ function SlackGuide() {
       <div style={{ display: 'flex', gap: 14, marginBottom: 16 }}>
         <div style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, background: 'linear-gradient(135deg, #FF4713, #AD1164)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff', marginTop: 1 }}>2</div>
         <div style={{ flex: 1 }}>
-          <p style={{ fontSize: 14, fontWeight: 600, color: '#fff', margin: '0 0 6px' }}>Create the app from the manifest</p>
-          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', margin: 0, lineHeight: 1.6 }}>
-            In the Slack App Console: <strong style={{ color: 'rgba(255,255,255,0.7)' }}>Create New App</strong> → <strong style={{ color: 'rgba(255,255,255,0.7)' }}>From a manifest</strong> → select your workspace → paste the manifest → click <strong style={{ color: 'rgba(255,255,255,0.7)' }}>Next</strong> → <strong style={{ color: 'rgba(255,255,255,0.7)' }}>Create</strong> → <strong style={{ color: 'rgba(255,255,255,0.7)' }}>Install to Workspace</strong>.
+          <p style={{ fontSize: 14, fontWeight: 600, color: '#0A0A0A', margin: '0 0 6px' }}>Create the app from the manifest</p>
+          <p style={{ fontSize: 13, color: '#737373', margin: 0, lineHeight: 1.6 }}>
+            In the Slack App Console: <strong style={{ color: '#262626' }}>Create New App</strong> → <strong style={{ color: '#262626' }}>From a manifest</strong> → select your workspace → paste the manifest → click <strong style={{ color: '#262626' }}>Next</strong> → <strong style={{ color: '#262626' }}>Create</strong> → go to <strong style={{ color: '#262626' }}>Settings → Install App</strong> in the left sidebar → <strong style={{ color: '#262626' }}>Install to Workspace</strong>.
           </p>
         </div>
       </div>
@@ -348,11 +348,11 @@ function SlackGuide() {
       <div style={{ display: 'flex', gap: 14 }}>
         <div style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, background: 'linear-gradient(135deg, #FF4713, #AD1164)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff', marginTop: 1 }}>3</div>
         <div style={{ flex: 1 }}>
-          <p style={{ fontSize: 14, fontWeight: 600, color: '#fff', margin: '0 0 6px' }}>Copy your three tokens into the fields above</p>
-          <div style={{ display: 'grid', gap: 6, fontSize: 13, color: 'rgba(255,255,255,0.45)', lineHeight: 1.6 }}>
-            <span><strong style={{ color: 'rgba(255,255,255,0.7)', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>Bot Token</strong> — OAuth & Permissions → Bot User OAuth Token (starts with <code style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#FF4713' }}>xoxb-</code>)</span>
-            <span><strong style={{ color: 'rgba(255,255,255,0.7)', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>App-Level Token</strong> — Basic Information → App-Level Tokens (starts with <code style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#FF4713' }}>xapp-</code>)</span>
-            <span><strong style={{ color: 'rgba(255,255,255,0.7)', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>Signing Secret</strong> — Basic Information → App Credentials → Signing Secret</span>
+          <p style={{ fontSize: 14, fontWeight: 600, color: '#0A0A0A', margin: '0 0 6px' }}>Copy your three tokens into the fields above</p>
+          <div style={{ display: 'grid', gap: 6, fontSize: 13, color: '#737373', lineHeight: 1.6 }}>
+            <span><strong style={{ color: '#262626', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>Bot Token</strong> — OAuth &amp; Permissions → Bot User OAuth Token (starts with <code style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#FF4713' }}>xoxb-</code>)</span>
+            <span><strong style={{ color: '#262626', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>App-Level Token</strong> — Basic Information → App-Level Tokens → Generate Token → add <code style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#FF4713' }}>connections:write</code> scope (starts with <code style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#FF4713' }}>xapp-</code>)</span>
+            <span><strong style={{ color: '#262626', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>Signing Secret</strong> — Basic Information → App Credentials → Signing Secret</span>
           </div>
         </div>
       </div>
