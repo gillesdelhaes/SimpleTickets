@@ -269,6 +269,7 @@ function SlackTab() {
 // ── Slack setup guide ─────────────────────────────────────────────────────────
 
 const SLACK_MANIFEST = JSON.stringify({
+  _metadata: { major_version: 1, minor_version: 1 },
   display_information: {
     name: "SimpleTickets",
     description: "Self-hosted IT helpdesk — submit and track support tickets without leaving Slack.",
@@ -276,13 +277,13 @@ const SLACK_MANIFEST = JSON.stringify({
   },
   features: {
     bot_user: { display_name: "SimpleTickets", always_online: true },
-    slash_commands: [{ command: "/ticket", description: "Submit a support ticket", usage_hint: "[describe your issue]", should_escape: false }],
+    slash_commands: [{ command: "/ticket", description: "Submit a support ticket", should_escape: false }],
     app_home: { home_tab_enabled: true, messages_tab_enabled: true, messages_tab_read_only_enabled: false },
     shortcuts: [{ name: "Create ticket", type: "message", callback_id: "create_ticket_from_message", description: "Turn any Slack message into a support ticket" }],
   },
   oauth_config: {
     scopes: {
-      bot: ["chat:write", "chat:write.public", "im:write", "im:history", "channels:history", "groups:history", "reactions:read", "files:read", "files:write", "users:read"],
+      bot: ["chat:write", "chat:write.public", "im:write", "im:history", "channels:history", "groups:history", "reactions:read", "files:read", "files:write", "users:read", "commands"],
     },
   },
   settings: {
@@ -337,9 +338,12 @@ function SlackGuide() {
       <div style={{ display: 'flex', gap: 14, marginBottom: 16 }}>
         <div style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, background: 'linear-gradient(135deg, #FF4713, #AD1164)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff', marginTop: 1 }}>2</div>
         <div style={{ flex: 1 }}>
-          <p style={{ fontSize: 14, fontWeight: 600, color: '#0A0A0A', margin: '0 0 6px' }}>Create the app from the manifest</p>
+          <p style={{ fontSize: 14, fontWeight: 600, color: '#0A0A0A', margin: '0 0 8px' }}>Create the app and generate your App-Level Token</p>
+          <p style={{ fontSize: 13, color: '#737373', margin: '0 0 8px', lineHeight: 1.6 }}>
+            In the Slack App Console: <strong style={{ color: '#262626' }}>Create New App</strong> → <strong style={{ color: '#262626' }}>From a manifest</strong> → select your workspace → paste the manifest → <strong style={{ color: '#262626' }}>Next</strong> → <strong style={{ color: '#262626' }}>Create</strong>. Then in the left sidebar go to <strong style={{ color: '#262626' }}>Settings → Install App</strong> → <strong style={{ color: '#262626' }}>Install to Workspace</strong> → <strong style={{ color: '#262626' }}>Allow</strong>.
+          </p>
           <p style={{ fontSize: 13, color: '#737373', margin: 0, lineHeight: 1.6 }}>
-            In the Slack App Console: <strong style={{ color: '#262626' }}>Create New App</strong> → <strong style={{ color: '#262626' }}>From a manifest</strong> → select your workspace → paste the manifest → click <strong style={{ color: '#262626' }}>Next</strong> → <strong style={{ color: '#262626' }}>Create</strong> → go to <strong style={{ color: '#262626' }}>Settings → Install App</strong> in the left sidebar → <strong style={{ color: '#262626' }}>Install to Workspace</strong>.
+            Then go to <strong style={{ color: '#262626' }}>Basic Information</strong> → <strong style={{ color: '#262626' }}>App-Level Tokens</strong> → <strong style={{ color: '#262626' }}>Generate Token and Scopes</strong> → name it anything → add scope <code style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, background: '#F2F2F2', padding: '1px 5px', borderRadius: 4 }}>connections:write</code> → <strong style={{ color: '#262626' }}>Generate</strong>. Copy the <code style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#FF4713' }}>xapp-…</code> token.
           </p>
         </div>
       </div>
