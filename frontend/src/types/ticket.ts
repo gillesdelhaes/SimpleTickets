@@ -94,7 +94,7 @@ export const PRIORITY_LABELS: Record<Priority, string> = {
 
 
 // Format milliseconds remaining into a human-readable duration
-export function formatDuration(ms: number): string {
+function formatDuration(ms: number): string {
   if (ms <= 0) return 'Overdue'
   const totalSecs = Math.floor(ms / 1000)
   const days = Math.floor(totalSecs / 86400)
@@ -152,19 +152,6 @@ export function setTimezone(tz: string) {
   _timezone = tz
 }
 
-export function formatAbsDate(dateStr: string): string {
-  try {
-    return new Intl.DateTimeFormat('en-GB', {
-      timeZone: _timezone,
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    }).format(new Date(dateStr + 'Z'))
-  } catch {
-    return new Date(dateStr).toLocaleString()
-  }
 }
 
 export function timeAgo(dateStr: string): string {

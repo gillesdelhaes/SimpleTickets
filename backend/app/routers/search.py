@@ -4,7 +4,6 @@ Full-text Search using PostgreSQL FTS (tsvector / websearch_to_tsquery).
 Ranks tickets by relevance across title (weight A), description (weight B),
 and reply bodies (weight C). Supports AND / OR / phrase / negation syntax.
 """
-from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status

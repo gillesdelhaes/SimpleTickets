@@ -1,9 +1,7 @@
 .PHONY: build migrate migrate-new migrate-down migrate-fresh \
-        shell-api shell-db logs logs-api \
-        prod-build prod-up prod-down prod-logs prod-migrate
+        shell-api shell-db logs logs-api
 
-DC      = docker compose -f docker-compose.yml
-DC_PROD = docker compose -f docker-compose.yml -f docker-compose.prod.yml
+DC = docker compose -f docker-compose.yml
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 
@@ -36,27 +34,10 @@ shell-api:
 	$(DC) run --rm api bash
 
 shell-db:
-	$(DC) exec db psql -U postgres simplytickets
+	$(DC) exec db psql -U postgres simpletickets
 
 logs:
 	$(DC) logs -f
 
 logs-api:
 	$(DC) logs -f api
-
-# ── Production ────────────────────────────────────────────────────────────────
-
-prod-build:
-	$(DC_PROD) build
-
-prod-up:
-	$(DC_PROD) up -d
-
-prod-down:
-	$(DC_PROD) down
-
-prod-logs:
-	$(DC_PROD) logs -f
-
-prod-migrate:
-	$(DC_PROD) run --rm api alembic upgrade head

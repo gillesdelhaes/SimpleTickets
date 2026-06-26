@@ -13,7 +13,6 @@ Access rules (mirrors ticket access):
 """
 import logging
 import magic
-import os
 import re
 import uuid
 from pathlib import Path
@@ -29,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.deps import get_current_user
 from app.config import settings
 from app.database import get_session
-from app.models import Ticket, TicketAttachment, User
+from app.models import TicketAttachment, User
 from app.schemas.attachment import AttachmentRead
 from app.utils import get_ticket_or_404, utcnow
 

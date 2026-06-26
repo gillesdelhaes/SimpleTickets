@@ -13,7 +13,6 @@ Phase 2 — `settings_manager` (SettingsManager, reads from app_settings DB tabl
 import logging
 import secrets
 import time
-from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
