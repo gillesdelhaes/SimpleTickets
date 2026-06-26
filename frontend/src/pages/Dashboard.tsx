@@ -7,18 +7,10 @@ import { useUnreadReplies } from '../hooks/useUnreadReplies'
 import { useActivity, type ActivityEvent } from '../hooks/useActivity'
 import { useAppConfig } from '../hooks/useAppConfig'
 import { useAuth } from '../contexts/AuthContext'
-import { getAllStatuses, timeAgo, type TicketRead } from '../types/ticket'
+import { getAllStatuses, statusColor, statusLabel, timeAgo, type TicketRead } from '../types/ticket'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-const STATUS_DISPLAY: Record<string, string> = {
-  open: 'Open', in_progress: 'In Progress', pending_user: 'Pending',
-  resolved: 'Resolved', closed: 'Closed',
-}
-const STATUS_COLOR: Record<string, string> = {
-  open: '#3B82F6', in_progress: '#FF4713', pending_user: '#F59E0B',
-  resolved: '#10B981', closed: '#737373',
-}
 const FIELD_LABEL: Record<string, string> = {
   status: 'status', priority: 'priority', assignee_id: 'assignee', category_id: 'category',
 }
@@ -309,7 +301,7 @@ function ActivityDescription({ event }: { event: ActivityEvent }) {
   const newVal = event.new_value
 
   if (field === 'status' && newVal) {
-    const color = STATUS_COLOR[newVal] ?? '#737373'
+    const color = statusColor(newVal)
     return (
       <span>
         {actor} set {ticket} to{' '}
@@ -318,7 +310,7 @@ function ActivityDescription({ event }: { event: ActivityEvent }) {
           fontSize: 10, fontWeight: 600,
           background: `${color}18`, color, border: `1px solid ${color}40`,
         }}>
-          {STATUS_DISPLAY[newVal] ?? newVal}
+          {statusLabel(newVal)}
         </span>
       </span>
     )
@@ -433,9 +425,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <style>{`
-        @keyframes shimmer { 0%,100%{opacity:1}50%{opacity:0.4} }
-      `}</style>
     </AppShell>
   )
 }

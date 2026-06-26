@@ -10,20 +10,13 @@ import { useTickets } from '../hooks/useTickets'
 import { useCategories } from '../hooks/useCategories'
 import { useAuth } from '../contexts/AuthContext'
 import { useUnreadReplies } from '../hooks/useUnreadReplies'
-import { getAllStatuses, timeAgo, type Priority } from '../types/ticket'
+import { getAllStatuses, timeAgo, PRIORITY_LABELS, type Priority } from '../types/ticket'
 import { useAppConfig } from '../hooks/useAppConfig'
 import api from '../lib/api'
 
 const PAGE_SIZE = 25
 
 const ALL_PRIORITIES: Priority[] = ['critical', 'high', 'medium', 'low']
-
-const PRIORITY_LABELS: Record<Priority, string> = {
-  critical: 'Critical',
-  high: 'High',
-  medium: 'Medium',
-  low: 'Low',
-}
 
 // ── Filter pills ───────────────────────────────────────────────────────────────
 
@@ -587,12 +580,6 @@ export default function Queue() {
         </div>
       </div>
 
-      <style>{`
-        @keyframes shimmer {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.4; }
-        }
-      `}</style>
     </AppShell>
   )
 }

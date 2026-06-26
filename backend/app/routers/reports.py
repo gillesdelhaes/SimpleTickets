@@ -15,7 +15,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import case, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import get_current_user, require_admin, require_technician
+from app.auth.deps import require_admin, require_technician
 from app.database import get_session
 from app.models import Category, Ticket, User
 from app.models.enums import Role
@@ -63,7 +63,7 @@ async def get_overview(
     from_date: Optional[date] = Query(default=None),
     to_date: Optional[date] = Query(default=None),
     assignee_id: Optional[int] = Query(default=None),
-    current_user: User = Depends(get_current_user),
+    _: User = Depends(require_technician),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     start, end = _date_range(from_date, to_date)
@@ -116,7 +116,7 @@ async def get_volume(
     from_date: Optional[date] = Query(default=None),
     to_date: Optional[date] = Query(default=None),
     assignee_id: Optional[int] = Query(default=None),
-    current_user: User = Depends(get_current_user),
+    _: User = Depends(require_technician),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     start, end = _date_range(from_date, to_date)
@@ -144,7 +144,7 @@ async def get_by_priority(
     from_date: Optional[date] = Query(default=None),
     to_date: Optional[date] = Query(default=None),
     assignee_id: Optional[int] = Query(default=None),
-    current_user: User = Depends(get_current_user),
+    _: User = Depends(require_technician),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     start, end = _date_range(from_date, to_date)
@@ -167,7 +167,7 @@ async def get_by_status(
     from_date: Optional[date] = Query(default=None),
     to_date: Optional[date] = Query(default=None),
     assignee_id: Optional[int] = Query(default=None),
-    current_user: User = Depends(get_current_user),
+    _: User = Depends(require_technician),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     start, end = _date_range(from_date, to_date)
@@ -190,7 +190,7 @@ async def get_by_category(
     from_date: Optional[date] = Query(default=None),
     to_date: Optional[date] = Query(default=None),
     assignee_id: Optional[int] = Query(default=None),
-    current_user: User = Depends(get_current_user),
+    _: User = Depends(require_technician),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     start, end = _date_range(from_date, to_date)
@@ -218,7 +218,7 @@ async def get_by_source(
     from_date: Optional[date] = Query(default=None),
     to_date: Optional[date] = Query(default=None),
     assignee_id: Optional[int] = Query(default=None),
-    current_user: User = Depends(get_current_user),
+    _: User = Depends(require_technician),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     start, end = _date_range(from_date, to_date)

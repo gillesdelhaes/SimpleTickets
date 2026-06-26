@@ -1133,8 +1133,6 @@ function ThreadColumn({ ticket, isTech, currentUserId }: ThreadColumnProps) {
   )
 }
 
-// ── End-user metadata strip ────────────────────────────────────────────────────
-
 // ── Breadcrumb ─────────────────────────────────────────────────────────────────
 
 interface BreadcrumbProps {
@@ -1330,11 +1328,6 @@ export default function TicketDetail() {
           </div>
         </div>
 
-        <style>{`
-          @keyframes spin { to { transform: rotate(360deg); } }
-          @keyframes shimmer { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
-          @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-        `}</style>
       </AppShell>
   )
 }
