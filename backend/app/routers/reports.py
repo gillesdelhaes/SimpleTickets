@@ -341,7 +341,7 @@ async def export_tickets_csv(
     writer = csv.writer(output)
     writer.writerow([
         "ID", "Title", "Description", "Status", "Priority", "Channel",
-        "Category", "Submitter", "Submitter Email", "Assignee",
+        "Category", "Submitter", "Submitter Email / Slack ID", "Assignee",
         "Created At", "Updated At", "Resolved At",
         "SLA Deadline", "SLA Breached", "First Response Deadline", "First Responded At",
     ])
