@@ -2,11 +2,12 @@
 Slack Bolt event handlers — registered on the AsyncApp in bot.py.
 
 Interaction model:
-  /ticket             → slash command opens a modal; any Slack user can submit
-  DM to bot           → creates a ticket from the message text
-  reaction_added      → technician/admin reacts with trigger emoji to convert a
-                        channel message into a ticket (reactor must exist in DB)
-  message (thread)    → syncs Slack thread replies back to the web portal
+  /ticket                      → slash command opens a modal; any Slack user can submit
+  message shortcut             → right-click any message → "Create ticket" → pre-filled modal
+  DM to bot                    → creates a ticket from the message text
+  reaction_added               → technician/admin reacts with trigger emoji to convert a
+                                 channel message into a ticket (reactor must exist in DB)
+  message (thread)             → syncs Slack thread replies back to the web portal
 """
 from __future__ import annotations
 
@@ -773,3 +774,195 @@ def register_handlers(app: Any) -> None:
                 await client.views_publish(user_id=slack_user_id, view=home_view)
             except Exception:  # noqa: BLE001
                 pass
+
+    # ── Message shortcut: Create ticket from any message ──────────────────────
+
+    @app.shortcut("create_ticket_from_message")
+    async def handle_message_shortcut(ack: Any, body: dict, client: Any) -> None:
+        """
+        Right-click any Slack message → More actions → Create ticket.
+        Opens a modal pre-filled with the message text and author.
+        The message author becomes the ticket submitter (not the tech who triggered it).
+        """
+        await ack()
+
+        message: dict = body.get("message", {})
+        channel: dict = body.get("channel", {})
+
+        message_text: str = message.get("text", "") or ""
+        author_slack_id: str = message.get("user", "")
+        message_ts: str = message.get("ts", "")
+        channel_id: str = channel.get("id", "") or body.get("channel_id", "")
+
+        # Derive a sensible default title from the first non-empty line
+        first_line = next((ln.strip() for ln in message_text.split("\n") if ln.strip()), "")
+        default_title = first_line[:200] if first_line else "Ticket from Slack"
+
+        author_name = await _slack_display_name(client, author_slack_id) if author_slack_id else "Slack user"
+        category_options = await _fetch_categories()
+
+        # Store original message context in private_metadata (not the text — it lives in initial_value)
+        metadata = json.dumps({
+            "channel_id": channel_id,
+            "message_ts": message_ts,
+            "author_slack_id": author_slack_id,
+            "author_name": author_name,
+        })
+
+        blocks: list[dict] = [
+            {
+                "type": "context",
+                "elements": [{"type": "mrkdwn", "text": f"Message by *{author_name}* · they'll be set as the ticket submitter"}],
+            },
+            {
+                "type": "input",
+                "block_id": "title_block",
+                "label": {"type": "plain_text", "text": "Title"},
+                "element": {
+                    "type": "plain_text_input",
+                    "action_id": "title_input",
+                    "initial_value": default_title,
+                    "max_length": 200,
+                },
+            },
+            {
+                "type": "input",
+                "block_id": "description_block",
+                "label": {"type": "plain_text", "text": "Description"},
+                "element": {
+                    "type": "plain_text_input",
+                    "action_id": "description_input",
+                    "multiline": True,
+                    # Cap at 3000 chars — Slack's initial_value limit
+                    "initial_value": message_text[:3000] if message_text else default_title,
+                },
+            },
+            {
+                "type": "input",
+                "block_id": "priority_block",
+                "label": {"type": "plain_text", "text": "Priority"},
+                "element": {
+                    "type": "static_select",
+                    "action_id": "priority_select",
+                    "initial_option": {"text": {"type": "plain_text", "text": "Medium"}, "value": "medium"},
+                    "options": [
+                        {"text": {"type": "plain_text", "text": "Low"}, "value": "low"},
+                        {"text": {"type": "plain_text", "text": "Medium"}, "value": "medium"},
+                        {"text": {"type": "plain_text", "text": "High"}, "value": "high"},
+                        {"text": {"type": "plain_text", "text": "Critical"}, "value": "critical"},
+                    ],
+                },
+            },
+        ]
+
+        if category_options:
+            blocks.append({
+                "type": "input",
+                "block_id": "category_block",
+                "optional": True,
+                "label": {"type": "plain_text", "text": "Category (optional)"},
+                "element": {
+                    "type": "static_select",
+                    "action_id": "category_select",
+                    "placeholder": {"type": "plain_text", "text": "Select a category"},
+                    "options": category_options,
+                },
+            })
+
+        try:
+            await client.views_open(
+                trigger_id=body["trigger_id"],
+                view={
+                    "type": "modal",
+                    "callback_id": "message_shortcut_modal",
+                    "private_metadata": metadata,
+                    "title": {"type": "plain_text", "text": "Create Ticket"},
+                    "submit": {"type": "plain_text", "text": "Create"},
+                    "close": {"type": "plain_text", "text": "Cancel"},
+                    "blocks": blocks,
+                },
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("message_shortcut: failed to open modal")
+
+    @app.view("message_shortcut_modal")
+    async def handle_message_shortcut_modal(ack: Any, body: dict, client: Any, view: dict) -> None:
+        """Create a ticket from the message shortcut modal submission."""
+        await ack()
+
+        state_values = view["state"]["values"]
+        title = (state_values["title_block"]["title_input"]["value"] or "").strip()
+        description = (state_values["description_block"]["description_input"]["value"] or "").strip()
+        priority_value = (
+            (state_values["priority_block"]["priority_select"].get("selected_option") or {})
+            .get("value", "medium")
+        )
+        category_value: int | None = None
+        if "category_block" in state_values:
+            selected = state_values["category_block"]["category_select"].get("selected_option") or {}
+            category_value = int(selected["value"]) if selected.get("value") else None
+
+        try:
+            meta = json.loads(view.get("private_metadata", "{}"))
+            channel_id: str = meta.get("channel_id", "")
+            message_ts: str = meta.get("message_ts", "")
+            author_slack_id: str = meta.get("author_slack_id", "")
+            author_name: str = meta.get("author_name", "Slack user")
+        except Exception:  # noqa: BLE001
+            channel_id = message_ts = author_slack_id = ""
+            author_name = "Slack user"
+
+        try:
+            priority = Priority(priority_value)
+        except ValueError:
+            priority = Priority.medium
+
+        triggering_user_id: str = body.get("user", {}).get("id", "")
+
+        try:
+            ticket = await create_ticket_from_slack(
+                title=title or "Ticket from Slack",
+                description=description or title or "Submitted via Slack message shortcut.",
+                priority=priority,
+                category_id=category_value,
+                slack_submitter_name=author_name,
+                slack_submitter_id=author_slack_id or None,
+                slack_channel_id=channel_id or None,
+                slack_message_ts=message_ts or None,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("message_shortcut_modal: ticket creation failed")
+            if triggering_user_id:
+                try:
+                    await client.chat_postMessage(
+                        channel=triggering_user_id,
+                        text="⚠️ Failed to create the ticket. Please try again.",
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+            return
+
+        # Post confirmation in the original message thread so everyone in that channel can see it
+        if channel_id and message_ts:
+            try:
+                await client.chat_postMessage(
+                    channel=channel_id,
+                    thread_ts=message_ts,
+                    text=f"✅ Ticket *{ticket.display_id}* has been created. Our team will follow up shortly.",
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "message_shortcut_modal: failed to post thread reply for %s", ticket.display_id
+                )
+
+        # DM the tech who triggered the shortcut with a quick confirmation
+        if triggering_user_id:
+            try:
+                await client.chat_postMessage(
+                    channel=triggering_user_id,
+                    text=f"📋 Ticket *{ticket.display_id}* — *{ticket.title}* created (submitted by {author_name}).",
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "message_shortcut_modal: failed to DM tech %s for %s", triggering_user_id, ticket.display_id
+                )
