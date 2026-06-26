@@ -311,7 +311,7 @@ async def export_tickets_csv(
 
     rows = (await session.execute(
         select(
-            Ticket.display_id,
+            Ticket.id,
             Ticket.title,
             Ticket.description,
             Ticket.status,
@@ -345,7 +345,7 @@ async def export_tickets_csv(
     ])
     for r in rows:
         writer.writerow([
-            r.display_id, r.title, r.description, r.status, r.priority.value, r.source,
+            f"TKT-{r.id:04d}", r.title, r.description, r.status, r.priority.value, r.source,
             r.category or "", r.submitter_name or "", r.submitter_email or "", r.assignee_name or "",
             r.created_at.isoformat() if r.created_at else "",
             r.updated_at.isoformat() if r.updated_at else "",
