@@ -249,7 +249,7 @@ async def _check_sla_breaches() -> None:
             breached = result.scalars().all()
 
             if not breached:
-                return
+                continue
 
             for ticket in breached:
                 ticket.sla_breached = True

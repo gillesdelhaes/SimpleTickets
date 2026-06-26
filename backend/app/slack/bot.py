@@ -8,8 +8,6 @@ Lifecycle:
   stop_slack()   — called in FastAPI lifespan shutdown.
   reload_slack() — called after Slack settings change; stops and restarts the bot.
 """
-from __future__ import annotations
-
 import asyncio
 import logging
 

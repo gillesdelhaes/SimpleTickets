@@ -5,8 +5,6 @@ GET  /api/admin/settings         — list all settings (secrets masked)
 PATCH /api/admin/settings        — bulk update settings
 POST /api/admin/settings/test-slack — test Slack connection (post-setup)
 """
-from __future__ import annotations
-
 import logging
 from typing import Optional
 
@@ -117,12 +115,16 @@ async def update_settings(
             )
 
     slack_changed = False
-    for item in body.settings:
-        await set_setting(item.key, item.value, session)
-        if item.key in _SLACK_KEYS:
-            slack_changed = True
+    try:
+        for item in body.settings:
+            await set_setting(item.key, item.value, session)
+            if item.key in _SLACK_KEYS:
+                slack_changed = True
 
-    await session.commit()
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
 
     # Invalidate cache so next request picks up new values
     from app.config import settings_manager

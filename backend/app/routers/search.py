@@ -31,6 +31,7 @@ def _build_ticket_read(
     submitter_name: Optional[str],
     assignee_name: Optional[str],
     category_name: Optional[str],
+    duplicate_of_title: Optional[str] = None,
 ) -> TicketRead:
     return TicketRead(
         id=ticket.id,
@@ -49,6 +50,7 @@ def _build_ticket_read(
         sla_deadline=ticket.sla_deadline,
         sla_breached=ticket.sla_breached,
         duplicate_of_id=ticket.duplicate_of_id,
+        duplicate_of_title=duplicate_of_title,
         slack_channel_id=ticket.slack_channel_id,
         slack_message_ts=ticket.slack_message_ts,
         source=ticket.source,
@@ -140,6 +142,7 @@ async def search_tickets(
 
     Submitter = aliased(User, flat=True)
     Assignee = aliased(User, flat=True)
+    DuplicateOf = aliased(Ticket, flat=True)
 
     fetch_stmt = (
         select(
@@ -147,10 +150,12 @@ async def search_tickets(
             Submitter.name.label("submitter_name"),
             Assignee.name.label("assignee_name"),
             Category.name.label("category_name"),
+            DuplicateOf.title.label("duplicate_of_title"),
         )
         .outerjoin(Submitter, Ticket.submitter_id == Submitter.id)
         .outerjoin(Assignee, Ticket.assignee_id == Assignee.id)
         .outerjoin(Category, Ticket.category_id == Category.id)
+        .outerjoin(DuplicateOf, Ticket.duplicate_of_id == DuplicateOf.id)
         .where(Ticket.id.in_(candidate_ids))
     )
 
@@ -160,7 +165,7 @@ async def search_tickets(
     ticket_map: dict[int, TicketRead] = {}
     for row in fetch_rows:
         t: Ticket = row[0]
-        ticket_map[t.id] = _build_ticket_read(t, row[1], row[2], row[3])
+        ticket_map[t.id] = _build_ticket_read(t, row[1], row[2], row[3], row[4])
 
     # ── Step 3: headlines — run ts_headline for each matched ticket ───────────
     # We compute headlines for tickets that actually passed the role filter

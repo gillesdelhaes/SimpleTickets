@@ -12,8 +12,6 @@ Usage:
     bot_token = await get_setting("slack_bot_token", session)
     await set_setting("slack_bot_token", "xoxb-...", session)
 """
-from __future__ import annotations
-
 import base64
 import hashlib
 import logging

@@ -2,9 +2,8 @@ from datetime import datetime
 from app.dt import utcnow
 from typing import Optional
 
+from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, SQLModel
-
-
 
 
 class TicketReadMarker(SQLModel, table=True):
@@ -13,6 +12,9 @@ class TicketReadMarker(SQLModel, table=True):
     One row per (user_id, ticket_id) pair — upserted when user opens a ticket.
     """
     __tablename__ = "ticket_read_markers"
+    __table_args__ = (
+        UniqueConstraint("user_id", "ticket_id", name="uq_read_marker_user_ticket"),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="users.id", index=True)

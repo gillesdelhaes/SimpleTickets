@@ -9,8 +9,6 @@ Interaction model:
                                  channel message into a ticket (reactor must exist in DB)
   message (thread)             → syncs Slack thread replies back to the web portal
 """
-from __future__ import annotations
-
 import json
 import logging
 import re
@@ -725,7 +723,7 @@ def register_handlers(app: Any) -> None:
                 resolved_cfg = res_result.scalar_one_or_none()
                 resolved_status = resolved_cfg.name if resolved_cfg else "resolved"
 
-                old_status = ticket.status.value if hasattr(ticket.status, "value") else str(ticket.status)
+                old_status = ticket.status
                 if old_status == resolved_status:
                     return  # already resolved
 

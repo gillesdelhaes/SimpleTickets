@@ -6,7 +6,7 @@ POST /api/admin/restore  — accept a zip upload, truncate all tables, restore d
 import io
 import json
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -62,7 +62,9 @@ _DT_COLS: dict[str, set[str]] = {
     "tickets":             {
         "created_at", "updated_at", "resolved_at",
         "sla_deadline", "sla_paused_at",
+        "sla_breach_warned_at",
         "first_response_deadline", "first_responded_at",
+        "first_response_warned_at",
     },
     "ticket_replies":      {"created_at"},
     "ticket_history":      {"created_at"},
@@ -123,7 +125,7 @@ async def download_backup(
     att_list = tables.get("ticket_attachments", [])
     payload = {
         "version": BACKUP_VERSION,
-        "exported_at": datetime.utcnow().isoformat(),
+        "exported_at": datetime.now(timezone.utc).isoformat(),
         "attachment_count": len(att_list),
         "attachment_total_bytes": sum(a.get("size_bytes", 0) for a in att_list),
         "tables": tables,
@@ -139,7 +141,7 @@ async def download_backup(
             if disk_path.exists():
                 zf.write(disk_path, f"attachments/{att['storage_path']}")
 
-    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     zip_bytes = buf.getvalue()
 
     return StreamingResponse(
@@ -237,6 +239,9 @@ async def restore_backup(
 
         await session.commit()
         settings_manager.invalidate()
+    except HTTPException:
+        await session.rollback()
+        raise
     except Exception as exc:
         await session.rollback()
         raise HTTPException(

@@ -116,6 +116,14 @@ async def create_ticket_from_slack(
         session.add(ticket)
         await session.flush()
 
+        session.add(TicketHistory(
+            ticket_id=ticket.id,
+            actor_id=None,
+            field_changed="status",
+            old_value=None,
+            new_value=default_status,
+        ))
+
         await session.commit()
         await session.refresh(ticket)
 
@@ -158,6 +166,8 @@ async def notify_assignee_dm(ticket: Ticket, assignee_slack_user_id: str, actor_
 
 async def notify_duplicate_dm(ticket: Ticket, canonical: Ticket, submitter_slack_id: str) -> None:
     """DM the ticket submitter when their ticket is closed as a duplicate."""
+    if not settings_manager.slack_two_way_sync:
+        return
     from app.slack.bot import get_slack_client
     client = get_slack_client()
     if client is None:

@@ -8,8 +8,6 @@ POST /api/setup/test-slack   — verify Slack tokens without persisting
 POST /api/setup/complete     — mark setup done, start Slack bot
 GET  /api/setup/status       — unauthenticated; used by frontend to gate the wizard
 """
-from __future__ import annotations
-
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
