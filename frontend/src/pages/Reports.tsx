@@ -153,7 +153,23 @@ function Skeleton({ height = 200 }: { height?: number }) {
 
 export default function Reports() {
   const [range, setRange] = useState<Range>('30d')
+  const [exporting, setExporting] = useState(false)
   const params = rangeParams(range)
+
+  async function handleExport() {
+    setExporting(true)
+    try {
+      const res = await api.get('/reports/export', { responseType: 'blob' })
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `simpletickets_${new Date().toISOString().slice(0, 10)}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const overview   = useReport<Overview>('overview', params)
   const volume     = useReport<VolumePoint[]>('volume', params)
@@ -173,7 +189,7 @@ export default function Reports() {
         @keyframes shimmer { 0%,100%{opacity:1}50%{opacity:0.4} }
       `}</style>
 
-      {/* ── Date range filter ── */}
+      {/* ── Date range filter + export ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24 }}>
         {(['7d', '30d', '90d'] as Range[]).map(r => (
           <button
@@ -194,6 +210,27 @@ export default function Reports() {
         <span style={{ fontSize: 12, color: '#A3A3A3', marginLeft: 8 }}>
           {params.from_date} → {params.to_date}
         </span>
+        <div style={{ flex: 1 }} />
+        <button
+          onClick={handleExport}
+          disabled={exporting}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '6px 14px', borderRadius: 8,
+            border: '1px solid #E5E5E5', background: '#fff',
+            fontSize: 13, fontWeight: 500, cursor: exporting ? 'not-allowed' : 'pointer',
+            color: exporting ? '#A3A3A3' : '#262626',
+            transition: 'all 0.12s',
+          }}
+          onMouseOver={e => { if (!exporting) { e.currentTarget.style.borderColor = '#0A0A0A'; e.currentTarget.style.color = '#0A0A0A' } }}
+          onMouseOut={e => { e.currentTarget.style.borderColor = '#E5E5E5'; e.currentTarget.style.color = exporting ? '#A3A3A3' : '#262626' }}
+        >
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6.5 1v7M3.5 5.5l3 3 3-3" />
+            <path d="M1 10h11" />
+          </svg>
+          {exporting ? 'Exporting…' : 'Export CSV'}
+        </button>
       </div>
 
       {/* ── KPI row ── */}

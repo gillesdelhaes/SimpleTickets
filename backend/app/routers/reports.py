@@ -4,10 +4,13 @@ Reporting endpoints — aggregated metrics for the Reports page.
 All endpoints accept optional `from_date` / `to_date` query params (ISO date strings).
 Defaults to the last 30 days when omitted.
 """
+import csv
+import io
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import case, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -249,3 +252,69 @@ async def get_technicians(
         }
         for row in result.all()
     ]
+
+
+# ── GET /api/reports/export ────────────────────────────────────────────────────
+
+@router.get("/export")
+async def export_tickets_csv(
+    current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    """Stream all tickets as a CSV file for data portability."""
+    submitter = User.__table__.alias("submitter")
+    assignee = User.__table__.alias("assignee")
+
+    rows = (await session.execute(
+        select(
+            Ticket.display_id,
+            Ticket.title,
+            Ticket.description,
+            Ticket.status,
+            Ticket.priority,
+            Ticket.source,
+            Category.name.label("category"),
+            submitter.c.name.label("submitter_name"),
+            submitter.c.email.label("submitter_email"),
+            assignee.c.name.label("assignee_name"),
+            Ticket.created_at,
+            Ticket.updated_at,
+            Ticket.resolved_at,
+            Ticket.sla_deadline,
+            Ticket.sla_breached,
+            Ticket.first_response_deadline,
+            Ticket.first_responded_at,
+        )
+        .outerjoin(Category, Ticket.category_id == Category.id)
+        .outerjoin(submitter, Ticket.submitter_id == submitter.c.id)
+        .outerjoin(assignee, Ticket.assignee_id == assignee.c.id)
+        .order_by(Ticket.created_at.desc())
+    )).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "ID", "Title", "Description", "Status", "Priority", "Channel",
+        "Category", "Submitter", "Submitter Email", "Assignee",
+        "Created At", "Updated At", "Resolved At",
+        "SLA Deadline", "SLA Breached", "First Response Deadline", "First Responded At",
+    ])
+    for r in rows:
+        writer.writerow([
+            r.display_id, r.title, r.description, r.status, r.priority.value, r.source,
+            r.category or "", r.submitter_name or "", r.submitter_email or "", r.assignee_name or "",
+            r.created_at.isoformat() if r.created_at else "",
+            r.updated_at.isoformat() if r.updated_at else "",
+            r.resolved_at.isoformat() if r.resolved_at else "",
+            r.sla_deadline.isoformat() if r.sla_deadline else "",
+            "yes" if r.sla_breached else "no",
+            r.first_response_deadline.isoformat() if r.first_response_deadline else "",
+            r.first_responded_at.isoformat() if r.first_responded_at else "",
+        ])
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="simpletickets_{today}.csv"'},
+    )
