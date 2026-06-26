@@ -34,6 +34,7 @@ export interface TicketRead {
   slack_message_ts: string | null
   first_response_deadline: string | null
   first_responded_at: string | null
+  sla_policy_id?: number | null
   created_at: string
   updated_at: string
   resolved_at: string | null

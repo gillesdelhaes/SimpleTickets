@@ -1191,6 +1191,7 @@ export default function TicketDetail() {
   }, [ticketId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const isAdmin = user?.role === 'admin'
+  const isTech = user?.role === 'technician' || user?.role === 'admin'
 
   if (isLoading) {
     return (
@@ -1319,7 +1320,7 @@ export default function TicketDetail() {
 
           {/* Two-column layout */}
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 24, alignItems: 'start' }}>
-            <ThreadColumn ticket={ticket} isTech currentUserId={user?.id} />
+            <ThreadColumn ticket={ticket} isTech={isTech} currentUserId={user?.id} />
             <MetaSidebar
               ticket={ticket}
               isAdmin={isAdmin}
