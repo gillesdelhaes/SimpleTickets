@@ -4,12 +4,10 @@ between SimpleTickets and Slack threads.
 
 Called by Slack handlers and HTTP routers — bypasses HTTP, writes directly to DB.
 """
-from __future__ import annotations
-
 import logging
 import re
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -28,16 +26,6 @@ from app.models.ticket_attachment import TicketAttachment
 from app.models.ticket_status_config import TicketStatusConfig
 
 logger = logging.getLogger(__name__)
-
-# ── Status display labels for Slack messages ───────────────────────────────────
-
-_STATUS_LABELS: dict[str, str] = {
-    "open": "Open 🆕",
-    "in_progress": "In Progress 🚀",
-    "pending_user": "Pending User ⏳",
-    "resolved": "Resolved ✅",
-    "closed": "Closed 🔒",
-}
 
 _PRIORITY_LABELS: dict[str, str] = {
     "low": "Low",
@@ -329,7 +317,7 @@ async def post_ticket_update_to_slack(
     if "status" in changes:
         _, new_val = changes["status"]
         slug = new_val or ""
-        label = _STATUS_LABELS.get(slug, slug.replace("_", " ").title())
+        label = slug.replace("_", " ").title()
         lines.append(f"• Status → *{label}*")
 
     if "priority" in changes:

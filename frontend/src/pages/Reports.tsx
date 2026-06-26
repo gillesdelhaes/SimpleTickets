@@ -170,6 +170,7 @@ export default function Reports() {
     queryKey: ['reports-assignees'],
     queryFn: () => api.get<Assignee[]>('/reports/assignees').then(r => r.data),
     staleTime: 5 * 60_000,
+    enabled: isAdmin,
   })
 
   async function handleExport() {
