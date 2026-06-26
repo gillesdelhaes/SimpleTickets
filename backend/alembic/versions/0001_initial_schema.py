@@ -213,15 +213,10 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["ticket_id"], ["tickets.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("user_id", "ticket_id", name="uq_read_marker_user_ticket"),
     )
     op.create_index("ix_ticket_read_markers_user_id", "ticket_read_markers", ["user_id"])
     op.create_index("ix_ticket_read_markers_ticket_id", "ticket_read_markers", ["ticket_id"])
-    op.create_index(
-        "ix_ticket_read_markers_user_ticket",
-        "ticket_read_markers",
-        ["user_id", "ticket_id"],
-        unique=True,
-    )
 
     # ── seed: categories ───────────────────────────────────────────────────────
     op.bulk_insert(
