@@ -6,6 +6,7 @@ interface Props {
 }
 
 const MANIFEST = JSON.stringify({
+  _metadata: { major_version: 1, minor_version: 1 },
   display_information: {
     name: 'SimpleTickets',
     description: 'Self-hosted IT helpdesk — submit and track support tickets without leaving Slack.',
@@ -13,7 +14,7 @@ const MANIFEST = JSON.stringify({
   },
   features: {
     bot_user: { display_name: 'SimpleTickets', always_online: true },
-    slash_commands: [{ command: '/ticket', description: 'Submit a support ticket', usage_hint: '[describe your issue]', should_escape: false }],
+    slash_commands: [{ command: '/ticket', description: 'Submit a support ticket', should_escape: false }],
     app_home: { home_tab_enabled: true, messages_tab_enabled: true, messages_tab_read_only_enabled: false },
     shortcuts: [{ name: 'Create ticket', type: 'message', callback_id: 'create_ticket_from_message', description: 'Turn any Slack message into a support ticket' }],
   },

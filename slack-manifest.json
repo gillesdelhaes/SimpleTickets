@@ -1,4 +1,8 @@
 {
+  "_metadata": {
+    "major_version": 1,
+    "minor_version": 1
+  },
   "display_information": {
     "name": "SimpleTickets",
     "description": "Self-hosted IT helpdesk — submit and track support tickets without leaving Slack.",
@@ -13,7 +17,6 @@
       {
         "command": "/ticket",
         "description": "Submit a support ticket",
-        "usage_hint": "[describe your issue]",
         "should_escape": false
       }
     ],
