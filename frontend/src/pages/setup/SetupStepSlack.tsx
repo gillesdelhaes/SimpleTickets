@@ -20,7 +20,7 @@ const MANIFEST = JSON.stringify({
   },
   oauth_config: {
     scopes: {
-      bot: ['chat:write', 'chat:write.public', 'im:write', 'im:history', 'channels:history', 'groups:history', 'reactions:read', 'files:read', 'files:write', 'users:read'],
+      bot: ['chat:write', 'chat:write.public', 'im:write', 'im:history', 'channels:history', 'groups:history', 'reactions:read', 'files:read', 'files:write', 'users:read', 'commands'],
     },
   },
   settings: {

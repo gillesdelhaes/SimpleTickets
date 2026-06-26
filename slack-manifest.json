@@ -46,7 +46,8 @@
         "reactions:read",
         "files:read",
         "files:write",
-        "users:read"
+        "users:read",
+        "commands"
       ]
     }
   },
