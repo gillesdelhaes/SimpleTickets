@@ -5,7 +5,7 @@ Access: all endpoints require technician or admin role.
 """
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -20,7 +20,7 @@ from app.models import Category, SLAPolicy, Ticket, TicketHistory, User
 from app.models.enums import Priority
 from app.models.ticket_status_config import TicketStatusConfig
 from app.schemas.ticket import MarkDuplicateRequest, TicketCreate, TicketListResponse, TicketRead, TicketUpdate
-from app.services.sla import apply_sla_status_change
+from app.services.sla import apply_sla_status_change, compute_sla_deadline
 from app.utils import get_ticket_or_404, utcnow
 
 # Fields worth surfacing in the timeline
@@ -202,8 +202,8 @@ async def create_ticket(
     first_response_deadline: datetime | None = None
     if sla_policy:
         sla_policy_id = sla_policy.id
-        sla_deadline = now + timedelta(minutes=sla_policy.resolution_minutes)
-        first_response_deadline = now + timedelta(minutes=sla_policy.first_response_minutes)
+        sla_deadline = await compute_sla_deadline(now, sla_policy.resolution_minutes, session)
+        first_response_deadline = await compute_sla_deadline(now, sla_policy.first_response_minutes, session)
 
     # If a Slack reporter is given, the ticket is on behalf of a Slack user —
     # submitter_id stays None and we store the Slack identity instead.
@@ -393,8 +393,8 @@ async def update_ticket(
             sla_policy = sla_result.scalar_one_or_none()
             if sla_policy:
                 ticket.sla_policy_id = sla_policy.id
-                ticket.sla_deadline = ticket.created_at + timedelta(
-                    minutes=sla_policy.resolution_minutes
+                ticket.sla_deadline = await compute_sla_deadline(
+                    ticket.created_at, sla_policy.resolution_minutes, session
                 )
             else:
                 ticket.sla_policy_id = None

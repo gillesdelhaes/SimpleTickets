@@ -102,33 +102,105 @@ const TIMEZONES = [
   'Australia/Sydney','Pacific/Auckland',
 ]
 
+const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+function SettingSwitch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div onClick={() => onChange(!on)} style={{ width: 44, height: 24, borderRadius: 12, cursor: 'pointer', background: on ? 'linear-gradient(135deg, #FF4713, #AD1164)' : '#E5E5E5', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
+      <div style={{ position: 'absolute', top: 3, left: on ? 23 : 3, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+    </div>
+  )
+}
+
+function SettingRow({ label, hint, children, last }: { label: string; hint: string; children: React.ReactNode; last?: boolean }) {
+  return (
+    <div style={{ padding: '14px 20px', borderBottom: last ? 'none' : '1px solid #F2F2F2', display: 'grid', gridTemplateColumns: '220px 1fr', gap: 16, alignItems: 'center' }}>
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#262626' }}>{label}</div>
+        <div style={{ fontSize: 11, color: '#A3A3A3', marginTop: 2 }}>{hint}</div>
+      </div>
+      {children}
+    </div>
+  )
+}
+
 function GeneralTab() {
   const { data, isLoading } = useSettingsQuery()
-  const [tz, setTz] = useState<string | null>(null)
+  const [edits, setEdits] = useState<Record<string, string>>({})
   const [saved, setSaved] = useState(false)
-  const storedTz = data?.settings.find(s => s.key === 'timezone')?.value ?? 'UTC'
-  const currentTz = tz ?? storedTz
-  const dirty = tz !== null && tz !== storedTz
-  const mutation = useSaveMutation(() => { setTz(null); setSaved(true); setTimeout(() => setSaved(false), 2000) })
+  const mutation = useSaveMutation(() => { setEdits({}); setSaved(true); setTimeout(() => setSaved(false), 2000) })
 
   if (isLoading) return <div style={{ color: '#737373', fontSize: 13 }}>Loading…</div>
+
+  const sm = Object.fromEntries((data?.settings ?? []).map(s => [s.key, s.value ?? '']))
+  function get(key: string, def: string) { return key in edits ? edits[key] : (sm[key] || def) }
+  function set(key: string, val: string) { setEdits(e => ({ ...e, [key]: val })) }
+
+  const tz = get('timezone', 'UTC')
+  const bizEnabled = get('business_hours_enabled', 'false') === 'true'
+  const bizStart = get('business_hours_start', '09:00')
+  const bizEnd = get('business_hours_end', '17:00')
+  const bizDaysStr = get('business_days', '0,1,2,3,4')
+  const bizDays = new Set(bizDaysStr.split(',').map(d => d.trim()).filter(Boolean).map(Number))
+
+  function toggleDay(d: number) {
+    const next = new Set(bizDays)
+    if (next.has(d)) next.delete(d); else next.add(d)
+    set('business_days', [...next].sort((a, b) => a - b).join(',') || '')
+  }
+
+  const dirty = Object.keys(edits).length > 0
+
   return (
     <Card>
       <CardHeader>
         <SectionLabel>General</SectionLabel>
         {saved && <span style={{ fontSize: 12, color: '#059669', fontWeight: 600 }}>✓ Saved</span>}
       </CardHeader>
-      <div style={{ padding: '16px 20px', display: 'grid', gridTemplateColumns: '220px 1fr', gap: 16, alignItems: 'center' }}>
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: '#262626' }}>Timezone</div>
-          <div style={{ fontSize: 11, color: '#A3A3A3', marginTop: 2 }}>All timestamps are displayed in this timezone</div>
-        </div>
-        <select value={currentTz} onChange={e => setTz(e.target.value)}
-          style={{ ...inp, height: 34, padding: '0 10px', border: dirty ? '1.5px solid #FF4713' : '1.5px solid #E5E5E5', background: dirty ? '#FFF9F7' : '#FAFAFA', cursor: 'pointer' }}>
+
+      <SettingRow label="Timezone" hint="All timestamps are displayed in this timezone">
+        <select value={tz} onChange={e => set('timezone', e.target.value)}
+          style={{ ...inp, height: 34, padding: '0 10px', border: 'timezone' in edits ? '1.5px solid #FF4713' : '1.5px solid #E5E5E5', background: 'timezone' in edits ? '#FFF9F7' : '#FAFAFA', cursor: 'pointer' }}>
           {TIMEZONES.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
-      </div>
-      <SaveBar dirty={dirty} pending={mutation.isPending} onSave={() => mutation.mutate([{ key: 'timezone', value: currentTz }])} />
+      </SettingRow>
+
+      <SettingRow label="Business Hours" hint="SLA deadlines only count time within working hours" last={!bizEnabled}>
+        <SettingSwitch on={bizEnabled} onChange={v => set('business_hours_enabled', v ? 'true' : 'false')} />
+      </SettingRow>
+
+      {bizEnabled && (
+        <>
+          <SettingRow label="Working hours" hint="SLA clock runs between these times">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <input type="time" value={bizStart} onChange={e => set('business_hours_start', e.target.value)}
+                style={{ ...inp, width: 120 }} />
+              <span style={{ color: '#A3A3A3', fontSize: 13 }}>to</span>
+              <input type="time" value={bizEnd} onChange={e => set('business_hours_end', e.target.value)}
+                style={{ ...inp, width: 120 }} />
+            </div>
+          </SettingRow>
+
+          <SettingRow label="Working days" hint="Days when the SLA clock is active" last>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {DAY_LABELS.map((label, i) => (
+                <button key={i} onClick={() => toggleDay(i)}
+                  style={{
+                    width: 38, height: 32, borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                    border: '1.5px solid', transition: 'all 0.15s',
+                    background: bizDays.has(i) ? 'linear-gradient(135deg, #FF4713, #AD1164)' : '#FAFAFA',
+                    borderColor: bizDays.has(i) ? '#FF4713' : '#E5E5E5',
+                    color: bizDays.has(i) ? '#fff' : '#737373',
+                  }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </SettingRow>
+        </>
+      )}
+
+      <SaveBar dirty={dirty} pending={mutation.isPending} onSave={() => mutation.mutate(Object.entries(edits).map(([key, value]) => ({ key, value })))} />
     </Card>
   )
 }

@@ -9,6 +9,8 @@ Responsibilities:
      and the deadline is extended accordingly.
   3. Status endpoint helper: compute current SLA state for a single ticket
      without touching the database.
+  4. Business-hours SLA: deadline computation skips outside-of-hours time
+     when business_hours_enabled is set in app_settings.
 
 The scheduler is started in the FastAPI lifespan and runs in-process via
 APScheduler's AsyncIOScheduler — no separate worker needed.
@@ -81,6 +83,102 @@ def sla_status_label(ticket: Ticket) -> str:
 
     pct_remaining = remaining / total_seconds
     return "warning" if pct_remaining < 0.20 else "ok"
+
+
+# ── Business-hours SLA deadline computation ───────────────────────────────────
+
+
+def _add_business_minutes(
+    local_dt: datetime,
+    minutes: int,
+    biz_days: set[int],
+    biz_start_h: int,
+    biz_start_m: int,
+    biz_end_h: int,
+    biz_end_m: int,
+) -> datetime:
+    """Walk `minutes` of business time forward from local_dt (tz-aware local time)."""
+    biz_start_mins = biz_start_h * 60 + biz_start_m
+    biz_end_mins = biz_end_h * 60 + biz_end_m
+
+    def _next_biz(dt: datetime) -> datetime:
+        cur = dt.hour * 60 + dt.minute
+        if dt.weekday() in biz_days:
+            if biz_start_mins <= cur < biz_end_mins:
+                return dt
+            if cur < biz_start_mins:
+                return dt.replace(hour=biz_start_h, minute=biz_start_m, second=0, microsecond=0)
+        nxt = (dt + timedelta(days=1)).replace(
+            hour=biz_start_h, minute=biz_start_m, second=0, microsecond=0
+        )
+        for _ in range(7):
+            if nxt.weekday() in biz_days:
+                return nxt
+            nxt += timedelta(days=1)
+        return nxt
+
+    dt = _next_biz(local_dt)
+    remaining = minutes
+    while remaining > 0:
+        mins_to_eod = biz_end_mins - (dt.hour * 60 + dt.minute)
+        if remaining <= mins_to_eod:
+            return dt + timedelta(minutes=remaining)
+        remaining -= mins_to_eod
+        nxt = (dt + timedelta(days=1)).replace(
+            hour=biz_start_h, minute=biz_start_m, second=0, microsecond=0
+        )
+        for _ in range(7):
+            if nxt.weekday() in biz_days:
+                break
+            nxt += timedelta(days=1)
+        dt = nxt
+    return dt
+
+
+async def compute_sla_deadline(
+    start_utc: datetime,
+    minutes_to_add: int,
+    session: AsyncSession,
+) -> datetime:
+    """
+    Compute an SLA deadline from start_utc plus minutes_to_add.
+    If business hours are enabled in app_settings, only counts time within
+    configured working hours/days. Returns a naive UTC datetime.
+    """
+    from app.services.settings_service import get_setting
+
+    enabled = (await get_setting("business_hours_enabled", session, default="false")) == "true"
+    if not enabled:
+        return start_utc + timedelta(minutes=minutes_to_add)
+
+    tz_name = await get_setting("timezone", session, default="UTC")
+    biz_start_str = await get_setting("business_hours_start", session, default="09:00")
+    biz_end_str = await get_setting("business_hours_end", session, default="17:00")
+    biz_days_str = await get_setting("business_days", session, default="0,1,2,3,4")
+
+    try:
+        biz_start_h, biz_start_m = (int(x) for x in biz_start_str.split(":"))
+        biz_end_h, biz_end_m = (int(x) for x in biz_end_str.split(":"))
+        biz_days: set[int] = {int(d.strip()) for d in biz_days_str.split(",") if d.strip()}
+    except (ValueError, AttributeError):
+        return start_utc + timedelta(minutes=minutes_to_add)
+
+    if not biz_days or (biz_end_h * 60 + biz_end_m) <= (biz_start_h * 60 + biz_start_m):
+        return start_utc + timedelta(minutes=minutes_to_add)
+
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    try:
+        tz = ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        tz = ZoneInfo("UTC")
+
+    aware_utc = start_utc if start_utc.tzinfo else start_utc.replace(tzinfo=timezone.utc)
+    local_end = _add_business_minutes(
+        aware_utc.astimezone(tz),
+        minutes_to_add,
+        biz_days, biz_start_h, biz_start_m, biz_end_h, biz_end_m,
+    )
+    return local_end.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 # ── Pause / resume ─────────────────────────────────────────────────────────────

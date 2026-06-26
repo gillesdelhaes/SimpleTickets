@@ -32,6 +32,10 @@ _WRITABLE_KEYS = {
     "slack_trigger_emoji",
     "slack_two_way_sync",
     "timezone",
+    "business_hours_enabled",
+    "business_hours_start",
+    "business_hours_end",
+    "business_days",
 }
 
 _SLACK_KEYS = {
