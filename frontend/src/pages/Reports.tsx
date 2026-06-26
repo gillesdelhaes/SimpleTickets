@@ -207,10 +207,6 @@ export default function Reports() {
 
   return (
     <AppShell title="Reports">
-      <style>{`
-        @keyframes shimmer { 0%,100%{opacity:1}50%{opacity:0.4} }
-      `}</style>
-
       {/* ── Toolbar: date range + technician filter + export ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
         {/* Date range pills */}
