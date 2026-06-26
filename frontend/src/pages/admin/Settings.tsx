@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import AppShell from '../../components/layout/AppShell'
@@ -152,6 +152,7 @@ function SlackTab() {
   const [testing, setTesting] = useState(false)
   const [saved, setSaved] = useState(false)
   const [showGuide, setShowGuide] = useState(false)
+  const [slackStatus, setSlackStatus] = useState<{ ok: boolean; team_name?: string; error?: string } | null>(null)
 
   const settingMap = Object.fromEntries((data?.settings ?? []).map(s => [s.key, s]))
   const mutation = useSaveMutation(() => { setEdits({}); setRevealing({}); setSaved(true); setTimeout(() => setSaved(false), 2500) })
@@ -160,11 +161,18 @@ function SlackTab() {
   function edit(key: string, value: string) { setEdits(e => ({ ...e, [key]: value })) }
   const dirty = SLACK_KEYS.some(k => k in edits)
 
+  useEffect(() => {
+    api.get('/admin/settings/slack-status').then(r => setSlackStatus(r.data)).catch(() => {})
+  }, [])
+
   async function handleTest() {
     const bot = getValue('slack_bot_token'); const app = getValue('slack_app_token')
-    if (!bot || !app) return
     setTesting(true); setTestResult(null)
-    try { setTestResult((await api.post('/admin/settings/test-slack', { bot_token: bot, app_token: app })).data) }
+    try {
+      const result = (await api.post('/admin/settings/test-slack', { bot_token: bot, app_token: app })).data
+      setTestResult(result)
+      setSlackStatus(result)
+    }
     catch { setTestResult({ ok: false, error: 'Request failed' }) }
     finally { setTesting(false) }
   }
@@ -174,10 +182,23 @@ function SlackTab() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <Card>
         <CardHeader>
-          <SectionLabel>Slack Integration</SectionLabel>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <SectionLabel>Slack Integration</SectionLabel>
+            {slackStatus && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 600,
+                background: slackStatus.ok ? '#D1FAE5' : '#FEE2E2',
+                color: slackStatus.ok ? '#059669' : '#DC2626',
+              }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: slackStatus.ok ? '#10B981' : '#EF4444' }} />
+                {slackStatus.ok ? slackStatus.team_name : 'Disconnected'}
+              </span>
+            )}
+          </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             {saved && <span style={{ fontSize: 12, color: '#059669', fontWeight: 600 }}>✓ Saved</span>}
-            {testResult && <span style={{ fontSize: 12, color: testResult.ok ? '#059669' : '#DC2626' }}>{testResult.ok ? `✓ ${testResult.team_name}` : `✗ ${testResult.error}`}</span>}
+            {testResult && <span style={{ fontSize: 12, color: testResult.ok ? '#059669' : '#DC2626' }}>{testResult.ok ? `✓ Connected to ${testResult.team_name}` : `✗ ${testResult.error}`}</span>}
             <button onClick={handleTest} disabled={testing} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 8, border: '1px solid #E5E5E5', background: '#fff', cursor: 'pointer', color: '#737373', fontWeight: 500 }}>
               {testing ? 'Testing…' : 'Test connection'}
             </button>

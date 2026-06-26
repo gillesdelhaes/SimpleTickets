@@ -19,7 +19,7 @@ from app.auth.deps import require_admin
 from app.database import get_session
 from app.models.app_setting import AppSetting
 from app.models.user import User
-from app.services.settings_service import set_setting
+from app.services.settings_service import get_setting, set_setting
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin/settings", tags=["admin"])
@@ -134,6 +134,29 @@ async def update_settings(
     return {"updated": len(body.settings), "slack_reloaded": slack_changed}
 
 
+# ── GET /admin/settings/slack-status ─────────────────────────────────────────
+
+
+@router.get("/slack-status")
+async def slack_status(
+    current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Live Slack connectivity check using stored credentials."""
+    import asyncio
+    from app.config import settings_manager
+    if not settings_manager.is_slack_configured():
+        return {"ok": False, "error": "Slack is not configured"}
+    try:
+        from slack_sdk import WebClient
+        token = await get_setting("slack_bot_token", session)
+        client = WebClient(token=token)
+        response = await asyncio.to_thread(client.auth_test)
+        return {"ok": True, "team_name": response.get("team"), "bot_name": response.get("user")}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 # ── POST /admin/settings/test-slack ───────────────────────────────────────────
 
 class TestSlackRequest(BaseModel):
@@ -145,17 +168,21 @@ class TestSlackRequest(BaseModel):
 async def test_slack(
     body: TestSlackRequest,
     current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """Test Slack credentials without persisting. Same logic as /setup/test-slack."""
+    """Test Slack credentials. If token looks masked/unchanged, use stored DB value."""
     import asyncio
+    from slack_sdk import WebClient
+
+    def _is_masked(val: str) -> bool:
+        return not val or not val.startswith("xo")
+
+    bot = body.bot_token if not _is_masked(body.bot_token) else await get_setting("slack_bot_token", session)
+    if not bot:
+        return {"ok": False, "error": "No bot token configured"}
     try:
-        from slack_sdk import WebClient
-        client = WebClient(token=body.bot_token)
+        client = WebClient(token=bot)
         response = await asyncio.to_thread(client.auth_test)
-        return {
-            "ok": True,
-            "team_name": response.get("team"),
-            "bot_name": response.get("user"),
-        }
+        return {"ok": True, "team_name": response.get("team"), "bot_name": response.get("user")}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
