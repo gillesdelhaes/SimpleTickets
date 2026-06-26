@@ -1,99 +1,101 @@
-# SimpleTickets — Release TODO
+# SimpleTickets — Open Items
 
-Generated from: MD roadmap review + gap analysis + deep code audit (2026-06-21)
-
----
-
-## EMERGENCY — Block release, fix before v1 ships
-
-### Security
-
-**1. Zip Slip in backup restore** — `backend/app/routers/backup.py:239-243`
-Zip entries like `attachments/../../etc/cron.d/evil` write files anywhere on the server. Any authenticated admin uploading a crafted backup achieves arbitrary file write.
-Fix: after computing `dest`, assert `dest.resolve().is_relative_to(storage_root.resolve())`.
-
-**2. CORS wildcard in production** — `backend/app/main.py:57-63`
-`allow_origins=["*"]` with `allow_credentials=True` is a security misconfiguration. Since nginx proxies all API calls, the browser sees a single origin — CORS middleware may not be needed at all. See discussion below.
-
-**3. XSS via `ts_headline` in search** — `frontend/src/pages/Search.tsx:47-51`
-`dangerouslySetInnerHTML` renders Postgres-generated highlights of user-supplied ticket content. A crafted ticket title can inject and execute arbitrary JS.
-Fix: strip all tags from headline output or sanitize with DOMPurify before injecting.
-
-**4. No real IP behind reverse proxy** — `backend/app/routers/auth.py:46`
-Behind nginx the rate limiter sees the proxy IP, not the real client IP. Add `ProxyHeadersMiddleware` to FastAPI.
-
-**5. Full file buffered before attachment size check** — `backend/app/routers/attachments.py:108`
-Entire upload loaded into memory before rejection. Stream-cap or check `Content-Length` before reading.
-
-**6. No upload size limit on backup restore** — `backend/app/routers/backup.py:174`
-`await file.read()` with no size cap. Add a max size check before reading.
-
-**7. File MIME type trusts client claim** — `backend/app/routers/attachments.py:122-131`
-MIME taken from `file.content_type` (client-controlled). Use `python-magic` to verify by file content.
-
-### Bugs that break core features
-
-**8. Reports use hardcoded `TicketStatus` enum instead of dynamic statuses** — `backend/app/routers/reports.py:47,202`
-Any team that customizes statuses gets wrong counts in all reports. The rest of the codebase queries `TicketStatusConfig.is_resolved_state` correctly; reports don't.
-Fix: replace `TicketStatus.resolved/closed` with a subquery on `TicketStatusConfig.is_resolved_state == True`.
-
-**9. Slack status labels hardcoded** — `backend/app/slack/service.py:32`
-`_STATUS_LABELS` dict only covers the original 5 statuses. Custom statuses appear as raw slugs in all Slack notifications.
-Fix: fall back to DB lookup for statuses not in the dict.
-
-**10. `end_user` role in frontend has no backend counterpart** — `frontend/src/contexts/AuthContext.tsx:4`
-`UserRole` includes `'end_user'` but the backend only has `technician` and `admin`. Routes protected only by `get_current_user` are accessible to an `end_user` JWT. Remove the role from the frontend type or implement it properly.
-
-**11. Attachment delete endpoint missing** — `backend/app/routers/attachments.py:13`
-Documented in the module docstring, not implemented. `TicketAttachment` also has no `uploader_id` field so the "uploader OR technician/admin can delete" rule is unenforceable. Files can never be deleted via the API.
+Last updated: 2026-06-26 (session 6)
 
 ---
 
-## HIGH — Fix before or at release
+## Known limitations (accepted for v1)
 
-**12. In-memory rate limiter not restart-safe** — `backend/app/routers/auth.py:23-36`
-Resets on every container restart, fully bypassing the 10-attempt/60s limit. `_attempts` dict also grows unbounded with unique IPs (memory leak under scan traffic). Acceptable risk for single-container v1 but document it explicitly.
+**L1. In-memory rate limiter resets on container restart**
+Login/password rate limit lives in a Python dict. A restart clears it. Low risk for single-container internal deployment.
 
-**13. Backup restore doesn't invalidate settings cache** — `backend/app/routers/backup.py:228`
-After restore, `settings_manager` holds pre-restore Slack tokens until the 30s cache TTL expires. Force a cache flush and reconnect after successful restore.
+**L2. Logout doesn't invalidate JWT**
+Logout is client-side only. 8-hour token remains valid server-side until expiry. Acceptable for an internal tool.
 
-**14. Logout doesn't invalidate JWT** — `backend/app/routers/auth.py:78-81`
-Logout is a no-op server-side. Tokens remain valid for 8 hours post-logout. Low risk for an internal tool but worth noting.
+**L3. JWT stored in localStorage**
+HttpOnly cookies would be safer. Known trade-off.
 
-**15. JWT in localStorage** — `frontend/src/lib/api.ts:13`
-Accessible to any JS on the page. `HttpOnly` cookies are safer, especially relevant given the XSS issue (#3). Known trade-off, but #3 makes this more urgent.
+**L4. DB password defaults to `postgres`**
+Port 5432 is not exposed externally (internal Docker network only). Do not add a host port mapping.
 
-**16. Restore can lock out current admin**
-Restore wipes and rewrites all users including the requesting admin. A corrupt backup could eliminate the current admin with no recovery. Add a check that at least one admin exists in the restored dataset before committing.
-
----
-
-## MEDIUM — Important cleanup, not blocking
-
-**17. `TicketStatus` enum is dead code** — `backend/app/models/enums.py:9-14`
-Superseded by `TicketStatusConfig` but still exported and used in reports (which is a bug — see #8). Remove after fixing reports.
-
-**18. 5 orphaned admin page files** — `frontend/src/pages/admin/`
-`BackupRestore.tsx`, `Categories.tsx`, `SlackSetup.tsx`, `SLAPolicies.tsx`, `TicketStatuses.tsx` — none are imported or routed. All functionality is in `Settings.tsx`. Delete them.
-
-**19. Slack setup guide missing `/ticket` slash command** — `README.md`
-Setup section lists bot events but not the `/ticket` slash command. New admins will miss it; users see "This slash command is not configured."
-
-**20. `GET /admin/users/{id}` documented but not implemented** — `backend/app/routers/admin.py:7`
-Misleading module docstring. Low-impact since the frontend uses the list endpoint.
-
-**21. `_DT_COLS["app_settings"]` dead code in backup** — `backend/app/routers/backup.py:73`
-Key exists in `_DT_COLS` but `AppSetting` is not in `_EXPORT_MODELS`, so this entry is never reached. Harmless but confusing.
-
-**22. `app_secret_key` fallback silent on DB write failure** — `backend/app/config.py`
-First-boot DB write failure silently falls back to `"dev-secret-change-in-production"`. Should be an explicit startup crash.
+**L5. Full-text search hardcoded to English**
+Non-English teams get incorrect stemming. Fix: make search language a configurable setting.
 
 ---
 
-## ROADMAP — Post-release (Phase 3 per ROADMAP.md)
+## Must-have before marketing push (blocks adoption)
 
-- **Reports CSV export** — admins can't export raw data outside the UI
-- **AI triage via Gemini/Vertex AI** — auto-diagnosis panel on ticket creation
-- **Business hours SLA** — SLA countdowns pause outside working hours
-- **Ticket watchers** — technicians can watch without being assignee
-- **Configurable monitored channels** — passive ticket creation from public Slack channels
+~~**P1. Slack setup simplification**~~ ✓ Done — `slack-manifest.json` shipped, setup wizard and Settings guide both reduced to 3 steps with manifest copy, App-Level Token generation instructions, and Install App submenu navigation.
+
+~~**P2. Submit on behalf of + Slack user linking**~~ ✓ Already done — the "Create ticket" modal already has a Slack user picker for the reporter, sends them a DM on creation, and gracefully skips DM when Slack isn't configured.
+
+~~**P3. Email notifications**~~ — Removed from scope. Slack is the intentional notification channel; adding SMTP would complicate setup and contradict the tool's core premise.
+
+**P13. Slack App Home for technicians** [Effort: M]
+`build_home_view()` filters by submitter only — a tech who has no submitted tickets sees an empty home. Should show their assigned queue + SLA countdowns. Block Kit infrastructure already exists.
+
+**P14. Slash commands for existing tickets** [Effort: S]
+`/ticket` only opens the create modal. No `/ticket list` (my queue), `/ticket close TKT-0042`, `/ticket assign TKT-0042 @alice`. Techs can't touch existing tickets from Slack without finding the original thread.
+
+**P15. Password reset via Slack DM** [Effort: S]
+No password reset flow exists. If an admin forgets their password the system is inaccessible. Fix: "forgot password" sends a reset link via Slack DM — no email needed.
+
+---
+
+## High-impact features (retention and trust)
+
+~~**P4. Slack bot health indicator**~~ ✓ Done — Settings page shows connected/disconnected pill with team name; global red sticky banner in AppShell appears on every page when the bot loses its Socket Mode connection; polls every 30 s and auto-clears when reconnected.
+
+~~**P5. Business hours SLA**~~ ✓ Done — Settings → General has a toggle + working hours (start/end time) + working days (Mon–Sun pill buttons). When enabled, `compute_sla_deadline()` in `sla.py` walks only business time using `zoneinfo`; all three ticket-creation paths (REST, Slack, priority change) use it. Off by default — no change for existing installs.
+
+~~**P6. Canned responses**~~ — Removed from scope. AI integration (planned) covers suggested replies; a manual template picker would be redundant and feel out of place in a Slack-first workflow.
+
+**P7. CSAT survey on resolution** [Effort: S]
+No feedback loop after a ticket closes.
+Fix: auto-DM submitter with 👍/👎 when ticket resolves; results visible in admin reports.
+
+~~**P8. Create ticket from any Slack message**~~ ✓ Done — message shortcut `create_ticket_from_message` registered in manifest; right-click any Slack message → modal pre-filled with message text and author as reporter → ticket created, confirmation posted in thread, DM sent to triggering tech.
+
+**P16. SLA escalation routing** [Effort: S]
+`post_sla_warning_to_technicians()` blasts every active tech on SLA breach. Admins should be able to configure a target: a specific Slack channel (`#it-critical`) or a named user. Turns a noisy feature into a useful one.
+
+**P17. Ticket templates** [Effort: S]
+Standard requests (new hire onboarding, VPN setup, laptop refresh) always need the same information. Templates pre-fill title + description + category + priority so submitters don't miss required context.
+
+**P18. Ticket watchers / CC** [Effort: M]
+Only the submitter and assignee receive notifications. Managers or secondary techs can't follow a ticket without being the assignee. Fix: "Watch this ticket" → get Slack DMs on status changes and replies.
+
+---
+
+## Quality-of-life (engagement and delight)
+
+~~**P9. Tech self-service stats**~~ ✓ Done — Reports page open to all techs; global team view by default. Admins get a dropdown to filter by any technician; techs get "All team" / "My stats" pills. All charts and the technician table respect the filter. Export CSV remains admin-only.
+
+~~**P10. CSV export for reports**~~ ✓ Done — "Export CSV" button on the Reports page streams all tickets (all time, not filtered by date range) as a CSV with full metadata: ID, title, description, status, priority, channel, category, submitter, assignee, timestamps, SLA fields.
+
+**P11. Proactive idle DM** [Effort: S]
+Ticket open 4+ hours with no tech reply — submitter has no idea if anyone saw it.
+Fix: background job; auto-DM submitter "We're on it, still being worked" after configurable idle time.
+
+**P12. One-click resolution from Slack thread** [Effort: S]
+Techs who live in Slack have to open the portal to close a ticket.
+Fix: react ✅ in the ticket thread → ticket auto-resolves (mirrors emoji-to-create flow already built).
+
+**P19. Monitored Slack channels** [Effort: M]
+Handler code references monitored channels but public channel messages are silently dropped. A setting to list channels where any top-level message auto-creates a ticket (or prompts "Convert to ticket?" via a button) is the most natural onboarding path for users who already post in `#it-help`.
+
+**P20. Bulk queue operations** [Effort: M]
+No selection mechanism on the queue. Batch close/assign/re-prioritise requires one page load per ticket. Common for Monday morning backlog reviews and onboarding new staff.
+
+**P21. Saved / pinned queue views** [Effort: S]
+URL filter state is already serialised — half-built. Just needs persistence across sessions and a way to name and share views. "Unassigned critical" and "my in-progress" are checked multiple times a day.
+
+---
+
+## Roadmap (post-v1, lower priority)
+
+- **AI triage** — auto-categorisation, suggested assignee, and AI-suggested reply on ticket creation
+- **Maintenance mode / incidents** — broadcast to `#it-help` when VPN is down; link duplicate incoming tickets to a parent incident; stop the notification storm [Effort: M]
+- **SSO (Google / Azure AD)** — biggest enterprise credibility signal; removes "another password to manage" objection [Effort: L]
+- **Time tracking** — per-ticket start/stop or manual entry; feeds "time spent" in CSV export and reports [Effort: M]
+- **Publish to Slack App Directory** — "Add to Slack" button handles OAuth automatically
