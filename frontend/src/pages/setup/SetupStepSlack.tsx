@@ -136,8 +136,11 @@ export default function SetupStepSlack({ onNext }: Props) {
         {/* Step 2 */}
         <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '14px 16px' }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: '#FF4713', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>Step 2</div>
-          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', margin: 0, lineHeight: 1.6 }}>
+          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', margin: '0 0 10px', lineHeight: 1.6 }}>
             Click <strong style={{ color: '#fff' }}>Create New App</strong> → <strong style={{ color: '#fff' }}>From a manifest</strong> → select your workspace → paste the manifest → <strong style={{ color: '#fff' }}>Next</strong> → <strong style={{ color: '#fff' }}>Create</strong> → <strong style={{ color: '#fff' }}>Install to Workspace</strong>.
+          </p>
+          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', margin: 0, lineHeight: 1.6 }}>
+            Then go to <strong style={{ color: '#fff' }}>Basic Information</strong> → <strong style={{ color: '#fff' }}>App-Level Tokens</strong> → <strong style={{ color: '#fff' }}>Generate Token and Scopes</strong> → name it anything → add scope <strong style={{ color: '#fff', fontFamily: 'monospace' }}>connections:write</strong> → <strong style={{ color: '#fff' }}>Generate</strong>. Copy the <strong style={{ color: '#fff' }}>xapp-…</strong> token.
           </p>
         </div>
 
