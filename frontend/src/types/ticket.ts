@@ -152,8 +152,6 @@ export function setTimezone(tz: string) {
   _timezone = tz
 }
 
-}
-
 export function timeAgo(dateStr: string): string {
   const date = new Date(dateStr + 'Z')
   const diff = Date.now() - date.getTime()
