@@ -320,6 +320,8 @@ async def export_tickets_csv(
             Category.name.label("category"),
             submitter.c.name.label("submitter_name"),
             submitter.c.email.label("submitter_email"),
+            Ticket.slack_submitter_name,
+            Ticket.slack_submitter_id,
             assignee.c.name.label("assignee_name"),
             Ticket.created_at,
             Ticket.updated_at,
@@ -346,7 +348,10 @@ async def export_tickets_csv(
     for r in rows:
         writer.writerow([
             f"TKT-{r.id:04d}", r.title, r.description, r.status, r.priority.value, r.source,
-            r.category or "", r.submitter_name or "", r.submitter_email or "", r.assignee_name or "",
+            r.category or "",
+            r.submitter_name or r.slack_submitter_name or "",
+            r.submitter_email or r.slack_submitter_id or "",
+            r.assignee_name or "",
             r.created_at.isoformat() if r.created_at else "",
             r.updated_at.isoformat() if r.updated_at else "",
             r.resolved_at.isoformat() if r.resolved_at else "",
