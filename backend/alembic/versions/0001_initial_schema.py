@@ -75,6 +75,7 @@ def upgrade() -> None:
         sa.Column("is_resolved_state", sa.Boolean(), nullable=False),
         sa.Column("sort_order", sa.Integer(), nullable=False),
         sa.Column("is_archived", sa.Boolean(), nullable=False),
+        sa.Column("sends_csat", sa.Boolean(), nullable=False, server_default="false"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_ticket_statuses_name", "ticket_statuses", ["name"], unique=True)
@@ -218,6 +219,19 @@ def upgrade() -> None:
     op.create_index("ix_ticket_read_markers_user_id", "ticket_read_markers", ["user_id"])
     op.create_index("ix_ticket_read_markers_ticket_id", "ticket_read_markers", ["ticket_id"])
 
+    # ── ticket_csat ────────────────────────────────────────────────────────────
+    op.create_table(
+        "ticket_csat",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("ticket_id", sa.Integer(), nullable=False),
+        sa.Column("score", sa.Boolean(), nullable=False),
+        sa.Column("responded_at", sa.DateTime(), nullable=False),
+        sa.Column("slack_user_id", sqlmodel.AutoString(), nullable=False),
+        sa.ForeignKeyConstraint(["ticket_id"], ["tickets.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index("ix_ticket_csat_ticket_id", "ticket_csat", ["ticket_id"], unique=False)
+
     # ── seed: categories ───────────────────────────────────────────────────────
     op.bulk_insert(
         sa.table(
@@ -262,13 +276,14 @@ def upgrade() -> None:
             sa.column("is_resolved_state", sa.Boolean),
             sa.column("sort_order", sa.Integer),
             sa.column("is_archived", sa.Boolean),
+            sa.column("sends_csat", sa.Boolean),
         ),
         [
-            {"name": "open",         "label": "Open",         "color": "#3B82F6", "pauses_sla": False, "is_default": True,  "is_resolved_state": False, "sort_order": 0, "is_archived": False},
-            {"name": "in_progress",  "label": "In Progress",  "color": "#FF4713", "pauses_sla": False, "is_default": False, "is_resolved_state": False, "sort_order": 1, "is_archived": False},
-            {"name": "pending_user", "label": "Pending User", "color": "#F59E0B", "pauses_sla": True,  "is_default": False, "is_resolved_state": False, "sort_order": 2, "is_archived": False},
-            {"name": "resolved",     "label": "Resolved",     "color": "#10B981", "pauses_sla": False, "is_default": False, "is_resolved_state": True,  "sort_order": 3, "is_archived": False},
-            {"name": "closed",       "label": "Closed",       "color": "#737373", "pauses_sla": False, "is_default": False, "is_resolved_state": True,  "sort_order": 4, "is_archived": False},
+            {"name": "open",         "label": "Open",         "color": "#3B82F6", "pauses_sla": False, "is_default": True,  "is_resolved_state": False, "sort_order": 0, "is_archived": False, "sends_csat": False},
+            {"name": "in_progress",  "label": "In Progress",  "color": "#FF4713", "pauses_sla": False, "is_default": False, "is_resolved_state": False, "sort_order": 1, "is_archived": False, "sends_csat": False},
+            {"name": "pending_user", "label": "Pending User", "color": "#F59E0B", "pauses_sla": True,  "is_default": False, "is_resolved_state": False, "sort_order": 2, "is_archived": False, "sends_csat": False},
+            {"name": "resolved",     "label": "Resolved",     "color": "#10B981", "pauses_sla": False, "is_default": False, "is_resolved_state": True,  "sort_order": 3, "is_archived": False, "sends_csat": True},
+            {"name": "closed",       "label": "Closed",       "color": "#737373", "pauses_sla": False, "is_default": False, "is_resolved_state": True,  "sort_order": 4, "is_archived": False, "sends_csat": False},
         ],
     )
 
@@ -291,11 +306,13 @@ def upgrade() -> None:
             {"key": "slack_trigger_emoji",  "value": "clipboard", "is_secret": False, "group_name": "slack", "updated_at": _now},
             {"key": "slack_two_way_sync",   "value": "true",      "is_secret": False, "group_name": "slack", "updated_at": _now},
             {"key": "timezone",             "value": "UTC",       "is_secret": False, "group_name": "app",   "updated_at": _now},
+            {"key": "csat_auto_close_days", "value": "7",         "is_secret": False, "group_name": "app",   "updated_at": _now},
         ],
     )
 
 
 def downgrade() -> None:
+    op.drop_table("ticket_csat")
     op.drop_table("ticket_read_markers")
     op.drop_table("app_settings")
     op.drop_table("audit_log")
