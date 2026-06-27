@@ -34,6 +34,7 @@ _WRITABLE_KEYS = {
     "business_hours_start",
     "business_hours_end",
     "business_days",
+    "csat_auto_close_days",
 }
 
 _SLACK_KEYS = {

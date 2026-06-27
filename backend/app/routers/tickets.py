@@ -439,6 +439,7 @@ async def update_ticket(
 
     changes: dict[str, tuple[str | None, str | None]] = {}
     now = utcnow()
+    _sends_csat = False
 
     # title
     if "title" in provided and body.title is not None:
@@ -513,6 +514,13 @@ async def update_ticket(
             # Track resolved_at transitions
             if body.status in resolved_names and old_status not in resolved_names:
                 ticket.resolved_at = now
+                # Check if this status triggers CSAT (only on first entry into resolved state)
+                csat_cfg_result = await session.execute(
+                    select(TicketStatusConfig.sends_csat).where(
+                        TicketStatusConfig.name == body.status
+                    )
+                )
+                _sends_csat = bool(csat_cfg_result.scalar_one_or_none())
             elif body.status not in resolved_names and old_status in resolved_names:
                 ticket.resolved_at = None
 
@@ -570,6 +578,14 @@ async def update_ticket(
             await notify_assignee_dm(ticket, new_assignee_slack_id, current_user.name)
         except Exception:  # noqa: BLE001
             logger.exception("Failed to notify assignee for ticket %s", ticket_id)
+
+    # Send CSAT DM if the new status triggers it
+    if _sends_csat:
+        try:
+            from app.slack.service import send_csat_dm
+            await send_csat_dm(ticket)
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to send CSAT DM for ticket %s", ticket_id)
 
     return enriched
 

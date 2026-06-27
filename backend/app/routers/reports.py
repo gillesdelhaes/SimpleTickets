@@ -19,6 +19,7 @@ from app.auth.deps import require_admin, require_technician
 from app.database import get_session
 from app.models import Category, Ticket, User
 from app.models.enums import Role
+from app.models.ticket_csat import TicketCSAT
 from app.models.ticket_status_config import TicketStatusConfig
 
 router = APIRouter(tags=["reports"], prefix="/reports")
@@ -100,12 +101,31 @@ async def get_overview(
     sla_pct = round(row.sla_met * 100 / row.sla_total, 1) if row.sla_total else None
     avg_h = round(row.avg_resolution_hours, 1) if row.avg_resolution_hours else None
 
+    csat_stmt = (
+        select(
+            func.count(TicketCSAT.id).label("csat_total"),
+            func.count(case((TicketCSAT.score == True, 1))).label("csat_positive"),  # noqa: E712
+        )
+        .join(Ticket, TicketCSAT.ticket_id == Ticket.id)
+        .where(Ticket.created_at >= start, Ticket.created_at <= end)
+    )
+    if assignee_id is not None:
+        csat_stmt = csat_stmt.where(Ticket.assignee_id == assignee_id)
+    csat_row = (await session.execute(csat_stmt)).one()
+    csat_pct = (
+        round(csat_row.csat_positive * 100 / csat_row.csat_total, 1)
+        if csat_row.csat_total
+        else None
+    )
+
     return {
         "total": row.total,
         "resolved": row.resolved,
         "open": row.open,
         "sla_compliance_pct": sla_pct,
         "avg_resolution_hours": avg_h,
+        "csat_pct": csat_pct,
+        "csat_total": csat_row.csat_total,
     }
 
 
@@ -271,8 +291,11 @@ async def get_technicians(
                     (Ticket.sla_deadline.isnot(None)) & (Ticket.resolved_at.isnot(None)), 1
                 ))), 0)
             ).label("sla_pct"),
+            func.count(TicketCSAT.id).label("csat_total"),
+            func.count(case((TicketCSAT.score == True, 1))).label("csat_positive"),  # noqa: E712
         )
         .join(User, Ticket.assignee_id == User.id)
+        .outerjoin(TicketCSAT, TicketCSAT.ticket_id == Ticket.id)
         .where(
             Ticket.resolved_at.isnot(None),
             Ticket.resolved_at >= start,
@@ -293,6 +316,11 @@ async def get_technicians(
             "resolved": row.resolved,
             "avg_hours": round(row.avg_hours, 1) if row.avg_hours else None,
             "sla_pct": round(float(row.sla_pct), 1) if row.sla_pct else None,
+            "csat_pct": (
+                round(row.csat_positive * 100 / row.csat_total, 1)
+                if row.csat_total
+                else None
+            ),
         }
         for row in result.all()
     ]

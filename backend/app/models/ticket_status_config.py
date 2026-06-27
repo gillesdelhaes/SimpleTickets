@@ -17,3 +17,4 @@ class TicketStatusConfig(SQLModel, table=True):
     is_resolved_state: bool = Field(default=False)  # Triggers resolved_at; re-opens on Slack reply
     sort_order: int = Field(default=0)
     is_archived: bool = Field(default=False)     # Hidden from pickers; existing tickets unaffected
+    sends_csat: bool = Field(default=False)      # DM the submitter for CSAT on entering this status

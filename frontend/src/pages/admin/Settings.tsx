@@ -142,6 +142,7 @@ function GeneralTab() {
   const bizEnd = get('business_hours_end', '17:00')
   const bizDaysStr = get('business_days', '0,1,2,3,4')
   const bizDays = new Set(bizDaysStr.split(',').map(d => d.trim()).filter(Boolean).map(Number))
+  const csatDays = get('csat_auto_close_days', '7')
 
   function toggleDay(d: number) {
     const next = new Set(bizDays)
@@ -199,6 +200,24 @@ function GeneralTab() {
           </SettingRow>
         </>
       )}
+
+      <SettingRow label="CSAT auto-close" hint="Resolved tickets with no survey response close after this many days" last>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input
+            type="number"
+            min={1}
+            max={90}
+            value={csatDays}
+            onChange={e => set('csat_auto_close_days', e.target.value)}
+            style={{
+              ...inp, width: 80, height: 34, padding: '0 10px',
+              border: 'csat_auto_close_days' in edits ? '1.5px solid #FF4713' : '1.5px solid #E5E5E5',
+              background: 'csat_auto_close_days' in edits ? '#FFF9F7' : '#FAFAFA',
+            }}
+          />
+          <span style={{ fontSize: 13, color: '#737373' }}>days</span>
+        </div>
+      </SettingRow>
 
       <SaveBar dirty={dirty} pending={mutation.isPending} onSave={() => mutation.mutate(Object.entries(edits).map(([key, value]) => ({ key, value })))} />
     </Card>

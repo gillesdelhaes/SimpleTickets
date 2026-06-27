@@ -235,6 +235,77 @@ async def _get_submitter_slack_id(ticket: Ticket) -> str | None:
     return None
 
 
+
+async def send_csat_dm(ticket: "Ticket") -> None:
+    """DM the ticket submitter 👍/👎 when their ticket moves to a sends_csat=True status."""
+    slack_user_id = await _get_submitter_slack_id(ticket)
+    if not slack_user_id:
+        return
+    from app.slack.bot import get_slack_client
+    client = get_slack_client()
+    if client is None:
+        return
+
+    from app.services.settings_service import get_setting
+    async with AsyncSessionLocal() as session:
+        days_str = await get_setting("csat_auto_close_days", session, default="7")
+    try:
+        days = int(days_str)
+    except (ValueError, TypeError):
+        days = 7
+
+    try:
+        await client.chat_postMessage(
+            channel=slack_user_id,
+            text=f"Your ticket {ticket.display_id} has been resolved. Did we help?",
+            blocks=[
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": (
+                            f"✅ *{ticket.display_id}* has been marked as resolved.\n"
+                            f"_{ticket.title}_\n\nDid we solve your issue?"
+                        ),
+                    },
+                },
+                {
+                    "type": "actions",
+                    "elements": [
+                        {
+                            "type": "button",
+                            "text": {"type": "plain_text", "text": "👍 Yes, resolved!"},
+                            "style": "primary",
+                            "action_id": "csat_positive",
+                            "value": str(ticket.id),
+                        },
+                        {
+                            "type": "button",
+                            "text": {"type": "plain_text", "text": "👎 Still an issue"},
+                            "style": "danger",
+                            "action_id": "csat_negative",
+                            "value": str(ticket.id),
+                        },
+                    ],
+                },
+                {
+                    "type": "context",
+                    "elements": [
+                        {
+                            "type": "mrkdwn",
+                            "text": (
+                                f"No response? The ticket closes automatically in "
+                                f"{days} day{'s' if days != 1 else ''}."
+                            ),
+                        }
+                    ],
+                },
+            ],
+        )
+        logger.debug("Sent CSAT DM to %s for ticket %s", slack_user_id, ticket.display_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("send_csat_dm: failed to DM %s", slack_user_id)
+
 async def post_reply_to_slack(
     ticket: Ticket,
     reply_body: str,

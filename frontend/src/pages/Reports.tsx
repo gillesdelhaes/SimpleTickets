@@ -18,6 +18,8 @@ interface Overview {
   open: number
   sla_compliance_pct: number | null
   avg_resolution_hours: number | null
+  csat_pct: number | null
+  csat_total: number
 }
 interface VolumePoint { date: string; count: number }
 interface ByPriority { priority: string; count: number }
@@ -30,6 +32,7 @@ interface TechRow {
   resolved: number
   avg_hours: number | null
   sla_pct: number | null
+  csat_pct: number | null
 }
 
 // ── Colours ────────────────────────────────────────────────────────────────────
@@ -315,6 +318,12 @@ export default function Reports() {
               sub="for resolved tickets"
               accent="#8B5CF6"
             />
+            <KpiCard
+              label="CSAT"
+              value={ov.csat_pct != null ? `${ov.csat_pct}%` : '—'}
+              sub={ov.csat_total ? `${ov.csat_total} response${ov.csat_total !== 1 ? 's' : ''}` : 'No responses yet'}
+              accent={ov.csat_pct != null && ov.csat_pct < 70 ? '#EF4444' : '#F59E0B'}
+            />
           </>
         ) : null}
       </div>
@@ -458,7 +467,7 @@ export default function Reports() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr>
-                {['Name', 'Assigned', 'Resolved', 'Avg resolution', 'SLA compliance'].map(h => (
+                {['Name', 'Assigned', 'Resolved', 'Avg resolution', 'SLA compliance', 'CSAT'].map(h => (
                   <th key={h} style={{
                     textAlign: 'left', padding: '6px 12px',
                     fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
@@ -499,6 +508,16 @@ export default function Reports() {
                         color: row.sla_pct >= 90 ? '#10B981' : row.sla_pct >= 70 ? '#EAB308' : '#EF4444',
                       }}>
                         {row.sla_pct}%
+                      </span>
+                    ) : '—'}
+                  </td>
+                  <td style={{ padding: '10px 12px' }}>
+                    {row.csat_pct != null ? (
+                      <span style={{
+                        fontWeight: 600,
+                        color: row.csat_pct >= 80 ? '#10B981' : row.csat_pct >= 60 ? '#EAB308' : '#EF4444',
+                      }}>
+                        {row.csat_pct}%
                       </span>
                     ) : '—'}
                   </td>

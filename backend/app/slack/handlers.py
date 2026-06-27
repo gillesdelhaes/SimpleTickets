@@ -19,7 +19,7 @@ from sqlalchemy import select
 
 from app.config import settings_manager
 from app.database import AsyncSessionLocal
-from app.models import Category, Ticket, TicketHistory, TicketReply, User
+from app.models import Category, Ticket, TicketCSAT, TicketHistory, TicketReply, User
 from app.models.enums import Priority
 from app.models.ticket_status_config import TicketStatusConfig
 from app.slack.service import (
@@ -149,6 +149,104 @@ async def _build_ticket_modal() -> dict:
         "close": {"type": "plain_text", "text": "Cancel"},
         "blocks": blocks,
     }
+
+
+
+# ── CSAT response helper ───────────────────────────────────────────────────────
+
+
+async def _handle_csat_response(body: dict, client: Any, *, score: bool) -> None:
+    slack_user_id: str = body.get("user", {}).get("id", "")
+    action = body.get("actions", [{}])[0]
+    try:
+        ticket_id = int(action.get("value", "0"))
+    except (ValueError, TypeError):
+        return
+    message_ts: str | None = body.get("message", {}).get("ts")
+    channel_id: str | None = body.get("channel", {}).get("id")
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    try:
+        async with AsyncSessionLocal() as session:
+            ticket = await session.get(Ticket, ticket_id)
+            if not ticket:
+                return
+
+            # Idempotent — ignore if already responded
+            existing = await session.execute(
+                select(TicketCSAT).where(TicketCSAT.ticket_id == ticket_id)
+            )
+            if existing.scalar_one_or_none() is not None:
+                return
+
+            session.add(TicketCSAT(
+                ticket_id=ticket_id,
+                score=score,
+                responded_at=now,
+                slack_user_id=slack_user_id,
+            ))
+
+            from app.services.sla import apply_sla_status_change
+
+            old_status = ticket.status.value if hasattr(ticket.status, "value") else str(ticket.status)
+            if score:
+                new_status = "closed"
+            else:
+                new_status = "open"
+                ticket.resolved_at = None
+
+            ticket.status = new_status
+            ticket.updated_at = now
+            await apply_sla_status_change(ticket, new_status, session)
+
+            session.add(TicketHistory(
+                ticket_id=ticket_id,
+                actor_id=None,
+                field_changed="status",
+                old_value=old_status,
+                new_value=new_status,
+                created_at=now,
+            ))
+            await session.commit()
+
+            # Notify assignee on negative response
+            if not score and ticket.assignee_id:
+                assignee = await session.get(User, ticket.assignee_id)
+                if assignee and assignee.slack_user_id:
+                    try:
+                        from app.slack.bot import get_slack_client
+                        c = get_slack_client()
+                        if c:
+                            await c.chat_postMessage(
+                                channel=assignee.slack_user_id,
+                                text=(
+                                    f"↩️ *{ticket.display_id}* was reopened — "
+                                    f"the submitter indicated the issue is not yet resolved."
+                                ),
+                            )
+                    except Exception:  # noqa: BLE001
+                        pass
+
+    except Exception:  # noqa: BLE001
+        logger.exception("csat_response: failed for ticket %d", ticket_id)
+        return
+
+    # Replace the CSAT buttons with a plain confirmation message
+    if message_ts and channel_id:
+        text = (
+            "✅ Thanks for the feedback! Your ticket has been closed."
+            if score
+            else "↩️ Thanks for letting us know — your ticket has been reopened."
+        )
+        try:
+            await client.chat_update(
+                channel=channel_id,
+                ts=message_ts,
+                text=text,
+                blocks=[{"type": "section", "text": {"type": "mrkdwn", "text": text}}],
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
 
 # ── handler registration ───────────────────────────────────────────────────────
@@ -760,6 +858,15 @@ def register_handlers(app: Any) -> None:
                     actor_name,
                     notify_submitter=False,
                 )
+
+                # Send CSAT DM if this status triggers it
+                if resolved_cfg and resolved_cfg.sends_csat:
+                    try:
+                        from app.slack.service import send_csat_dm
+                        await send_csat_dm(ticket)
+                    except Exception:  # noqa: BLE001
+                        logger.exception("home_resolve: CSAT DM failed for ticket %d", ticket_id)
+
                 logger.info("Ticket %s resolved from App Home by %s", ticket.display_id, actor_name)
 
         except Exception:  # noqa: BLE001
@@ -772,6 +879,18 @@ def register_handlers(app: Any) -> None:
                 await client.views_publish(user_id=slack_user_id, view=home_view)
             except Exception:  # noqa: BLE001
                 pass
+
+    # ── CSAT 👍 / 👎 responses ────────────────────────────────────────────────
+
+    @app.action("csat_positive")
+    async def handle_csat_positive(ack: Any, body: dict, client: Any) -> None:
+        await ack()
+        await _handle_csat_response(body, client, score=True)
+
+    @app.action("csat_negative")
+    async def handle_csat_negative(ack: Any, body: dict, client: Any) -> None:
+        await ack()
+        await _handle_csat_response(body, client, score=False)
 
     # ── Message shortcut: Create ticket from any message ──────────────────────
 

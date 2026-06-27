@@ -342,6 +342,80 @@ async def _warn_sla_breaches() -> None:
             await session.rollback()
 
 
+
+# ── CSAT auto-close job ───────────────────────────────────────────────────────
+
+
+async def _auto_close_resolved() -> None:
+    """
+    Scheduled job: close tickets that have been in a sends_csat=True status
+    for longer than csat_auto_close_days with no CSAT response.
+    Runs every hour.
+    """
+    from app.models.ticket_csat import TicketCSAT
+    from app.services.settings_service import get_setting
+
+    async for session in get_session():
+        try:
+            days_str = await get_setting("csat_auto_close_days", session, default="7")
+            try:
+                days = int(days_str)
+            except (ValueError, TypeError):
+                days = 7
+
+            cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
+
+            csat_status_result = await session.execute(
+                select(TicketStatusConfig.name).where(
+                    TicketStatusConfig.sends_csat == True,  # noqa: E712
+                    TicketStatusConfig.is_archived == False,  # noqa: E712
+                )
+            )
+            csat_statuses = [r[0] for r in csat_status_result.all()]
+            if not csat_statuses:
+                return
+
+            already_answered = select(TicketCSAT.ticket_id)
+            result = await session.execute(
+                select(Ticket).where(
+                    Ticket.status.in_(csat_statuses),
+                    Ticket.resolved_at.isnot(None),
+                    Ticket.resolved_at <= cutoff,
+                    Ticket.id.not_in(already_answered),
+                )
+            )
+            tickets = result.scalars().all()
+            if not tickets:
+                return
+
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            for ticket in tickets:
+                old_status = ticket.status
+                ticket.status = "closed"
+                ticket.updated_at = now
+                session.add(
+                    TicketHistory(
+                        ticket_id=ticket.id,
+                        actor_id=None,
+                        field_changed="status",
+                        old_value=old_status,
+                        new_value="closed",
+                        created_at=now,
+                    )
+                )
+                logger.info(
+                    "Auto-closed ticket %s (no CSAT response after %d days)",
+                    ticket.display_id,
+                    days,
+                )
+
+            await session.commit()
+
+        except Exception as exc:
+            logger.error("CSAT auto-close job failed: %s", exc)
+            await session.rollback()
+
+
 # ── Scheduler lifecycle ────────────────────────────────────────────────────────
 
 
@@ -364,6 +438,14 @@ def start_scheduler() -> None:
         trigger="interval",
         minutes=1,
         id="sla_breach_warn",
+        max_instances=1,
+        coalesce=True,
+    )
+    _scheduler.add_job(
+        _auto_close_resolved,
+        trigger="interval",
+        hours=1,
+        id="csat_auto_close",
         max_instances=1,
         coalesce=True,
     )
