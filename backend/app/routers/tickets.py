@@ -329,6 +329,94 @@ async def get_ticket(
     return items[0]
 
 
+# ── PATCH /tickets/bulk ────────────────────────────────────────────────────────
+
+
+@router.patch("/bulk")
+async def bulk_update_tickets(
+    body: BulkTicketUpdate,
+    current_user: User = Depends(require_technician),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Apply a single field change (assignee, priority, or status) to multiple tickets."""
+    if not body.ids:
+        raise HTTPException(status_code=422, detail="No ticket IDs provided")
+    if len(body.ids) > 100:
+        raise HTTPException(status_code=422, detail="Maximum 100 tickets per bulk operation")
+    if body.assignee_id is None and body.priority is None and body.status is None:
+        raise HTTPException(status_code=422, detail="At least one field must be provided")
+
+    result = await session.execute(select(Ticket).where(Ticket.id.in_(body.ids)))
+    tickets = list(result.scalars().all())
+
+    now = utcnow()
+
+    if body.assignee_id is not None:
+        assignee = await session.get(User, body.assignee_id)
+        if assignee is None or not assignee.is_active:
+            raise HTTPException(status_code=422, detail="Assignee not found or inactive")
+
+    sla_policy = None
+    if body.priority is not None:
+        sla_result = await session.execute(
+            select(SLAPolicy).where(SLAPolicy.priority == body.priority)
+        )
+        sla_policy = sla_result.scalar_one_or_none()
+
+    resolved_names: set[str] = set()
+    if body.status is not None:
+        valid = await session.execute(
+            select(TicketStatusConfig.name).where(
+                TicketStatusConfig.name == body.status,
+                TicketStatusConfig.is_archived == False,  # noqa: E712
+            )
+        )
+        if valid.scalar_one_or_none() is None:
+            raise HTTPException(status_code=422, detail=f"Status '{body.status}' does not exist or is archived")
+        resolved_names = await _get_resolved_status_names(session)
+
+    updated = 0
+    for ticket in tickets:
+        changes: dict = {}
+
+        if body.assignee_id is not None and ticket.assignee_id != body.assignee_id:
+            changes["assignee_id"] = (
+                str(ticket.assignee_id) if ticket.assignee_id else None,
+                str(body.assignee_id),
+            )
+            ticket.assignee_id = body.assignee_id
+
+        if body.priority is not None and ticket.priority != body.priority:
+            changes["priority"] = (ticket.priority.value, body.priority.value)
+            ticket.priority = body.priority
+            if sla_policy:
+                ticket.sla_policy_id = sla_policy.id
+                ticket.sla_deadline = await compute_sla_deadline(
+                    ticket.created_at, sla_policy.resolution_minutes, session
+                )
+            else:
+                ticket.sla_policy_id = None
+                ticket.sla_deadline = None
+
+        if body.status is not None and ticket.status != body.status:
+            old_status = ticket.status
+            changes["status"] = (old_status, body.status)
+            ticket.status = body.status
+            await apply_sla_status_change(ticket, body.status, session)
+            if body.status in resolved_names and old_status not in resolved_names:
+                ticket.resolved_at = now
+            elif body.status not in resolved_names and old_status in resolved_names:
+                ticket.resolved_at = None
+
+        if changes:
+            ticket.updated_at = now
+            _record_history(session, ticket.id, current_user.id, changes)
+            updated += 1
+
+    await session.commit()
+    return {"updated": updated}
+
+
 # ── PATCH /tickets/{id} ────────────────────────────────────────────────────────
 
 
@@ -484,97 +572,6 @@ async def update_ticket(
             logger.exception("Failed to notify assignee for ticket %s", ticket_id)
 
     return enriched
-
-
-# ── PATCH /tickets/bulk ────────────────────────────────────────────────────────
-
-
-@router.patch("/bulk")
-async def bulk_update_tickets(
-    body: BulkTicketUpdate,
-    current_user: User = Depends(require_technician),
-    session: AsyncSession = Depends(get_session),
-) -> dict:
-    """Apply a single field change (assignee, priority, or status) to multiple tickets."""
-    if not body.ids:
-        raise HTTPException(status_code=422, detail="No ticket IDs provided")
-    if len(body.ids) > 100:
-        raise HTTPException(status_code=422, detail="Maximum 100 tickets per bulk operation")
-    if body.assignee_id is None and body.priority is None and body.status is None:
-        raise HTTPException(status_code=422, detail="At least one field must be provided")
-
-    result = await session.execute(select(Ticket).where(Ticket.id.in_(body.ids)))
-    tickets = list(result.scalars().all())
-
-    now = utcnow()
-
-    # Validate assignee once
-    if body.assignee_id is not None:
-        assignee = await session.get(User, body.assignee_id)
-        if assignee is None or not assignee.is_active:
-            raise HTTPException(status_code=422, detail="Assignee not found or inactive")
-
-    # Look up SLA policy for priority change once
-    sla_policy = None
-    if body.priority is not None:
-        sla_result = await session.execute(
-            select(SLAPolicy).where(SLAPolicy.priority == body.priority)
-        )
-        sla_policy = sla_result.scalar_one_or_none()
-
-    # Validate status and check resolved states once
-    resolved_names: set[str] = set()
-    if body.status is not None:
-        valid = await session.execute(
-            select(TicketStatusConfig.name).where(
-                TicketStatusConfig.name == body.status,
-                TicketStatusConfig.is_archived == False,  # noqa: E712
-            )
-        )
-        if valid.scalar_one_or_none() is None:
-            raise HTTPException(status_code=422, detail=f"Status '{body.status}' does not exist or is archived")
-        resolved_names = await _get_resolved_status_names(session)
-
-    updated = 0
-    for ticket in tickets:
-        changes: dict = {}
-
-        if body.assignee_id is not None and ticket.assignee_id != body.assignee_id:
-            changes["assignee_id"] = (
-                str(ticket.assignee_id) if ticket.assignee_id else None,
-                str(body.assignee_id),
-            )
-            ticket.assignee_id = body.assignee_id
-
-        if body.priority is not None and ticket.priority != body.priority:
-            changes["priority"] = (ticket.priority.value, body.priority.value)
-            ticket.priority = body.priority
-            if sla_policy:
-                ticket.sla_policy_id = sla_policy.id
-                ticket.sla_deadline = await compute_sla_deadline(
-                    ticket.created_at, sla_policy.resolution_minutes, session
-                )
-            else:
-                ticket.sla_policy_id = None
-                ticket.sla_deadline = None
-
-        if body.status is not None and ticket.status != body.status:
-            old_status = ticket.status
-            changes["status"] = (old_status, body.status)
-            ticket.status = body.status
-            await apply_sla_status_change(ticket, body.status, session)
-            if body.status in resolved_names and old_status not in resolved_names:
-                ticket.resolved_at = now
-            elif body.status not in resolved_names and old_status in resolved_names:
-                ticket.resolved_at = None
-
-        if changes:
-            ticket.updated_at = now
-            _record_history(session, ticket.id, current_user.id, changes)
-            updated += 1
-
-    await session.commit()
-    return {"updated": updated}
 
 
 # ── GET /tickets/{id}/history ──────────────────────────────────────────────────
