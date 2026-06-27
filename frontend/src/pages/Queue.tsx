@@ -275,7 +275,7 @@ export default function Queue() {
     }
   }
 
-  const resolvedStatus = allStatuses.find(s => s.is_resolved_state)?.name
+  const resolvedStatuses = allStatuses.filter(s => s.is_resolved_state)
 
   // Status sort is client-side only (dynamic ordering from appConfig); everything
   // else is sorted by the server via sort/sort_dir query params.
@@ -475,15 +475,16 @@ export default function Queue() {
                 </button>
               )}
             </div>
-            {resolvedStatus && (
+            {resolvedStatuses.map(s => (
               <button
-                onClick={() => bulkAction({ status: resolvedStatus })}
+                key={s.name}
+                onClick={() => bulkAction({ status: s.name })}
                 disabled={bulkLoading}
-                style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, border: '1px solid #22c55e', background: '#fff', color: '#16a34a', cursor: 'pointer' }}
+                style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, border: `1px solid ${s.color}`, background: '#fff', color: s.color, cursor: 'pointer' }}
               >
-                ✓ Close
+                ✓ {s.label}
               </button>
-            )}
+            ))}
             <button
               onClick={() => setSelected(new Set())}
               style={{ fontSize: 11, fontWeight: 500, padding: '4px 10px', borderRadius: 6, border: '1px solid #E5E5E5', background: '#fff', color: '#737373', cursor: 'pointer', marginLeft: 'auto' }}
