@@ -40,6 +40,13 @@ class MarkDuplicateRequest(BaseModel):
     duplicate_of_id: int
 
 
+class BulkTicketUpdate(BaseModel):
+    ids: list[int]
+    assignee_id: Optional[int] = None
+    priority: Optional[Priority] = None
+    status: Optional[str] = None
+
+
 class TicketUpdate(BaseModel):
     """
     All fields optional. Only fields present in the request body are applied.

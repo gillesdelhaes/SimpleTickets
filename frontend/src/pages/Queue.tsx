@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import AppShell from '../components/layout/AppShell'
 import StatusBadge from '../components/tickets/StatusBadge'
 import PriorityBadge from '../components/tickets/PriorityBadge'
@@ -136,6 +136,10 @@ export default function Queue() {
   const [sortCol, setSortCol] = useState<SortCol>('priority')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [createOpen, setCreateOpen] = useState(false)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [bulkAssignId, setBulkAssignId] = useState<string>('')
+  const [bulkPriority, setBulkPriority] = useState<string>('')
+  const [bulkLoading, setBulkLoading] = useState(false)
 
   // Read filters from URL
   const selectedStatuses = searchParams.getAll('status')
@@ -229,6 +233,49 @@ export default function Queue() {
       return next
     })
   }
+
+  // Technicians list for bulk assign (tech-accessible endpoint)
+  const { data: technicians } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ['assignees'],
+    queryFn: async () => {
+      const { data } = await api.get<{ id: number; name: string }[]>('/reports/assignees')
+      return data
+    },
+    staleTime: 5 * 60_000,
+  })
+
+  function toggleSelect(e: React.MouseEvent, id: number) {
+    e.stopPropagation()
+    setSelected(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    if (selected.size === sortedItems.length && sortedItems.length > 0) {
+      setSelected(new Set())
+    } else {
+      setSelected(new Set(sortedItems.map(t => t.id)))
+    }
+  }
+
+  async function bulkAction(payload: Record<string, unknown>) {
+    if (selected.size === 0) return
+    setBulkLoading(true)
+    try {
+      await api.patch('/tickets/bulk', { ids: [...selected], ...payload })
+      queryClient.invalidateQueries({ queryKey: ['tickets'] })
+      setSelected(new Set())
+      setBulkAssignId('')
+      setBulkPriority('')
+    } finally {
+      setBulkLoading(false)
+    }
+  }
+
+  const resolvedStatus = allStatuses.find(s => s.is_resolved_state)?.name
 
   // Status sort is client-side only (dynamic ordering from appConfig); everything
   // else is sorted by the server via sort/sort_dir query params.
@@ -368,6 +415,84 @@ export default function Queue() {
           )}
         </div>
 
+        {/* Bulk action bar */}
+        {selected.size > 0 && (
+          <div style={{
+            background: 'rgba(255,71,19,0.06)',
+            border: '1.5px solid rgba(255,71,19,0.25)',
+            borderRadius: 10,
+            padding: '10px 16px',
+            marginBottom: 12,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            flexWrap: 'wrap',
+          }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#FF4713', whiteSpace: 'nowrap' }}>
+              {selected.size} selected
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <select
+                value={bulkAssignId}
+                onChange={e => setBulkAssignId(e.target.value)}
+                disabled={bulkLoading}
+                style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid #E5E5E5', background: '#fff', color: '#262626', cursor: 'pointer' }}
+              >
+                <option value="">Assign to…</option>
+                {technicians?.map(t => (
+                  <option key={t.id} value={String(t.id)}>{t.name}</option>
+                ))}
+              </select>
+              {bulkAssignId && (
+                <button
+                  onClick={() => bulkAction({ assignee_id: Number(bulkAssignId) })}
+                  disabled={bulkLoading}
+                  style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, border: 'none', background: '#FF4713', color: '#fff', cursor: 'pointer' }}
+                >
+                  Apply
+                </button>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <select
+                value={bulkPriority}
+                onChange={e => setBulkPriority(e.target.value)}
+                disabled={bulkLoading}
+                style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid #E5E5E5', background: '#fff', color: '#262626', cursor: 'pointer' }}
+              >
+                <option value="">Set priority…</option>
+                {ALL_PRIORITIES.map(p => (
+                  <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>
+                ))}
+              </select>
+              {bulkPriority && (
+                <button
+                  onClick={() => bulkAction({ priority: bulkPriority })}
+                  disabled={bulkLoading}
+                  style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, border: 'none', background: '#FF4713', color: '#fff', cursor: 'pointer' }}
+                >
+                  Apply
+                </button>
+              )}
+            </div>
+            {resolvedStatus && (
+              <button
+                onClick={() => bulkAction({ status: resolvedStatus })}
+                disabled={bulkLoading}
+                style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, border: '1px solid #22c55e', background: '#fff', color: '#16a34a', cursor: 'pointer' }}
+              >
+                ✓ Close
+              </button>
+            )}
+            <button
+              onClick={() => setSelected(new Set())}
+              style={{ fontSize: 11, fontWeight: 500, padding: '4px 10px', borderRadius: 6, border: '1px solid #E5E5E5', background: '#fff', color: '#737373', cursor: 'pointer', marginLeft: 'auto' }}
+            >
+              Clear
+            </button>
+          </div>
+        )}
+
         {/* Table */}
         <div
           style={{
@@ -403,6 +528,15 @@ export default function Queue() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #F2F2F2', background: '#FAFAFA' }}>
+                  <th style={{ padding: '8px 8px 8px 20px', width: 36 }}>
+                    <input
+                      type="checkbox"
+                      checked={sortedItems.length > 0 && selected.size === sortedItems.length}
+                      ref={el => { if (el) el.indeterminate = selected.size > 0 && selected.size < sortedItems.length }}
+                      onChange={toggleSelectAll}
+                      style={{ cursor: 'pointer', accentColor: '#FF4713' }}
+                    />
+                  </th>
                   {([
                     { label: 'ID', col: null },
                     { label: 'Title', col: null },
@@ -441,6 +575,7 @@ export default function Queue() {
                 {isLoading ? (
                   Array.from({ length: PAGE_SIZE }).map((_, i) => (
                     <tr key={i} style={{ borderBottom: '1px solid #F9F9F9' }}>
+                      <td style={{ padding: '10px 8px 10px 20px', width: 36 }} />
                       {Array.from({ length: 8 }).map((_, j) => (
                         <td key={j} style={{ padding: '10px 16px' }}>
                           <div
@@ -458,7 +593,7 @@ export default function Queue() {
                   ))
                 ) : sortedItems.length === 0 ? (
                   <tr>
-                    <td colSpan={8} style={{ padding: '60px 24px', textAlign: 'center' }}>
+                    <td colSpan={9} style={{ padding: '60px 24px', textAlign: 'center' }}>
                       <p style={{ fontSize: 14, fontWeight: 600, color: '#262626', margin: 0 }}>No tickets found</p>
                       <p style={{ fontSize: 13, color: '#A3A3A3', marginTop: 4 }}>
                         Try adjusting the filters above.
@@ -476,11 +611,19 @@ export default function Queue() {
                         borderBottom: '1px solid #F9F9F9',
                         cursor: 'pointer',
                         transition: 'background 0.12s',
-                        background: hasUnread ? 'rgba(255,71,19,0.02)' : 'transparent',
+                        background: selected.has(ticket.id) ? 'rgba(255,71,19,0.04)' : hasUnread ? 'rgba(255,71,19,0.02)' : 'transparent',
                       }}
-                      onMouseEnter={e => (e.currentTarget.style.background = '#F9F9F9')}
-                      onMouseLeave={e => (e.currentTarget.style.background = hasUnread ? 'rgba(255,71,19,0.02)' : 'transparent')}
+                      onMouseEnter={e => { if (!selected.has(ticket.id)) e.currentTarget.style.background = '#F9F9F9' }}
+                      onMouseLeave={e => { e.currentTarget.style.background = selected.has(ticket.id) ? 'rgba(255,71,19,0.04)' : hasUnread ? 'rgba(255,71,19,0.02)' : 'transparent' }}
                     >
+                      <td style={{ padding: '9px 8px 9px 20px', width: 36 }} onClick={e => toggleSelect(e, ticket.id)}>
+                        <input
+                          type="checkbox"
+                          checked={selected.has(ticket.id)}
+                          onChange={() => {}}
+                          style={{ cursor: 'pointer', accentColor: '#FF4713' }}
+                        />
+                      </td>
                       <td style={{ padding: '9px 16px', whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           {hasUnread && (
