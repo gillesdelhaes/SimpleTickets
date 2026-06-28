@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { ThumbUp, ThumbDown } from '../components/ThumbIcon'
 import { useQuery } from '@tanstack/react-query'
 import {
   BarChart, Bar, LineChart, Line,
@@ -20,6 +22,7 @@ interface Overview {
   avg_resolution_hours: number | null
   csat_pct: number | null
   csat_total: number
+  csat_positive: number
 }
 interface VolumePoint { date: string; count: number }
 interface ByPriority { priority: string; count: number }
@@ -33,6 +36,22 @@ interface TechRow {
   avg_hours: number | null
   sla_pct: number | null
   csat_pct: number | null
+}
+interface CsatNegRow {
+  id: number
+  title: string
+  status: string
+  priority: string
+  responded_at: string
+  assignee_name: string | null
+}
+interface SlaBreachedRow {
+  id: number
+  title: string
+  status: string
+  priority: string
+  sla_deadline: string | null
+  assignee_name: string | null
 }
 
 // ── Colours ────────────────────────────────────────────────────────────────────
@@ -85,7 +104,7 @@ function KpiCard({
 }: {
   label: string
   value: string | number
-  sub?: string
+  sub?: React.ReactNode
   accent?: string
 }) {
   return (
@@ -158,6 +177,7 @@ function Skeleton({ height = 200 }: { height?: number }) {
 interface Assignee { id: number; name: string }
 
 export default function Reports() {
+  const navigate = useNavigate()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const [range, setRange] = useState<Range>('30d')
@@ -198,6 +218,8 @@ export default function Reports() {
   const byCategory = useReport<ByCategory[]>('by-category', params)
   const bySource   = useReport<BySource[]>('by-source', params)
   const techs      = useReport<TechRow[]>('technicians', params)
+  const csatNeg    = useReport<CsatNegRow[]>('csat-negative', params)
+  const slaBreached = useReport<SlaBreachedRow[]>('sla-breached', params)
 
   const ov = overview.data
   const rangeLabels: Record<Range, string> = { '7d': 'Last 7 days', '30d': 'Last 30 days', '90d': 'Last 90 days' }
@@ -321,7 +343,13 @@ export default function Reports() {
             <KpiCard
               label="CSAT"
               value={ov.csat_pct != null ? `${ov.csat_pct}%` : '—'}
-              sub={ov.csat_total ? `${ov.csat_total} response${ov.csat_total !== 1 ? 's' : ''}` : 'No responses yet'}
+              sub={ov.csat_total
+                ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <ThumbUp color="#059669" /> {ov.csat_positive}
+                    <span style={{ color: '#D1D5DB' }}>·</span>
+                    <ThumbDown color="#DC2626" /> {ov.csat_total - ov.csat_positive}
+                  </span>
+                : 'No responses yet'}
               accent={ov.csat_pct != null && ov.csat_pct < 70 ? '#EF4444' : '#F59E0B'}
             />
           </>
@@ -527,6 +555,112 @@ export default function Reports() {
           </table>
         )}
       </Section>
+
+
+      {/* ── Needs review ── */}
+      <div style={{ marginTop: 32 }}>
+        {/* Section header */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '12px 20px',
+          background: '#FFFBEB', border: '1px solid #FDE68A',
+          borderRadius: '12px 12px 0 0',
+          borderBottom: 'none',
+        }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          <span style={{ fontSize: 13, fontWeight: 700, color: '#92400E', letterSpacing: '0.01em' }}>
+            Needs review
+          </span>
+          <span style={{ fontSize: 12, color: '#B45309', marginLeft: 2 }}>
+            — tickets in this period that may require follow-up
+          </span>
+        </div>
+
+        {/* SLA breaches sub-section */}
+        <div style={{ background: '#fff', border: '1px solid #FDE68A', borderTop: '1px solid #F2F2F2', borderBottom: 'none' }}>
+          <div style={{ padding: '12px 20px', borderBottom: '1px solid #F2F2F2', fontSize: 12, fontWeight: 600, color: '#737373', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ color: '#EF4444' }}>⏱</span> SLA breaches
+            {(slaBreached.data ?? []).length > 0 && (
+              <span style={{ marginLeft: 4, padding: '1px 7px', borderRadius: 999, background: '#FEE2E2', color: '#DC2626', fontSize: 11, fontWeight: 700 }}>
+                {slaBreached.data!.length}
+              </span>
+            )}
+          </div>
+          <div style={{ padding: '0 0 4px' }}>
+            {slaBreached.isLoading ? <div style={{ padding: 20 }}><Skeleton height={60} /></div> : (slaBreached.data ?? []).length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#A3A3A3', fontSize: 13, padding: '20px 0' }}>No SLA breaches in this period</div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    {['Ticket', 'Title', 'Status', 'Priority', 'Assignee', 'SLA deadline'].map(h => (
+                      <th key={h} style={{ textAlign: 'left', padding: '6px 12px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#A3A3A3', borderBottom: '1px solid #F2F2F2' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(slaBreached.data ?? []).map(row => (
+                    <tr key={row.id} style={{ borderBottom: '1px solid #F9F9F9', cursor: 'pointer' }} onClick={() => navigate(`/tickets/${row.id}`)} onMouseEnter={e => { e.currentTarget.style.background = '#F9F9F9' }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
+                      <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontSize: 12, color: '#FF4713', whiteSpace: 'nowrap', textDecoration: 'underline' }}>TKT-{String(row.id).padStart(4, '0')}</td>
+                      <td style={{ padding: '10px 12px', color: '#262626', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.title}</td>
+                      <td style={{ padding: '10px 12px' }}>
+                        <span style={{ display: 'inline-block', padding: '1px 7px', borderRadius: 999, fontSize: 11, fontWeight: 600, background: '#F2F2F2', color: '#737373' }}>{row.status.replace('_', ' ')}</span>
+                      </td>
+                      <td style={{ padding: '10px 12px', color: '#737373', textTransform: 'capitalize' }}>{row.priority}</td>
+                      <td style={{ padding: '10px 12px', color: '#737373' }}>{row.assignee_name ?? '—'}</td>
+                      <td style={{ padding: '10px 12px', color: '#EF4444', fontSize: 12 }}>{row.sla_deadline ? new Date(row.sla_deadline).toLocaleString() : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        {/* Negative CSAT sub-section */}
+        <div style={{ background: '#fff', border: '1px solid #FDE68A', borderTop: '1px solid #F2F2F2', borderRadius: '0 0 12px 12px' }}>
+          <div style={{ padding: '12px 20px', borderBottom: '1px solid #F2F2F2', fontSize: 12, fontWeight: 600, color: '#737373', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <ThumbDown size={13} color="#DC2626" /> Negative CSAT feedback
+            {(csatNeg.data ?? []).length > 0 && (
+              <span style={{ marginLeft: 4, padding: '1px 7px', borderRadius: 999, background: '#FEE2E2', color: '#DC2626', fontSize: 11, fontWeight: 700 }}>
+                {csatNeg.data!.length}
+              </span>
+            )}
+          </div>
+          <div style={{ padding: '0 0 4px' }}>
+            {csatNeg.isLoading ? <div style={{ padding: 20 }}><Skeleton height={60} /></div> : (csatNeg.data ?? []).length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#A3A3A3', fontSize: 13, padding: '20px 0' }}>No negative CSAT feedback in this period</div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    {['Ticket', 'Title', 'Status', 'Priority', 'Assignee', 'Feedback received'].map(h => (
+                      <th key={h} style={{ textAlign: 'left', padding: '6px 12px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#A3A3A3', borderBottom: '1px solid #F2F2F2' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(csatNeg.data ?? []).map(row => (
+                    <tr key={row.id} style={{ borderBottom: '1px solid #F9F9F9', cursor: 'pointer' }} onClick={() => navigate(`/tickets/${row.id}`)} onMouseEnter={e => { e.currentTarget.style.background = '#F9F9F9' }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
+                      <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontSize: 12, color: '#FF4713', whiteSpace: 'nowrap', textDecoration: 'underline' }}>TKT-{String(row.id).padStart(4, '0')}</td>
+                      <td style={{ padding: '10px 12px', color: '#262626', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.title}</td>
+                      <td style={{ padding: '10px 12px' }}>
+                        <span style={{ display: 'inline-block', padding: '1px 7px', borderRadius: 999, fontSize: 11, fontWeight: 600, background: '#F2F2F2', color: '#737373' }}>{row.status.replace('_', ' ')}</span>
+                      </td>
+                      <td style={{ padding: '10px 12px', color: '#737373', textTransform: 'capitalize' }}>{row.priority}</td>
+                      <td style={{ padding: '10px 12px', color: '#737373' }}>{row.assignee_name ?? '—'}</td>
+                      <td style={{ padding: '10px 12px', color: '#A3A3A3', fontSize: 12 }}>{new Date(row.responded_at).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      </div>
 
     </AppShell>
   )

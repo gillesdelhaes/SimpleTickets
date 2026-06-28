@@ -172,11 +172,15 @@ async def _handle_csat_response(body: dict, client: Any, *, score: bool) -> None
             if not ticket:
                 return
 
-            # Idempotent — ignore if already responded
-            existing = await session.execute(
-                select(TicketCSAT).where(TicketCSAT.ticket_id == ticket_id)
+            # Idempotent — only act when the ticket is awaiting a response (resolved state)
+            resolved_result = await session.execute(
+                select(TicketStatusConfig.name).where(
+                    TicketStatusConfig.is_resolved_state == True  # noqa: E712
+                )
             )
-            if existing.scalar_one_or_none() is not None:
+            resolved_names = [row[0] for row in resolved_result.all()] or ["resolved", "closed"]
+            current_status = ticket.status.value if hasattr(ticket.status, "value") else str(ticket.status)
+            if current_status not in resolved_names:
                 return
 
             session.add(TicketCSAT(
@@ -205,6 +209,14 @@ async def _handle_csat_response(body: dict, client: Any, *, score: bool) -> None
                 field_changed="status",
                 old_value=old_status,
                 new_value=new_status,
+                created_at=now,
+            ))
+            session.add(TicketHistory(
+                ticket_id=ticket_id,
+                actor_id=None,
+                field_changed="csat_response",
+                old_value=None,
+                new_value="positive" if score else "negative",
                 created_at=now,
             ))
             await session.commit()

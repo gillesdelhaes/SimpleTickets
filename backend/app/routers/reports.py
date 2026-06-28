@@ -13,6 +13,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import case, func, select, text
+from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import require_admin, require_technician
@@ -85,7 +86,11 @@ async def get_overview(
             (Ticket.resolved_at <= Ticket.sla_deadline),
             1
         ))).label("sla_met"),
-        func.count(case((Ticket.sla_deadline.isnot(None), 1))).label("sla_total"),
+        func.count(case((
+            (Ticket.sla_deadline.isnot(None)) &
+            (Ticket.resolved_at.isnot(None) | (Ticket.sla_breached == True)),  # noqa: E712
+            1
+        ))).label("sla_total"),
         func.avg(
             func.extract("epoch", Ticket.resolved_at - Ticket.created_at) / 3600
         ).filter(
@@ -126,6 +131,7 @@ async def get_overview(
         "avg_resolution_hours": avg_h,
         "csat_pct": csat_pct,
         "csat_total": csat_row.csat_total,
+        "csat_positive": int(csat_row.csat_positive),
     }
 
 
@@ -271,6 +277,16 @@ async def get_technicians(
         .scalar_subquery()
     )
 
+    csat_subq = (
+        select(
+            TicketCSAT.ticket_id,
+            func.count(TicketCSAT.id).label("csat_count"),
+            func.count(case((TicketCSAT.score == True, 1))).label("csat_pos"),  # noqa: E712
+        )
+        .group_by(TicketCSAT.ticket_id)
+        .subquery()
+    )
+
     stmt = (
         select(
             User.id,
@@ -291,11 +307,11 @@ async def get_technicians(
                     (Ticket.sla_deadline.isnot(None)) & (Ticket.resolved_at.isnot(None)), 1
                 ))), 0)
             ).label("sla_pct"),
-            func.count(TicketCSAT.id).label("csat_total"),
-            func.count(case((TicketCSAT.score == True, 1))).label("csat_positive"),  # noqa: E712
+            func.coalesce(func.sum(csat_subq.c.csat_count), 0).label("csat_total"),
+            func.coalesce(func.sum(csat_subq.c.csat_pos), 0).label("csat_positive"),
         )
         .join(User, Ticket.assignee_id == User.id)
-        .outerjoin(TicketCSAT, TicketCSAT.ticket_id == Ticket.id)
+        .outerjoin(csat_subq, csat_subq.c.ticket_id == Ticket.id)
         .where(
             Ticket.resolved_at.isnot(None),
             Ticket.resolved_at >= start,
@@ -321,6 +337,103 @@ async def get_technicians(
                 if row.csat_total
                 else None
             ),
+        }
+        for row in result.all()
+    ]
+
+
+
+# ── GET /api/reports/csat-negative ────────────────────────────────────────────
+
+@router.get("/csat-negative")
+async def get_csat_negative(
+    from_date: Optional[date] = Query(default=None),
+    to_date: Optional[date] = Query(default=None),
+    _: User = Depends(require_technician),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    """Return all tickets that received a negative CSAT response in the date range."""
+    start, end = _date_range(from_date, to_date)
+    # Latest negative CSAT per ticket within the date range
+    latest_neg = (
+        select(
+            TicketCSAT.ticket_id,
+            func.max(TicketCSAT.responded_at).label("responded_at"),
+        )
+        .where(
+            TicketCSAT.score == False,  # noqa: E712
+            TicketCSAT.responded_at >= start,
+            TicketCSAT.responded_at <= end,
+        )
+        .group_by(TicketCSAT.ticket_id)
+        .subquery()
+    )
+    assignee_alias = aliased(User)
+    stmt = (
+        select(
+            Ticket.id,
+            Ticket.title,
+            Ticket.status,
+            Ticket.priority,
+            latest_neg.c.responded_at,
+            assignee_alias.name.label("assignee_name"),
+        )
+        .join(latest_neg, latest_neg.c.ticket_id == Ticket.id)
+        .outerjoin(assignee_alias, Ticket.assignee_id == assignee_alias.id)
+        .order_by(latest_neg.c.responded_at.desc())
+    )
+    result = await session.execute(stmt)
+    return [
+        {
+            "id": row.id,
+            "title": row.title,
+            "status": row.status,
+            "priority": row.priority.value,
+            "responded_at": row.responded_at.isoformat(),
+            "assignee_name": row.assignee_name,
+        }
+        for row in result.all()
+    ]
+
+
+# ── GET /api/reports/sla-breached ─────────────────────────────────────────────
+
+@router.get("/sla-breached")
+async def get_sla_breached(
+    from_date: Optional[date] = Query(default=None),
+    to_date: Optional[date] = Query(default=None),
+    _: User = Depends(require_technician),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    """Return all SLA-breached tickets created in the date range."""
+    start, end = _date_range(from_date, to_date)
+    assignee_alias = aliased(User)
+    stmt = (
+        select(
+            Ticket.id,
+            Ticket.title,
+            Ticket.status,
+            Ticket.priority,
+            Ticket.sla_deadline,
+            assignee_alias.name.label("assignee_name"),
+        )
+        .outerjoin(assignee_alias, Ticket.assignee_id == assignee_alias.id)
+        .where(
+            Ticket.sla_breached == True,  # noqa: E712
+            Ticket.created_at >= start,
+            Ticket.created_at <= end,
+        )
+        .order_by(Ticket.sla_deadline.asc())
+    )
+    result = await session.execute(stmt)
+    return [
+        {
+            "id": row.id,
+            "title": row.title,
+            "status": row.status,
+            "priority": row.priority.value,
+            "sla_deadline": row.sla_deadline.isoformat() if row.sla_deadline else None,
+            "assignee_name": row.assignee_name,
         }
         for row in result.all()
     ]

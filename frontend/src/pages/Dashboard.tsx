@@ -8,11 +8,13 @@ import { useActivity, type ActivityEvent } from '../hooks/useActivity'
 import { useAppConfig } from '../hooks/useAppConfig'
 import { useAuth } from '../contexts/AuthContext'
 import { getAllStatuses, statusColor, statusLabel, timeAgo, type TicketRead } from '../types/ticket'
+import { ThumbUp, ThumbDown } from '../components/ThumbIcon'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 const FIELD_LABEL: Record<string, string> = {
   status: 'status', priority: 'priority', assignee_id: 'assignee', category_id: 'category',
+  csat_response: 'CSAT feedback',
 }
 
 // ── Skeleton ───────────────────────────────────────────────────────────────────
@@ -92,18 +94,27 @@ function NeedsAttention({ userId }: { userId: number }) {
     status: activeStatuses,
     limit: 100,
   })
+  const { data: negativeCsatData } = useTickets({
+    assignee_id: userId,
+    status: activeStatuses,
+    has_negative_csat: true,
+    limit: 100,
+  })
   const { data: unreadData } = useUnreadReplies()
   const unreadSet = new Set(unreadData?.ticket_ids_with_unread ?? [])
 
-  const { breached, unread } = useMemo(() => {
+  const { breached, unread, negativeCsat } = useMemo(() => {
     const items = myTickets?.items ?? []
+    const negCsatItems = negativeCsatData?.items ?? []
+    const negCsatIds = new Set(negCsatItems.map(t => t.id))
     return {
       breached: items.filter(t => t.sla_breached),
       unread: items.filter(t => !t.sla_breached && unreadSet.has(t.id)),
+      negativeCsat: negCsatItems.filter(t => !t.sla_breached && !unreadSet.has(t.id) && negCsatIds.has(t.id)),
     }
-  }, [myTickets, unreadData])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [myTickets, negativeCsatData, unreadData])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  const all = [...breached, ...unread]
+  const all = [...breached, ...unread, ...negativeCsat]
 
   if (isLoading) {
     return (
@@ -149,6 +160,16 @@ function NeedsAttention({ userId }: { userId: number }) {
           onClick={() => navigate(`/tickets/${t.id}`)}
           reason={
             <span style={{ color: '#FF4713' }}>Unread reply</span>
+          }
+        />
+      ))}
+      {negativeCsat.map(t => (
+        <AttentionItem
+          key={`csat-${t.id}`}
+          ticket={t}
+          onClick={() => navigate(`/tickets/${t.id}`)}
+          reason={
+            <span style={{ color: '#DC2626', display: 'inline-flex', alignItems: 'center', gap: 4 }}><ThumbDown size={12} color="#DC2626" /> Negative CSAT — reopened</span>
           }
         />
       ))}
@@ -266,6 +287,13 @@ function ActivityIcon({ type }: { type: ActivityEvent['type'] }) {
       </div>
     )
   }
+  if (type === 'csat_response') {
+    return (
+      <div style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(99,102,241,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 13 }}>
+        💬
+      </div>
+    )
+  }
   return (
     <div style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(245,158,11,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -299,6 +327,20 @@ function ActivityDescription({ event }: { event: ActivityEvent }) {
   // field_changed
   const field = FIELD_LABEL[event.field ?? ''] ?? event.field
   const newVal = event.new_value
+
+  if (event.field === 'csat_response') {
+    const isPositive = newVal === 'positive'
+    return (
+      <span>
+        Submitter left{' '}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontWeight: 600, color: isPositive ? '#059669' : '#DC2626' }}>
+          {isPositive ? <ThumbUp size={12} color="#059669" /> : <ThumbDown size={12} color="#DC2626" />}
+          {isPositive ? 'positive' : 'negative'}
+        </span>{' '}
+        feedback on {ticket}
+      </span>
+    )
+  }
 
   if (field === 'status' && newVal) {
     const color = statusColor(newVal)

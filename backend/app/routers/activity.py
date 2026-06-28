@@ -13,12 +13,12 @@ from sqlalchemy.orm import aliased
 from app.auth.deps import get_current_user
 from app.utils import utcnow
 from app.database import get_session
-from app.models import Category, Ticket, TicketHistory, TicketReply, User
+from app.models import Category, Ticket, TicketCSAT, TicketHistory, TicketReply, User
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(tags=["activity"], prefix="/activity")
 
-_DISPLAY_FIELDS = {"status", "assignee_id", "priority", "category_id"}
+_DISPLAY_FIELDS = {"status", "assignee_id", "priority", "category_id", "csat_response"}
 
 
 @router.get("")

@@ -16,7 +16,7 @@ from sqlalchemy.orm import aliased
 
 from app.auth.deps import get_current_user, require_technician
 from app.database import get_session
-from app.models import Category, SLAPolicy, Ticket, TicketHistory, User
+from app.models import Category, SLAPolicy, Ticket, TicketCSAT, TicketHistory, User
 from app.models.enums import Priority
 from app.models.ticket_status_config import TicketStatusConfig
 from app.schemas.ticket import BulkTicketUpdate, MarkDuplicateRequest, TicketCreate, TicketListResponse, TicketRead, TicketUpdate
@@ -24,7 +24,7 @@ from app.services.sla import apply_sla_status_change, compute_sla_deadline
 from app.utils import get_ticket_or_404, utcnow
 
 # Fields worth surfacing in the timeline
-_HISTORY_DISPLAY_FIELDS = {"status", "assignee_id", "priority", "category_id", "duplicate_of"}
+_HISTORY_DISPLAY_FIELDS = {"status", "assignee_id", "priority", "category_id", "duplicate_of", "csat_response"}
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
@@ -265,6 +265,7 @@ async def list_tickets(
     assignee_id: int | None = Query(default=None),
     submitter_id: int | None = Query(default=None),
     unassigned: bool = Query(default=False),
+    has_negative_csat: bool = Query(default=False),
     q: str | None = Query(default=None, description="Search in title"),
     sort: str = Query(default="created_at"),
     sort_dir: str = Query(default="desc"),
@@ -288,6 +289,13 @@ async def list_tickets(
         where.append(Ticket.submitter_id == submitter_id)
     if unassigned:
         where.append(Ticket.assignee_id.is_(None))
+    if has_negative_csat:
+        where.append(
+            select(TicketCSAT.id)
+            .where(TicketCSAT.ticket_id == Ticket.id, TicketCSAT.score == False)  # noqa: E712
+            .correlate(Ticket)
+            .exists()
+        )
     if q:
         search_clauses = [Ticket.title.ilike(f"%{q}%")]
         tkt_match = re.match(r'^(?:TKT-)?(\d+)$', q.strip().upper())

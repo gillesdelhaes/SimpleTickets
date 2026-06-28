@@ -16,6 +16,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useMarkTicketRead } from '../hooks/useUnreadReplies'
 import api from '../lib/api'
 import { useAppConfig } from '../hooks/useAppConfig'
+import { ThumbUp, ThumbDown } from '../components/ThumbIcon'
 import {
   getAllStatuses,
   statusColor,
@@ -921,6 +922,7 @@ const FIELD_LABELS: Record<string, string> = {
   assignee_id: 'assignee',
   category_id: 'category',
   duplicate_of: 'duplicate link',
+  csat_response: 'CSAT feedback',
 }
 
 function formatHistoryValue(field: string, value: string | null): React.ReactNode {
@@ -934,6 +936,23 @@ function formatHistoryValue(field: string, value: string | null): React.ReactNod
         background: `${color}18`, color, border: `1px solid ${color}40`,
       }}>
         {statusLabel(value)}
+      </span>
+    )
+  }
+  if (field === 'csat_response') {
+    const isPositive = value === 'positive'
+    return (
+      <span style={{
+        display: 'inline-block', padding: '1px 8px', borderRadius: 999,
+        fontSize: 11, fontWeight: 600,
+        background: isPositive ? '#D1FAE5' : '#FEE2E2',
+        color: isPositive ? '#065F46' : '#991B1B',
+        border: `1px solid ${isPositive ? '#6EE7B7' : '#FCA5A5'}`,
+      }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          {isPositive ? <ThumbUp size={11} color="#065F46" /> : <ThumbDown size={11} color="#991B1B" />}
+          {isPositive ? 'Positive' : 'Negative'}
+        </span>
       </span>
     )
   }
