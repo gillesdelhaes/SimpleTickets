@@ -89,12 +89,12 @@ function NeedsAttention({ userId }: { userId: number }) {
   const activeStatuses = (appConfig?.statuses ?? getAllStatuses())
     .filter(s => !s.is_resolved_state)
     .map(s => s.name)
-  const { data: myTickets, isLoading } = useTickets({
+  const { data: myTickets, isLoading: myTicketsLoading } = useTickets({
     assignee_id: userId,
     status: activeStatuses,
     limit: 100,
   })
-  const { data: negativeCsatData } = useTickets({
+  const { data: negativeCsatData, isLoading: csatLoading } = useTickets({
     assignee_id: userId,
     status: activeStatuses,
     has_negative_csat: true,
@@ -106,15 +106,15 @@ function NeedsAttention({ userId }: { userId: number }) {
   const { breached, unread, negativeCsat } = useMemo(() => {
     const items = myTickets?.items ?? []
     const negCsatItems = negativeCsatData?.items ?? []
-    const negCsatIds = new Set(negCsatItems.map(t => t.id))
     return {
       breached: items.filter(t => t.sla_breached),
       unread: items.filter(t => !t.sla_breached && unreadSet.has(t.id)),
-      negativeCsat: negCsatItems.filter(t => !t.sla_breached && !unreadSet.has(t.id) && negCsatIds.has(t.id)),
+      negativeCsat: negCsatItems.filter(t => !t.sla_breached && !unreadSet.has(t.id)),
     }
   }, [myTickets, negativeCsatData, unreadData])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const all = [...breached, ...unread, ...negativeCsat]
+  const isLoading = myTicketsLoading || csatLoading
 
   if (isLoading) {
     return (
@@ -268,7 +268,8 @@ function UnassignedBanner() {
 
 // ── Activity feed ──────────────────────────────────────────────────────────────
 
-function ActivityIcon({ type }: { type: ActivityEvent['type'] }) {
+function ActivityIcon({ event }: { event: ActivityEvent }) {
+  const { type } = event
   if (type === 'ticket_created') {
     return (
       <div style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(59,130,246,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -287,10 +288,12 @@ function ActivityIcon({ type }: { type: ActivityEvent['type'] }) {
       </div>
     )
   }
-  if (type === 'csat_response') {
+  if (type === 'field_changed' && event.field === 'csat_response') {
     return (
-      <div style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(99,102,241,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 13 }}>
-        💬
+      <div style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(99,102,241,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        {event.new_value === 'positive'
+          ? <ThumbUp size={13} color="#6366F1" />
+          : <ThumbDown size={13} color="#6366F1" />}
       </div>
     )
   }
@@ -408,7 +411,7 @@ function ActivityFeed() {
           onMouseOver={e => (e.currentTarget.style.background = '#FAFAFA')}
           onMouseOut={e => (e.currentTarget.style.background = 'none')}
         >
-          <ActivityIcon type={event.type} />
+          <ActivityIcon event={event} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 12, color: '#262626', lineHeight: 1.5 }}>
               <ActivityDescription event={event} />

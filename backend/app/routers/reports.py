@@ -283,6 +283,7 @@ async def get_technicians(
             func.count(TicketCSAT.id).label("csat_count"),
             func.count(case((TicketCSAT.score == True, 1))).label("csat_pos"),  # noqa: E712
         )
+        .where(TicketCSAT.responded_at >= start, TicketCSAT.responded_at <= end)
         .group_by(TicketCSAT.ticket_id)
         .subquery()
     )

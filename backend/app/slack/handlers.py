@@ -173,12 +173,8 @@ async def _handle_csat_response(body: dict, client: Any, *, score: bool) -> None
                 return
 
             # Idempotent — only act when the ticket is awaiting a response (resolved state)
-            resolved_result = await session.execute(
-                select(TicketStatusConfig.name).where(
-                    TicketStatusConfig.is_resolved_state == True  # noqa: E712
-                )
-            )
-            resolved_names = [row[0] for row in resolved_result.all()] or ["resolved", "closed"]
+            status_cfgs = (await session.execute(select(TicketStatusConfig))).scalars().all()
+            resolved_names = [s.name for s in status_cfgs if s.is_resolved_state] or ["resolved", "closed"]
             current_status = ticket.status.value if hasattr(ticket.status, "value") else str(ticket.status)
             if current_status not in resolved_names:
                 return
@@ -192,11 +188,15 @@ async def _handle_csat_response(body: dict, client: Any, *, score: bool) -> None
 
             from app.services.sla import apply_sla_status_change
 
-            old_status = ticket.status.value if hasattr(ticket.status, "value") else str(ticket.status)
+            old_status = current_status
             if score:
-                new_status = "closed"
+                # Terminal resolved state — the one that doesn't trigger another CSAT
+                close_cfg = next((s for s in status_cfgs if s.is_resolved_state and not s.sends_csat), None)
+                new_status = close_cfg.name if close_cfg else "closed"
             else:
-                new_status = "open"
+                # First active (non-resolved) state
+                open_cfg = next((s for s in status_cfgs if not s.is_resolved_state), None)
+                new_status = open_cfg.name if open_cfg else "open"
                 ticket.resolved_at = None
 
             ticket.status = new_status
@@ -258,7 +258,7 @@ async def _handle_csat_response(body: dict, client: Any, *, score: bool) -> None
                 blocks=[{"type": "section", "text": {"type": "mrkdwn", "text": text}}],
             )
         except Exception:  # noqa: BLE001
-            pass
+            logger.warning("csat_response: failed to replace buttons for ticket %d — buttons may remain active", ticket_id)
 
 
 # ── handler registration ───────────────────────────────────────────────────────
