@@ -12,3 +12,4 @@ class TicketCSAT(SQLModel, table=True):
     score: bool  # True = positive (👍), False = negative (👎)
     responded_at: datetime
     slack_user_id: str
+    dm_ts: Optional[str] = Field(default=None)  # Slack message ts; unique per ticket for dedup

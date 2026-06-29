@@ -184,6 +184,7 @@ async def _handle_csat_response(body: dict, client: Any, *, score: bool) -> None
                 score=score,
                 responded_at=now,
                 slack_user_id=slack_user_id,
+                dm_ts=message_ts,
             ))
 
             from app.services.sla import apply_sla_status_change

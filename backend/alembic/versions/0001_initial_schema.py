@@ -227,10 +227,13 @@ def upgrade() -> None:
         sa.Column("score", sa.Boolean(), nullable=False),
         sa.Column("responded_at", sa.DateTime(), nullable=False),
         sa.Column("slack_user_id", sqlmodel.AutoString(), nullable=False),
+        sa.Column("dm_ts", sqlmodel.AutoString(), nullable=True),
         sa.ForeignKeyConstraint(["ticket_id"], ["tickets.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_ticket_csat_ticket_id", "ticket_csat", ["ticket_id"], unique=False)
+    # Prevent duplicate inserts from Slack at-least-once delivery — partial so NULLs are excluded
+    op.execute("CREATE UNIQUE INDEX uq_ticket_csat_dm_ts ON ticket_csat (ticket_id, dm_ts) WHERE dm_ts IS NOT NULL")
 
     # ── seed: categories ───────────────────────────────────────────────────────
     op.bulk_insert(
