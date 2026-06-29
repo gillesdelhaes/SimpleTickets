@@ -25,6 +25,11 @@ _LIMIT = 10
 _WINDOW = 60.0
 
 
+def _client_ip(request: Request) -> str:
+    # nginx sets X-Real-IP to $remote_addr; fall back to TCP peer for direct connections
+    return request.headers.get("X-Real-IP") or (request.client.host if request.client else "unknown")
+
+
 def _check_rate_limit(ip: str) -> None:
     now = monotonic()
     _attempts[ip] = [t for t in _attempts[ip] if now - t < _WINDOW]
@@ -43,7 +48,7 @@ async def login(
     session: AsyncSession = Depends(get_session),
 ) -> TokenResponse:
     """Authenticate with email + password. Returns a Bearer JWT."""
-    _check_rate_limit(request.client.host if request.client else "unknown")
+    _check_rate_limit(_client_ip(request))
 
     result = await session.execute(
         select(User).where(User.email == body.email.lower())
@@ -88,7 +93,7 @@ async def change_password(
     session: AsyncSession = Depends(get_session),
 ) -> None:
     """Change the authenticated user's own password."""
-    _check_rate_limit(request.client.host if request.client else "unknown")
+    _check_rate_limit(_client_ip(request))
     if not body.new_password or len(body.new_password) < 8:
         raise HTTPException(status_code=422, detail="New password must be at least 8 characters")
     if not current_user.hashed_password or not verify_password(body.current_password, current_user.hashed_password):
