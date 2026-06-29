@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import api from '../lib/api'
 
-export type ActivityEventType = 'ticket_created' | 'field_changed' | 'reply_added' | 'csat_response'
+export type ActivityEventType = 'ticket_created' | 'field_changed' | 'reply_added'
 
 export interface ActivityEvent {
   type: ActivityEventType

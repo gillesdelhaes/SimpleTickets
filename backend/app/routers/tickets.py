@@ -432,7 +432,7 @@ async def bulk_update_tickets(
 async def update_ticket(
     ticket_id: int,
     body: TicketUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_technician),
     session: AsyncSession = Depends(get_session),
 ) -> TicketRead:
     """Update a ticket. All fields are editable by technicians and admins."""
@@ -681,7 +681,7 @@ async def get_ticket_history(
 async def mark_duplicate(
     ticket_id: int,
     body: MarkDuplicateRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_technician),
     session: AsyncSession = Depends(get_session),
 ) -> TicketRead:
     """Mark a ticket as a duplicate of another. Closes the duplicate ticket."""
@@ -743,7 +743,7 @@ async def mark_duplicate(
 @router.delete("/{ticket_id}/mark-duplicate", response_model=TicketRead)
 async def unmark_duplicate(
     ticket_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_technician),
     session: AsyncSession = Depends(get_session),
 ) -> TicketRead:
     """Remove a duplicate link and re-open the ticket."""
