@@ -25,6 +25,7 @@ from app.models.sla_policy import SLAPolicy
 from app.models.ticket import Ticket
 from app.models.ticket_attachment import TicketAttachment
 from app.models.ticket_history import TicketHistory
+from app.models.ticket_csat import TicketCSAT
 from app.models.ticket_read_marker import TicketReadMarker
 from app.models.ticket_reply import TicketReply
 from app.models.ticket_status_config import TicketStatusConfig
@@ -49,6 +50,7 @@ _EXPORT_MODELS: list[tuple[str, Any]] = [
     ("ticket_replies", TicketReply),
     ("ticket_history", TicketHistory),
     ("ticket_attachments", TicketAttachment),
+    ("ticket_csat", TicketCSAT),
     ("audit_log", AuditLog),
     ("ticket_read_markers", TicketReadMarker),
 ]
@@ -69,6 +71,7 @@ _DT_COLS: dict[str, set[str]] = {
     "ticket_replies":      {"created_at"},
     "ticket_history":      {"created_at"},
     "ticket_attachments":  {"created_at"},
+    "ticket_csat":         {"responded_at"},
     "audit_log":           {"created_at"},
     "ticket_read_markers": {"last_read_at"},
 }

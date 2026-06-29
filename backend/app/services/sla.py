@@ -375,13 +375,34 @@ async def _auto_close_resolved() -> None:
             if not csat_statuses:
                 return
 
-            already_answered = select(TicketCSAT.ticket_id)
+            # Lookup the terminal close status (resolved, no CSAT) dynamically
+            close_cfg_result = await session.execute(
+                select(TicketStatusConfig).where(
+                    TicketStatusConfig.is_resolved_state == True,  # noqa: E712
+                    TicketStatusConfig.sends_csat == False,  # noqa: E712
+                    TicketStatusConfig.is_archived == False,  # noqa: E712
+                ).limit(1)
+            )
+            close_cfg = close_cfg_result.scalar_one_or_none()
+            close_status = close_cfg.name if close_cfg else "closed"
+
+            # Only skip tickets with a CSAT response AFTER the most recent resolve.
+            # A ticket may have older CSAT rows from prior resolve cycles (multi-round).
+            answered_after_resolve = (
+                select(TicketCSAT.ticket_id)
+                .where(
+                    TicketCSAT.ticket_id == Ticket.id,
+                    TicketCSAT.responded_at >= Ticket.resolved_at,
+                )
+                .correlate(Ticket)
+                .exists()
+            )
             result = await session.execute(
                 select(Ticket).where(
                     Ticket.status.in_(csat_statuses),
                     Ticket.resolved_at.isnot(None),
                     Ticket.resolved_at <= cutoff,
-                    Ticket.id.not_in(already_answered),
+                    ~answered_after_resolve,
                 )
             )
             tickets = result.scalars().all()
@@ -391,7 +412,8 @@ async def _auto_close_resolved() -> None:
             now = datetime.now(timezone.utc).replace(tzinfo=None)
             for ticket in tickets:
                 old_status = ticket.status
-                ticket.status = "closed"
+                await apply_sla_status_change(ticket, close_status, session)
+                ticket.status = close_status
                 ticket.updated_at = now
                 session.add(
                     TicketHistory(
@@ -399,7 +421,7 @@ async def _auto_close_resolved() -> None:
                         actor_id=None,
                         field_changed="status",
                         old_value=old_status,
-                        new_value="closed",
+                        new_value=close_status,
                         created_at=now,
                     )
                 )
