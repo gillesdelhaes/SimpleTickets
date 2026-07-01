@@ -236,7 +236,7 @@ export default function AppShell({ title, children }: AppShellProps) {
             </div>
           ) : (
             <Link to="/dashboard" style={{ textDecoration: 'none', whiteSpace: 'nowrap' }}>
-              <span style={{ fontSize: 17, letterSpacing: '-0.04em', lineHeight: 1 }}>
+              <span style={{ fontSize: 16, letterSpacing: '-0.04em', lineHeight: 1 }}>
                 <span style={{ fontWeight: 200, color: 'rgba(255,255,255,0.85)' }}>Simple</span>
                 <span style={{
                   fontWeight: 800,
@@ -302,7 +302,7 @@ export default function AppShell({ title, children }: AppShellProps) {
               {/* Name + role */}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{
-                  fontSize: 12, fontWeight: 600, color: 'rgba(242,242,242,0.9)',
+                  fontSize: 12, fontWeight: 600, color: 'rgba(242,242,242,0.85)',
                   whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 }}>
                   {user?.name ?? user?.email}
@@ -310,7 +310,7 @@ export default function AppShell({ title, children }: AppShellProps) {
                 <div style={{
                   fontSize: 10, fontWeight: 600, letterSpacing: '0.06em',
                   textTransform: 'uppercase',
-                  color: 'rgba(115,115,115,0.7)',
+                  color: 'rgba(115,115,115,0.65)',
                 }}>
                   {rolePill}
                 </div>
@@ -657,7 +657,7 @@ function NavItem({
         textDecoration: 'none',
         fontSize: 13,
         fontWeight: isActive ? 600 : 400,
-        color: isActive ? '#FF4713' : 'rgba(242,242,242,0.55)',
+        color: isActive ? '#FF4713' : 'rgba(242,242,242,0.50)',
         background: isActive ? 'rgba(255,71,19,0.08)' : 'transparent',
         borderLeft: isActive ? '3px solid #FF4713' : '3px solid transparent',
         transition: 'background 0.15s, color 0.15s',
@@ -672,7 +672,7 @@ function NavItem({
         <>
           <span style={{
             flexShrink: 0,
-            color: isActive ? '#FF4713' : 'rgba(242,242,242,0.45)',
+            color: isActive ? '#FF4713' : 'rgba(242,242,242,0.35)',
             display: 'flex',
           }}>
             {icon}

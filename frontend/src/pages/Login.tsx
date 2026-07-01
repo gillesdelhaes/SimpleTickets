@@ -48,7 +48,7 @@ export default function Login() {
     <div className="min-h-screen flex overflow-hidden bg-[#F9F9F9]">
       {/* ── Left brand panel ────────────────────────────────────── */}
       <div
-        className="hidden lg:flex lg:w-[58%] xl:w-[55%] relative flex-col justify-between overflow-hidden"
+        className="hidden lg:flex lg:w-[58%] relative flex-col justify-between overflow-hidden"
         style={{ background: '#0A0A0A' }}
       >
         {/* Top gradient rule */}
@@ -154,7 +154,7 @@ export default function Login() {
           <div className="mb-16">
             <h1
               className="leading-none select-none"
-              style={{ fontSize: 'clamp(48px, 5.5vw, 80px)', letterSpacing: '-0.04em' }}
+              style={{ fontSize: 'clamp(48px, 5.5vw, 78px)', letterSpacing: '-0.04em' }}
             >
               <span style={{ fontWeight: 200, color: 'rgba(255,255,255,0.90)' }}>
                 Simple
@@ -172,12 +172,13 @@ export default function Login() {
               </span>
             </h1>
             <p
-              className="mt-5"
+              className="mt-[18px]"
               style={{
-                color: 'rgba(115,115,115,0.75)',
-                fontSize: '13px',
+                color: 'rgba(115,115,115,0.60)',
+                fontFamily: 'monospace',
+                fontSize: '11px',
                 fontWeight: 400,
-                letterSpacing: '0.15em',
+                letterSpacing: '0.18em',
                 textTransform: 'uppercase',
               }}
             >
@@ -186,7 +187,7 @@ export default function Login() {
           </div>
 
           {/* Feature callouts */}
-          <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-[18px]">
             {[
               {
                 icon: (
@@ -215,8 +216,17 @@ export default function Login() {
                 ),
                 label: 'SLA tracking & reporting',
               },
+              {
+                icon: (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/>
+                    <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
+                  </svg>
+                ),
+                label: 'CSAT feedback on every resolution',
+              },
             ].map(({ icon, label }) => (
-              <div key={label} className="flex items-center gap-4">
+              <div key={label} className="flex items-center gap-[14px]">
                 <div
                   className="flex items-center justify-center w-9 h-9 rounded-lg flex-shrink-0"
                   style={{
@@ -260,7 +270,7 @@ export default function Login() {
 
       {/* ── Right form panel ────────────────────────────────────── */}
       <div
-        className="flex-1 flex flex-col justify-center px-8 sm:px-12 lg:px-16 xl:px-20"
+        className="flex-1 flex flex-col justify-center px-8 py-10 sm:px-12 lg:px-12"
         style={{
           opacity: mounted ? 1 : 0,
           transform: mounted ? 'translateX(0)' : 'translateX(16px)',
@@ -291,10 +301,10 @@ export default function Login() {
 
         <div className="w-full max-w-[400px] mx-auto">
           {/* Heading */}
-          <div className="mb-8">
+          <div className="mb-7">
             <h2
               className="text-[#0A0A0A] mb-1.5"
-              style={{ fontSize: '26px', fontWeight: 700, letterSpacing: '-0.025em' }}
+              style={{ fontSize: '26px', fontWeight: 700, letterSpacing: '-0.025em', lineHeight: 1.25 }}
             >
               Sign in
             </h2>
@@ -321,12 +331,14 @@ export default function Login() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@company.com"
-                className="w-full rounded-xl border border-[#E5E5E5] bg-white px-4 transition-all duration-150"
+                className="w-full rounded-xl border border-[#E5E5E5] bg-white transition-all duration-150"
                 style={{
                   height: '46px',
                   fontSize: '14px',
                   color: '#0A0A0A',
                   outline: 'none',
+                  paddingLeft: '14px',
+                  paddingRight: '14px',
                 }}
                 onFocus={(e) => {
                   e.target.style.borderColor = '#FF4713'
@@ -362,7 +374,7 @@ export default function Login() {
                     fontSize: '14px',
                     color: '#0A0A0A',
                     outline: 'none',
-                    padding: '0 44px 0 16px',
+                    padding: '0 44px 0 14px',
                   }}
                   onFocus={(e) => {
                     e.target.style.borderColor = '#FF4713'
@@ -421,6 +433,7 @@ export default function Login() {
               className="w-full rounded-xl text-white font-semibold transition-all duration-150 active:scale-[0.99]"
               style={{
                 height: '48px',
+                marginTop: '4px',
                 fontSize: '14px',
                 letterSpacing: '0.01em',
                 background: loading
