@@ -78,7 +78,7 @@ function ResultCard({ item, onClick }: { item: SearchResultItem; onClick: () => 
         padding: '14px 18px',
         background: '#fff',
         border: '1px solid #E5E5E5',
-        borderRadius: 10,
+        borderRadius: 12,
         cursor: 'pointer',
         transition: 'border-color 0.15s, box-shadow 0.15s',
       }}
@@ -283,7 +283,7 @@ export default function Search() {
         {hasQuery && !isFetching && !isError && results.length === 0 && (
           <div style={{
             textAlign: 'center', padding: '60px 24px',
-            background: '#fff', border: '1px solid #E5E5E5', borderRadius: 12,
+            background: '#fff', border: '1px solid #E5E5E5', borderRadius: 14,
           }}>
             <p style={{ fontSize: 13, color: '#A3A3A3', margin: 0 }}>
               No tickets found for <strong style={{ color: '#737373' }}>"{q}"</strong>
@@ -298,7 +298,7 @@ export default function Search() {
         {!hasQuery && (
           <div style={{
             textAlign: 'center', padding: '60px 24px',
-            background: '#fff', border: '1px solid #E5E5E5', borderRadius: 12,
+            background: '#fff', border: '1px solid #E5E5E5', borderRadius: 14,
           }}>
             <p style={{ fontSize: 13, color: '#A3A3A3', margin: 0 }}>
               Enter at least 2 characters to search

@@ -326,7 +326,7 @@ export default function Queue() {
           style={{
             background: '#fff',
             border: '1px solid #E5E5E5',
-            borderRadius: 12,
+            borderRadius: 14,
             padding: '14px 20px',
             marginBottom: 20,
             display: 'flex',
@@ -499,7 +499,7 @@ export default function Queue() {
           style={{
             background: '#fff',
             border: '1px solid #E5E5E5',
-            borderRadius: 12,
+            borderRadius: 14,
             overflow: 'hidden',
           }}
         >

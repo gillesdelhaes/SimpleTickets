@@ -109,7 +109,7 @@ function KpiCard({
 }) {
   return (
     <div style={{
-      background: '#fff', border: '1px solid #E5E5E5', borderRadius: 12,
+      background: '#fff', border: '1px solid #E5E5E5', borderRadius: 14,
       padding: '18px 22px',
       borderTop: `3px solid ${accent ?? '#FF4713'}`,
     }}>
@@ -128,7 +128,7 @@ function KpiCard({
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid #E5E5E5', borderRadius: 12, overflow: 'hidden' }}>
+    <div style={{ background: '#fff', border: '1px solid #E5E5E5', borderRadius: 14, overflow: 'hidden' }}>
       <div style={{
         padding: '14px 20px', borderBottom: '1px solid #F2F2F2',
         fontSize: 14, fontWeight: 600, color: '#0A0A0A',

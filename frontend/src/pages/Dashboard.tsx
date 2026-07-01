@@ -32,7 +32,7 @@ function Skel({ w = '100%', h = 14 }: { w?: string | number; h?: number }) {
 
 function Card({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid #E5E5E5', borderRadius: 12, overflow: 'hidden' }}>
+    <div style={{ background: '#fff', border: '1px solid #E5E5E5', borderRadius: 14, overflow: 'hidden' }}>
       <div style={{
         padding: '14px 18px', borderBottom: '1px solid #F2F2F2',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -228,7 +228,7 @@ function UnassignedBanner() {
         width: '100%', padding: '14px 18px',
         background: count > 0 ? 'rgba(255,71,19,0.04)' : '#FAFAFA',
         border: `1px solid ${count > 0 ? 'rgba(255,71,19,0.2)' : '#E5E5E5'}`,
-        borderRadius: 12, cursor: 'pointer', textAlign: 'left',
+        borderRadius: 14, cursor: 'pointer', textAlign: 'left',
         transition: 'background 0.12s',
       }}
       onMouseOver={e => (e.currentTarget.style.background = count > 0 ? 'rgba(255,71,19,0.08)' : '#F2F2F2')}
