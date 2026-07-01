@@ -180,6 +180,7 @@ export default function Search() {
 
   return (
     <AppShell title="Search">
+      <div style={{ padding: '28px 32px' }}>
       <div style={{ maxWidth: 780, margin: '0 auto' }}>
 
         {/* Search bar */}
@@ -307,6 +308,7 @@ export default function Search() {
             </p>
           </div>
         )}
+      </div>
       </div>
     </AppShell>
   )

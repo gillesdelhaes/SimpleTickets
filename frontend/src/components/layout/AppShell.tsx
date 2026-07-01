@@ -574,7 +574,7 @@ export default function AppShell({ title, children }: AppShellProps) {
         )}
 
         {/* ── Content ── */}
-        <main style={{ flex: 1, padding: '24px 24px 40px', minWidth: 0 }}>
+        <main style={{ flex: 1, padding: 0, minWidth: 0 }}>
           {children}
         </main>
       </div>

@@ -232,6 +232,7 @@ export default function Reports() {
 
   return (
     <AppShell title="Reports">
+      <div style={{ padding: '28px 32px' }}>
       {/* ── Toolbar: date range + technician filter + export ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
         {/* Date range pills */}
@@ -660,6 +661,7 @@ export default function Reports() {
             )}
           </div>
         </div>
+      </div>
       </div>
 
     </AppShell>

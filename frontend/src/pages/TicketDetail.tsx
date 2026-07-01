@@ -1241,7 +1241,7 @@ export default function TicketDetail() {
 
   return (
       <AppShell title={ticket.display_id}>
-        <div style={{ padding: '24px 32px', maxWidth: 1200 }}>
+        <div style={{ padding: '28px 32px', maxWidth: 1200 }}>
           <Breadcrumb ticket={ticket} />
 
           {/* Title */}
