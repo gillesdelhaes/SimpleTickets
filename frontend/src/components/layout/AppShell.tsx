@@ -407,7 +407,7 @@ export default function AppShell({ title, children }: AppShellProps) {
           borderBottom: '1px solid #E5E5E5',
           display: 'flex',
           alignItems: 'center',
-          padding: '0 20px',
+          padding: '0 24px',
           gap: 16,
           position: 'sticky',
           top: 0,
@@ -417,7 +417,7 @@ export default function AppShell({ title, children }: AppShellProps) {
           {/* Page title */}
           <h1 style={{
             fontSize: 15, fontWeight: 700, color: '#0A0A0A',
-            letterSpacing: '-0.02em', margin: 0, flex: 1,
+            letterSpacing: '-0.02em', lineHeight: 1.25, margin: 0, flex: 1,
           }}>
             {title}
           </h1>
