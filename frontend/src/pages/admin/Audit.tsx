@@ -115,7 +115,7 @@ export default function Audit() {
           value={actionFilter}
           onChange={e => { setActionFilter(e.target.value); setPage(0) }}
           placeholder="Action prefix (e.g. user.)"
-          style={{ padding: '7px 12px', borderRadius: 7, border: '1.5px solid #E5E5E5', fontSize: 13, color: '#262626', outline: 'none', fontFamily: 'JetBrains Mono, monospace', width: 200, transition: 'border-color 0.15s' }}
+          style={{ padding: '7px 12px', borderRadius: 8, border: '1.5px solid #E5E5E5', fontSize: 14, color: '#262626', outline: 'none', fontFamily: 'JetBrains Mono, monospace', width: 200, transition: 'border-color 0.15s' }}
           onFocus={e => (e.currentTarget.style.borderColor = '#FF4713')}
           onBlur={e => (e.currentTarget.style.borderColor = '#E5E5E5')}
         />
@@ -123,7 +123,7 @@ export default function Audit() {
         <select
           value={entityType}
           onChange={e => { setEntityType(e.target.value); setPage(0) }}
-          style={{ padding: '7px 28px 7px 12px', borderRadius: 7, border: '1.5px solid #E5E5E5', fontSize: 13, color: entityType ? '#262626' : '#A3A3A3', outline: 'none', background: '#fff', cursor: 'pointer', appearance: 'none',
+          style={{ padding: '7px 28px 7px 12px', borderRadius: 8, border: '1.5px solid #E5E5E5', fontSize: 14, color: entityType ? '#262626' : '#A3A3A3', outline: 'none', background: '#fff', cursor: 'pointer', appearance: 'none',
             backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M6 9l6 6 6-6' stroke='%23737373' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
             backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', fontFamily: 'Inter, system-ui, sans-serif' }}>
           {ENTITY_TYPES.map(t => (
@@ -135,7 +135,7 @@ export default function Audit() {
           value={actorSearch}
           onChange={e => setActorSearch(e.target.value)}
           placeholder="Filter by actor…"
-          style={{ padding: '7px 12px', borderRadius: 7, border: '1.5px solid #E5E5E5', fontSize: 13, color: '#262626', outline: 'none', fontFamily: 'Inter, system-ui, sans-serif', width: 180, transition: 'border-color 0.15s' }}
+          style={{ padding: '7px 12px', borderRadius: 8, border: '1.5px solid #E5E5E5', fontSize: 14, color: '#262626', outline: 'none', fontFamily: 'Inter, system-ui, sans-serif', width: 180, transition: 'border-color 0.15s' }}
           onFocus={e => (e.currentTarget.style.borderColor = '#FF4713')}
           onBlur={e => (e.currentTarget.style.borderColor = '#E5E5E5')}
         />

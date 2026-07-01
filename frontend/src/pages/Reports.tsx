@@ -131,7 +131,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     <div style={{ background: '#fff', border: '1px solid #E5E5E5', borderRadius: 12, overflow: 'hidden' }}>
       <div style={{
         padding: '14px 20px', borderBottom: '1px solid #F2F2F2',
-        fontSize: 13, fontWeight: 600, color: '#0A0A0A',
+        fontSize: 14, fontWeight: 600, color: '#0A0A0A',
       }}>
         {title}
       </div>

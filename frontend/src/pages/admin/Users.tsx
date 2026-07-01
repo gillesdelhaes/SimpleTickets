@@ -79,10 +79,10 @@ function useDebounce<T>(value: T, delay: number): T {
 // ── Shared input style ─────────────────────────────────────────────────────────
 
 const inp: React.CSSProperties = {
-  padding: '8px 12px',
-  borderRadius: 7,
+  padding: '9px 12px',
+  borderRadius: 8,
   border: '1.5px solid #E5E5E5',
-  fontSize: 13,
+  fontSize: 14,
   color: '#262626',
   background: '#fff',
   outline: 'none',

@@ -34,9 +34,9 @@ interface StatusForm { name: string; label: string; color: string; pauses_sla: b
 // ── Shared styles ─────────────────────────────────────────────────────────────
 
 const inp: React.CSSProperties = {
-  width: '100%', padding: '7px 10px',
-  border: '1.5px solid #E5E5E5', borderRadius: 7,
-  fontSize: 13, color: '#0A0A0A', background: '#fff',
+  width: '100%', padding: '9px 12px',
+  border: '1.5px solid #E5E5E5', borderRadius: 8,
+  fontSize: 14, color: '#0A0A0A', background: '#fff',
   outline: 'none', boxSizing: 'border-box',
   fontFamily: 'Inter, system-ui, sans-serif',
   transition: 'border-color 0.15s',
@@ -63,7 +63,7 @@ function SaveBar({ dirty, pending, onSave }: { dirty: boolean; pending: boolean;
   return (
     <div style={{ padding: '10px 20px', borderTop: '1px solid #F2F2F2', background: '#FAFAFA', display: 'flex', justifyContent: 'flex-end' }}>
       <button onClick={onSave} disabled={pending}
-        style={{ height: 34, padding: '0 20px', background: 'linear-gradient(135deg, #FF4713, #AD1164)', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+        style={{ height: 36, padding: '0 20px', background: 'linear-gradient(135deg, #FF4713, #AD1164)', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
         {pending ? 'Saving…' : 'Save changes'}
       </button>
     </div>
@@ -114,10 +114,10 @@ function SettingSwitch({ on, onChange }: { on: boolean; onChange: (v: boolean) =
 
 function SettingRow({ label, hint, children, last }: { label: string; hint: string; children: React.ReactNode; last?: boolean }) {
   return (
-    <div style={{ padding: '14px 20px', borderBottom: last ? 'none' : '1px solid #F2F2F2', display: 'grid', gridTemplateColumns: '220px 1fr', gap: 16, alignItems: 'center' }}>
+    <div style={{ padding: '20px', borderBottom: last ? 'none' : '1px solid #F2F2F2', display: 'grid', gridTemplateColumns: '220px 1fr', gap: 24, alignItems: 'center' }}>
       <div>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#262626' }}>{label}</div>
-        <div style={{ fontSize: 11, color: '#A3A3A3', marginTop: 2 }}>{hint}</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: '#262626' }}>{label}</div>
+        <div style={{ fontSize: 12, color: '#A3A3A3', marginTop: 2 }}>{hint}</div>
       </div>
       {children}
     </div>
@@ -161,7 +161,7 @@ function GeneralTab() {
 
       <SettingRow label="Timezone" hint="All timestamps are displayed in this timezone">
         <select value={tz} onChange={e => set('timezone', e.target.value)}
-          style={{ ...inp, height: 34, padding: '0 10px', border: 'timezone' in edits ? '1.5px solid #FF4713' : '1.5px solid #E5E5E5', background: 'timezone' in edits ? '#FFF9F7' : '#FAFAFA', cursor: 'pointer' }}>
+          style={{ ...inp, height: 38, padding: '0 12px', border: 'timezone' in edits ? '1.5px solid #FF4713' : '1.5px solid #E5E5E5', background: 'timezone' in edits ? '#FFF9F7' : '#FAFAFA', cursor: 'pointer' }}>
           {TIMEZONES.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
       </SettingRow>
@@ -210,7 +210,7 @@ function GeneralTab() {
             value={csatDays}
             onChange={e => set('csat_auto_close_days', e.target.value)}
             style={{
-              ...inp, width: 80, height: 34, padding: '0 10px',
+              ...inp, width: 80, height: 38, padding: '0 12px',
               border: 'csat_auto_close_days' in edits ? '1.5px solid #FF4713' : '1.5px solid #E5E5E5',
               background: 'csat_auto_close_days' in edits ? '#FFF9F7' : '#FAFAFA',
             }}
@@ -307,8 +307,8 @@ function SlackTab() {
           return (
             <div key={key} style={{ padding: '14px 20px', borderBottom: i < SLACK_KEYS.length - 1 ? '1px solid #F9F9F9' : 'none', display: 'grid', gridTemplateColumns: '220px 1fr auto', gap: 16, alignItems: 'center' }}>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#262626' }}>{meta.label}</div>
-                <div style={{ fontSize: 11, color: '#A3A3A3', marginTop: 2 }}>{meta.hint}</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#262626' }}>{meta.label}</div>
+                <div style={{ fontSize: 12, color: '#A3A3A3', marginTop: 2 }}>{meta.hint}</div>
               </div>
               <div>
                 {isToggle ? (
@@ -322,7 +322,7 @@ function SlackTab() {
                   <input value={val} type={row?.is_secret ? 'password' : 'text'}
                     onChange={e => edit(key, e.target.value)}
                     placeholder={meta.placeholder ?? ''}
-                    style={{ ...inp, height: 34, padding: '0 10px', border: changed ? '1.5px solid #FF4713' : '1.5px solid #E5E5E5', background: changed ? '#FFF9F7' : '#FAFAFA', fontFamily: row?.is_secret ? 'JetBrains Mono, monospace' : 'inherit', boxShadow: changed ? '0 0 0 3px rgba(255,71,19,0.08)' : 'none' }}
+                    style={{ ...inp, height: 38, padding: '0 12px', border: changed ? '1.5px solid #FF4713' : '1.5px solid #E5E5E5', background: changed ? '#FFF9F7' : '#FAFAFA', fontFamily: row?.is_secret ? 'JetBrains Mono, monospace' : 'inherit', boxShadow: changed ? '0 0 0 3px rgba(255,71,19,0.08)' : 'none' }}
                     onFocus={() => { if (row?.is_secret && !isRevealing) { setRevealing(r => ({ ...r, [key]: true })); edit(key, '') } }}
                   />
                 )}
@@ -1152,10 +1152,10 @@ export default function Settings() {
           {tabs.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
               style={{
-                padding: '8px 16px', borderRadius: '6px 6px 0 0', border: 'none',
+                padding: '11px 20px', borderRadius: '6px 6px 0 0', border: 'none',
                 background: 'none',
                 borderBottom: tab === t.id ? '2px solid #FF4713' : '2px solid transparent',
-                fontSize: 13, fontWeight: tab === t.id ? 600 : 400,
+                fontSize: 14, fontWeight: tab === t.id ? 600 : 500,
                 color: tab === t.id ? '#FF4713' : '#737373',
                 cursor: 'pointer', transition: 'color 0.15s', marginBottom: -1,
               }}>

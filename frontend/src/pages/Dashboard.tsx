@@ -37,7 +37,7 @@ function Card({ title, action, children }: { title: string; action?: React.React
         padding: '14px 18px', borderBottom: '1px solid #F2F2F2',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       }}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: '#0A0A0A' }}>{title}</span>
+        <span style={{ fontSize: 14, fontWeight: 600, color: '#0A0A0A' }}>{title}</span>
         {action}
       </div>
       {children}
