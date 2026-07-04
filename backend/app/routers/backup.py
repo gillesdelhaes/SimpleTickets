@@ -5,18 +5,22 @@ POST /api/admin/restore  — accept a zip upload, truncate all tables, restore d
 """
 import io
 import json
+import logging
+import os
+import tempfile
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import insert as sa_insert, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import require_admin
 from app.config import settings, settings_manager
+from app.services.audit import write_audit
 from app.database import get_session
 from app.models.app_setting import AppSetting
 from app.models.audit_log import AuditLog
@@ -31,6 +35,7 @@ from app.models.ticket_reply import TicketReply
 from app.models.ticket_status_config import TicketStatusConfig
 from app.models.user import User
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["backup"])
 
 BACKUP_VERSION = 1
@@ -113,7 +118,8 @@ def _deserialize_row(row: dict, table_name: str) -> dict:
 
 @router.get("/backup")
 async def download_backup(
-    _admin=Depends(require_admin),
+    request: Request,
+    admin: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
     """Stream a zip archive containing all data and attachment files."""
@@ -151,6 +157,16 @@ async def download_backup(
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     zip_bytes = buf.getvalue()
 
+    await write_audit(
+        session,
+        actor_id=admin.id,
+        action="backup.downloaded",
+        entity_type="backup",
+        payload={"bytes": len(zip_bytes), "attachments": len(att_list)},
+        ip_address=request.client.host if request.client else None,
+    )
+    await session.commit()
+
     return StreamingResponse(
         iter([zip_bytes]),
         media_type="application/zip",
@@ -164,10 +180,15 @@ async def download_backup(
 # ── POST /api/admin/restore ───────────────────────────────────────────────────
 
 
+_MAX_RESTORE_BYTES = 500 * 1024 * 1024          # 500 MB uploaded (compressed)
+_MAX_UNCOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB decompressed (zip-bomb guard)
+
+
 @router.post("/restore", status_code=status.HTTP_200_OK)
 async def restore_backup(
+    request: Request,
     file: UploadFile,
-    _admin=Depends(require_admin),
+    admin: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
     """
@@ -179,15 +200,29 @@ async def restore_backup(
     if not fname.endswith(".zip"):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Upload must be a .zip file")
 
-    _MAX_RESTORE_BYTES = 500 * 1024 * 1024  # 500 MB
-    raw = await file.read(_MAX_RESTORE_BYTES + 1)
-    if len(raw) > _MAX_RESTORE_BYTES:
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Backup file exceeds 500 MB limit")
+    # Spool the upload to disk (rolls over after 32 MB) rather than buffering the
+    # whole thing in RAM, and cap the compressed size while streaming.
+    spool = tempfile.SpooledTemporaryFile(max_size=32 * 1024 * 1024, suffix=".zip")
+    total = 0
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > _MAX_RESTORE_BYTES:
+            spool.close()
+            raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Backup file exceeds 500 MB limit")
+        spool.write(chunk)
+    spool.seek(0)
 
     try:
-        zf = zipfile.ZipFile(io.BytesIO(raw))
+        zf = zipfile.ZipFile(spool)
     except zipfile.BadZipFile:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid zip file")
+
+    # Zip-bomb guard: reject archives that would balloon on decompression.
+    if sum(zi.file_size for zi in zf.infolist()) > _MAX_UNCOMPRESSED_BYTES:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Backup archive is too large when decompressed")
 
     if "backup.json" not in zf.namelist():
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "zip does not contain backup.json")
@@ -251,9 +286,10 @@ async def restore_backup(
         raise
     except Exception as exc:
         await session.rollback()
+        logger.exception("Restore failed")
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
-            f"Restore failed: {exc}",
+            "Restore failed due to an internal error.",
         ) from exc
 
     # ── Restore attachment files ──────────────────────────────────────────────
@@ -268,5 +304,22 @@ async def restore_backup(
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(zf.read(name))
             restored_files += 1
+
+    spool.close()
+
+    # Audited on the freshly-restored DB (audit_log was truncated + repopulated
+    # from the backup, so this appends the restore event after that commit).
+    # actor_id is left null: the pre-restore admin's row may not exist in the
+    # restored users table, which would violate the actor FK — record the email
+    # in the payload instead.
+    await write_audit(
+        session,
+        actor_id=None,
+        action="backup.restored",
+        entity_type="backup",
+        payload={"restored_files": restored_files, "by": admin.email},
+        ip_address=request.client.host if request.client else None,
+    )
+    await session.commit()
 
     return {"ok": True, "restored_files": restored_files}

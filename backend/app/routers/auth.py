@@ -17,28 +17,48 @@ from app.services.passwords import hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+# Precomputed bcrypt hash used to equalize login timing when the email doesn't
+# exist (or has no password), so response time doesn't reveal which emails are
+# registered. The value never matches any real password.
+_DUMMY_PASSWORD_HASH = hash_password("account-enumeration-timing-equalizer")
+
 # ── Simple in-memory rate limiter ─────────────────────────────────────────────
 # 10 attempts per IP per 60 seconds. Resets automatically as the window slides.
 
 _attempts: dict[str, list[float]] = defaultdict(list)
 _LIMIT = 10
 _WINDOW = 60.0
+_MAX_TRACKED_IPS = 10_000  # bound memory: rotating/spoofed IPs can't grow the map forever
 
 
 def _client_ip(request: Request) -> str:
-    # nginx sets X-Real-IP to $remote_addr; fall back to TCP peer for direct connections
-    return request.headers.get("X-Real-IP") or (request.client.host if request.client else "unknown")
+    # Behind nginx the TCP peer is always the proxy, so we need X-Real-IP (set from
+    # $remote_addr) for per-client limiting. api:8000 is not published and only the
+    # proxy is on its network, so a spoofed header requires already being inside the
+    # internal network. Take a single trimmed token and fall back to the TCP peer.
+    header = (request.headers.get("X-Real-IP") or "").split(",")[0].strip()
+    if header:
+        return header[:64]
+    return request.client.host if request.client else "unknown"
 
 
 def _check_rate_limit(ip: str) -> None:
     now = monotonic()
-    _attempts[ip] = [t for t in _attempts[ip] if now - t < _WINDOW]
-    if len(_attempts[ip]) >= _LIMIT:
+    recent = [t for t in _attempts.get(ip, ()) if now - t < _WINDOW]
+
+    # Opportunistically evict stale buckets so the map can't grow without bound.
+    if len(_attempts) > _MAX_TRACKED_IPS:
+        for stale in [k for k, v in _attempts.items() if not v or now - v[-1] >= _WINDOW]:
+            del _attempts[stale]
+
+    if len(recent) >= _LIMIT:
+        _attempts[ip] = recent
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many login attempts — please wait a minute and try again.",
         )
-    _attempts[ip].append(now)
+    recent.append(now)
+    _attempts[ip] = recent
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -61,9 +81,12 @@ async def login(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    if user is None:
+    if user is None or not user.hashed_password:
+        # Run a verify against a dummy hash so a missing account costs the same
+        # ~bcrypt time as a wrong password for a real one (no timing oracle).
+        verify_password(body.password, _DUMMY_PASSWORD_HASH)
         raise _invalid
-    if not user.hashed_password or not verify_password(body.password, user.hashed_password):
+    if not verify_password(body.password, user.hashed_password):
         raise _invalid
     if not user.is_active:
         raise HTTPException(

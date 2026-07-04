@@ -172,6 +172,18 @@ async def _handle_csat_response(body: dict, client: Any, *, score: bool) -> None
             if not ticket:
                 return
 
+            # Only the ticket's submitter (the person the survey DM was sent to)
+            # may answer it — defense-in-depth beyond Slack only delivering the
+            # buttons to that DM.
+            from app.slack.service import _get_submitter_slack_id
+            submitter_slack = await _get_submitter_slack_id(ticket)
+            if submitter_slack and slack_user_id and slack_user_id != submitter_slack:
+                logger.warning(
+                    "csat_response: unauthorized responder %s on ticket %d",
+                    slack_user_id, ticket_id,
+                )
+                return
+
             # Idempotent — only act when the ticket is awaiting a response (resolved state)
             status_cfgs = (await session.execute(select(TicketStatusConfig))).scalars().all()
             resolved_names = [s.name for s in status_cfgs if s.is_resolved_state] or ["resolved", "closed"]
@@ -869,6 +881,16 @@ def register_handlers(app: Any) -> None:
                 db_user = user_result.scalar_one_or_none()
                 if db_user:
                     actor_name = db_user.name or db_user.email
+
+                # Only the ticket's Slack submitter or a linked DB user may resolve
+                # via App Home (matches the reply handler's authorization).
+                is_submitter = ticket.slack_submitter_id and ticket.slack_submitter_id == slack_user_id
+                if not is_submitter and db_user is None:
+                    logger.warning(
+                        "home_resolve: unauthorized resolve attempt by %s on ticket %d",
+                        slack_user_id, ticket_id,
+                    )
+                    return
 
                 # Apply SLA pause/resume logic
                 from app.services.sla import apply_sla_status_change

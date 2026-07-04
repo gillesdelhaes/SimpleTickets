@@ -25,6 +25,23 @@ from app.models.ticket_status_config import TicketStatusConfig
 
 router = APIRouter(tags=["reports"], prefix="/reports")
 
+# Characters that make a spreadsheet treat a cell as a formula on open.
+_CSV_INJECTION_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value) -> str:
+    """Neutralise CSV/formula injection.
+
+    Ticket titles and descriptions come from submitters (including arbitrary
+    Slack users), so a cell like ``=HYPERLINK(...)`` would execute when an admin
+    opens the export in Excel/Sheets. Prefix any risky leading character with a
+    single quote so the app renders it as literal text.
+    """
+    s = "" if value is None else str(value)
+    if s and s[0] in _CSV_INJECTION_PREFIXES:
+        return "'" + s
+    return s
+
 
 def _date_range(
     from_date: Optional[date],
@@ -488,7 +505,7 @@ async def export_tickets_csv(
         "SLA Deadline", "SLA Breached", "First Response Deadline", "First Responded At",
     ])
     for r in rows:
-        writer.writerow([
+        writer.writerow([_csv_safe(c) for c in (
             f"TKT-{r.id:04d}", r.title, r.description, r.status, r.priority.value, r.source,
             r.category or "",
             r.submitter_name or r.slack_submitter_name or "",
@@ -501,7 +518,7 @@ async def export_tickets_csv(
             "yes" if r.sla_breached else "no",
             r.first_response_deadline.isoformat() if r.first_response_deadline else "",
             r.first_responded_at.isoformat() if r.first_responded_at else "",
-        ])
+        )])
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     return StreamingResponse(

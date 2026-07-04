@@ -93,6 +93,7 @@ class SetPasswordRequest(BaseModel):
 async def set_user_password(
     user_id: int,
     body: SetPasswordRequest,
+    request: Request,
     admin: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> None:
@@ -103,6 +104,15 @@ async def set_user_password(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     user.hashed_password = hash_password(body.new_password)
+    await write_audit(
+        session,
+        actor_id=admin.id,
+        action="user.password_set",
+        entity_type="user",
+        entity_id=str(user_id),
+        payload={"email": user.email},
+        ip_address=request.client.host if request.client else None,
+    )
     await session.commit()
 
 
@@ -256,6 +266,20 @@ async def update_user(
             entity_type="user",
             entity_id=user_id,
             payload={"email": user.email, **changes.get("role", {})},
+            ip_address=ip,
+        )
+
+    # Profile-field edits (name / Slack ID) — the docstring promises these are
+    # audited, so record them too.
+    profile_changes = {k: changes[k] for k in ("name", "slack_user_id") if k in changes}
+    if profile_changes:
+        await write_audit(
+            session,
+            actor_id=admin.id,
+            action="user.updated",
+            entity_type="user",
+            entity_id=user_id,
+            payload={"email": user.email, **profile_changes},
             ip_address=ip,
         )
 

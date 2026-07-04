@@ -78,6 +78,15 @@ async def setup_admin(
     session: AsyncSession = Depends(_require_setup_incomplete),
 ) -> dict:
     """Create the first admin account."""
+    # The wizard only ever creates one admin. Refuse once any admin exists so
+    # the unauthenticated window (before setup_complete is set) can't be used to
+    # add extra admin accounts. Further admins are created from the admin UI.
+    if await has_any_admin(session):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="An admin account already exists",
+        )
+
     from sqlmodel import select
     existing = (await session.execute(
         select(User).where(User.email == body.email.lower())

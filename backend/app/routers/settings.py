@@ -8,7 +8,7 @@ POST /api/admin/settings/test-slack — test Slack connection (post-setup)
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +17,7 @@ from app.auth.deps import require_admin
 from app.database import get_session
 from app.models.app_setting import AppSetting
 from app.models.user import User
+from app.services.audit import write_audit
 from app.services.settings_service import get_setting, set_setting
 
 logger = logging.getLogger(__name__)
@@ -105,6 +106,7 @@ async def list_settings(
 @router.patch("")
 async def update_settings(
     body: SettingsPatchRequest,
+    request: Request,
     current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
@@ -129,6 +131,15 @@ async def update_settings(
             if item.key in _SLACK_KEYS:
                 slack_changed = True
 
+        # Audit which keys changed — never the values (some are secrets).
+        await write_audit(
+            session,
+            actor_id=current_user.id,
+            action="settings.updated",
+            entity_type="settings",
+            payload={"keys": sorted({s.key for s in body.settings})},
+            ip_address=request.client.host if request.client else None,
+        )
         await session.commit()
     except Exception:
         await session.rollback()
