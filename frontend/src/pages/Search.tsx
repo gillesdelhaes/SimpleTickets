@@ -78,7 +78,7 @@ function ResultCard({ item, onClick }: { item: SearchResultItem; onClick: () => 
         padding: '14px 18px',
         background: '#fff',
         border: '1px solid #E5E5E5',
-        borderRadius: 12,
+        borderRadius: 14,
         cursor: 'pointer',
         transition: 'border-color 0.15s, box-shadow 0.15s',
       }}
@@ -180,7 +180,7 @@ export default function Search() {
 
   return (
     <AppShell title="Search">
-      <div style={{ padding: '28px 32px' }}>
+      <div style={{ padding: '28px 28px 48px' }}>
       <div style={{ maxWidth: 780, margin: '0 auto' }}>
 
         {/* Search bar */}

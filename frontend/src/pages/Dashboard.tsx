@@ -442,7 +442,7 @@ export default function Dashboard() {
 
   return (
     <AppShell title="Dashboard">
-      <div style={{ padding: '28px 32px', maxWidth: 1200 }}>
+      <div style={{ padding: '28px 28px 48px', maxWidth: 1200 }}>
 
         <SlackUnconfiguredBanner />
 

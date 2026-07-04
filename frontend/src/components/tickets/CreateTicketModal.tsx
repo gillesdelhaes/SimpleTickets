@@ -144,7 +144,7 @@ export default function CreateTicketModal({ open, onClose }: Props) {
           maxWidth: 'calc(100vw - 32px)',
           maxHeight: 'calc(100vh - 48px)',
           background: '#fff',
-          borderRadius: 14,
+          borderRadius: 16,
           boxShadow: '0 24px 64px rgba(0,0,0,0.18)',
           zIndex: 201,
           display: 'flex',
@@ -445,19 +445,19 @@ export default function CreateTicketModal({ open, onClose }: Props) {
 
 const labelStyle: React.CSSProperties = {
   display: 'block',
-  fontSize: 12,
-  fontWeight: 600,
-  color: '#525252',
+  fontSize: 13,
+  fontWeight: 500,
+  color: '#262626',
   marginBottom: 6,
   letterSpacing: '0.01em',
 }
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
-  padding: '8px 12px',
-  fontSize: 13,
+  padding: '10px 14px',
+  fontSize: 14,
   border: '1px solid #E5E5E5',
-  borderRadius: 8,
+  borderRadius: 10,
   color: '#0A0A0A',
   background: '#fff',
   outline: 'none',

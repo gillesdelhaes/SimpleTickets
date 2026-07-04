@@ -298,7 +298,7 @@ export default function Queue() {
   return (
     <AppShell title="Ticket Queue">
       <CreateTicketModal open={createOpen} onClose={() => setCreateOpen(false)} />
-      <div style={{ padding: '28px 32px' }}>
+      <div style={{ padding: '28px 28px 48px' }}>
         {/* Toolbar */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
           <button
@@ -528,8 +528,8 @@ export default function Queue() {
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ borderBottom: '1px solid #F2F2F2', background: '#FAFAFA' }}>
-                  <th style={{ padding: '8px 8px 8px 20px', width: 36 }}>
+                <tr style={{ borderBottom: '1px solid #F2F2F2', background: '#F9F9F9' }}>
+                  <th style={{ padding: '10px 8px 10px 20px', width: 36 }}>
                     <input
                       type="checkbox"
                       checked={sortedItems.length > 0 && selected.size === sortedItems.length}
@@ -552,13 +552,13 @@ export default function Queue() {
                       key={label}
                       onClick={col ? () => handleSort(col) : undefined}
                       style={{
-                        padding: '8px 16px',
+                        padding: '10px 16px',
                         textAlign: 'left',
                         fontSize: 11,
-                        fontWeight: 600,
-                        color: col && sortCol === col ? '#FF4713' : '#A3A3A3',
+                        fontWeight: 700,
+                        color: col && sortCol === col ? '#FF4713' : '#737373',
                         textTransform: 'uppercase',
-                        letterSpacing: '0.06em',
+                        letterSpacing: '0.07em',
                         whiteSpace: 'nowrap',
                         cursor: col ? 'pointer' : 'default',
                         userSelect: 'none',
@@ -576,9 +576,9 @@ export default function Queue() {
                 {isLoading ? (
                   Array.from({ length: PAGE_SIZE }).map((_, i) => (
                     <tr key={i} style={{ borderBottom: '1px solid #F9F9F9' }}>
-                      <td style={{ padding: '10px 8px 10px 20px', width: 36 }} />
+                      <td style={{ padding: '12px 8px 12px 20px', width: 36 }} />
                       {Array.from({ length: 8 }).map((_, j) => (
-                        <td key={j} style={{ padding: '10px 16px' }}>
+                        <td key={j} style={{ padding: '12px 16px' }}>
                           <div
                             style={{
                               height: 13,
@@ -617,7 +617,7 @@ export default function Queue() {
                       onMouseEnter={e => { if (!selected.has(ticket.id)) e.currentTarget.style.background = '#F9F9F9' }}
                       onMouseLeave={e => { e.currentTarget.style.background = selected.has(ticket.id) ? 'rgba(255,71,19,0.04)' : hasUnread ? 'rgba(255,71,19,0.02)' : 'transparent' }}
                     >
-                      <td style={{ padding: '9px 8px 9px 20px', width: 36 }} onClick={e => toggleSelect(e, ticket.id)}>
+                      <td style={{ padding: '12px 8px 12px 20px', width: 36 }} onClick={e => toggleSelect(e, ticket.id)}>
                         <input
                           type="checkbox"
                           checked={selected.has(ticket.id)}
@@ -625,7 +625,7 @@ export default function Queue() {
                           style={{ cursor: 'pointer', accentColor: '#FF4713' }}
                         />
                       </td>
-                      <td style={{ padding: '9px 16px', whiteSpace: 'nowrap' }}>
+                      <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           {hasUnread && (
                             <span
@@ -642,7 +642,7 @@ export default function Queue() {
                           </span>
                         </div>
                       </td>
-                      <td style={{ padding: '9px 16px', maxWidth: 280 }}>
+                      <td style={{ padding: '12px 16px', maxWidth: 280 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden' }}>
                           {ticket.channel === 'slack' && (
                             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0, opacity: 0.7 }}>
@@ -670,19 +670,19 @@ export default function Queue() {
                           <span style={{ fontSize: 11, color: '#A3A3A3', display: 'block', marginTop: 1 }}>{ticket.category_name}</span>
                         )}
                       </td>
-                      <td style={{ padding: '9px 16px', whiteSpace: 'nowrap' }}>
+                      <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
                         {ticket.submitter_name
                           ? <span style={{ fontSize: 12, color: '#262626' }}>{ticket.submitter_name}</span>
                           : <span style={{ fontSize: 12, color: '#A3A3A3', fontStyle: 'italic' }}>Unknown</span>
                         }
                       </td>
-                      <td style={{ padding: '9px 16px', whiteSpace: 'nowrap' }}>
+                      <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
                         <PriorityBadge priority={ticket.priority} />
                       </td>
-                      <td style={{ padding: '9px 16px', whiteSpace: 'nowrap' }}>
+                      <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
                         <StatusBadge status={ticket.status} />
                       </td>
-                      <td style={{ padding: '9px 16px', whiteSpace: 'nowrap' }}>
+                      <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
                         {ticket.assignee_name
                           ? <span style={{ fontSize: 12, color: '#262626', fontWeight: 500 }}>{ticket.assignee_name}</span>
                           : (
@@ -698,10 +698,10 @@ export default function Queue() {
                           )
                         }
                       </td>
-                      <td style={{ padding: '9px 16px' }}>
+                      <td style={{ padding: '12px 16px' }}>
                         <SLABadge ticket={ticket} variant="bar" />
                       </td>
-                      <td style={{ padding: '9px 16px', whiteSpace: 'nowrap' }}>
+                      <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
                         <span style={{ fontSize: 12, color: '#737373' }}>{timeAgo(ticket.created_at)}</span>
                       </td>
                     </tr>

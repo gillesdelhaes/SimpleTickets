@@ -110,13 +110,13 @@ function KpiCard({
   return (
     <div style={{
       background: '#fff', border: '1px solid #E5E5E5', borderRadius: 14,
-      padding: '18px 22px',
-      borderTop: `3px solid ${accent ?? '#FF4713'}`,
+      padding: '18px 20px',
+      borderTop: `2px solid ${accent ?? '#FF4713'}`,
     }}>
-      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#A3A3A3', marginBottom: 8 }}>
+      <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#737373', marginBottom: 8 }}>
         {label}
       </div>
-      <div style={{ fontSize: 32, fontWeight: 700, color: '#0A0A0A', letterSpacing: '-0.03em', lineHeight: 1 }}>
+      <div style={{ fontSize: 32, fontWeight: 800, color: '#0A0A0A', letterSpacing: '-0.03em', lineHeight: 1 }}>
         {value}
       </div>
       {sub && <div style={{ fontSize: 12, color: '#737373', marginTop: 6 }}>{sub}</div>}
@@ -232,7 +232,7 @@ export default function Reports() {
 
   return (
     <AppShell title="Reports">
-      <div style={{ padding: '28px 32px' }}>
+      <div style={{ padding: '28px 28px 48px' }}>
       {/* ── Toolbar: date range + technician filter + export ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
         {/* Date range pills */}
@@ -498,9 +498,9 @@ export default function Reports() {
               <tr>
                 {['Name', 'Assigned', 'Resolved', 'Avg resolution', 'SLA compliance', 'CSAT'].map(h => (
                   <th key={h} style={{
-                    textAlign: 'left', padding: '6px 12px',
+                    textAlign: 'left', padding: '10px 12px',
                     fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
-                    letterSpacing: '0.07em', color: '#A3A3A3',
+                    letterSpacing: '0.07em', color: '#737373',
                     borderBottom: '1px solid #F2F2F2',
                   }}>
                     {h}
@@ -517,9 +517,9 @@ export default function Reports() {
                 </tr>
               ) : (techs.data ?? []).map(row => (
                 <tr key={row.name} style={{ borderBottom: '1px solid #F9F9F9' }}>
-                  <td style={{ padding: '10px 12px', fontWeight: 500, color: '#262626' }}>{row.name}</td>
-                  <td style={{ padding: '10px 12px', color: '#737373' }}>{row.total}</td>
-                  <td style={{ padding: '10px 12px', color: '#737373' }}>
+                  <td style={{ padding: '12px 12px', fontWeight: 500, color: '#262626' }}>{row.name}</td>
+                  <td style={{ padding: '12px 12px', color: '#737373' }}>{row.total}</td>
+                  <td style={{ padding: '12px 12px', color: '#737373' }}>
                     {row.resolved}
                     {row.total > 0 && (
                       <span style={{ color: '#A3A3A3', fontSize: 11, marginLeft: 4 }}>
@@ -527,10 +527,10 @@ export default function Reports() {
                       </span>
                     )}
                   </td>
-                  <td style={{ padding: '10px 12px', color: '#737373' }}>
+                  <td style={{ padding: '12px 12px', color: '#737373' }}>
                     {row.avg_hours != null ? `${row.avg_hours}h` : '—'}
                   </td>
-                  <td style={{ padding: '10px 12px' }}>
+                  <td style={{ padding: '12px 12px' }}>
                     {row.sla_pct != null ? (
                       <span style={{
                         fontWeight: 600,
@@ -540,7 +540,7 @@ export default function Reports() {
                       </span>
                     ) : '—'}
                   </td>
-                  <td style={{ padding: '10px 12px' }}>
+                  <td style={{ padding: '12px 12px' }}>
                     {row.csat_pct != null ? (
                       <span style={{
                         fontWeight: 600,
@@ -598,21 +598,21 @@ export default function Reports() {
                 <thead>
                   <tr>
                     {['Ticket', 'Title', 'Status', 'Priority', 'Assignee', 'SLA deadline'].map(h => (
-                      <th key={h} style={{ textAlign: 'left', padding: '6px 12px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#A3A3A3', borderBottom: '1px solid #F2F2F2' }}>{h}</th>
+                      <th key={h} style={{ textAlign: 'left', padding: '10px 12px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#737373', borderBottom: '1px solid #F2F2F2' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {(slaBreached.data ?? []).map(row => (
                     <tr key={row.id} style={{ borderBottom: '1px solid #F9F9F9', cursor: 'pointer' }} onClick={() => navigate(`/tickets/${row.id}`)} onMouseEnter={e => { e.currentTarget.style.background = '#F9F9F9' }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
-                      <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontSize: 12, color: '#FF4713', whiteSpace: 'nowrap', textDecoration: 'underline' }}>TKT-{String(row.id).padStart(4, '0')}</td>
-                      <td style={{ padding: '10px 12px', color: '#262626', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.title}</td>
-                      <td style={{ padding: '10px 12px' }}>
+                      <td style={{ padding: '12px 12px', fontFamily: 'monospace', fontSize: 12, color: '#FF4713', whiteSpace: 'nowrap', textDecoration: 'underline' }}>TKT-{String(row.id).padStart(4, '0')}</td>
+                      <td style={{ padding: '12px 12px', color: '#262626', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.title}</td>
+                      <td style={{ padding: '12px 12px' }}>
                         <span style={{ display: 'inline-block', padding: '1px 7px', borderRadius: 999, fontSize: 11, fontWeight: 600, background: '#F2F2F2', color: '#737373' }}>{row.status.replace('_', ' ')}</span>
                       </td>
-                      <td style={{ padding: '10px 12px', color: '#737373', textTransform: 'capitalize' }}>{row.priority}</td>
-                      <td style={{ padding: '10px 12px', color: '#737373' }}>{row.assignee_name ?? '—'}</td>
-                      <td style={{ padding: '10px 12px', color: '#EF4444', fontSize: 12 }}>{row.sla_deadline ? new Date(row.sla_deadline).toLocaleString() : '—'}</td>
+                      <td style={{ padding: '12px 12px', color: '#737373', textTransform: 'capitalize' }}>{row.priority}</td>
+                      <td style={{ padding: '12px 12px', color: '#737373' }}>{row.assignee_name ?? '—'}</td>
+                      <td style={{ padding: '12px 12px', color: '#EF4444', fontSize: 12 }}>{row.sla_deadline ? new Date(row.sla_deadline).toLocaleString() : '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -639,21 +639,21 @@ export default function Reports() {
                 <thead>
                   <tr>
                     {['Ticket', 'Title', 'Status', 'Priority', 'Assignee', 'Feedback received'].map(h => (
-                      <th key={h} style={{ textAlign: 'left', padding: '6px 12px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#A3A3A3', borderBottom: '1px solid #F2F2F2' }}>{h}</th>
+                      <th key={h} style={{ textAlign: 'left', padding: '10px 12px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#737373', borderBottom: '1px solid #F2F2F2' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {(csatNeg.data ?? []).map(row => (
                     <tr key={row.id} style={{ borderBottom: '1px solid #F9F9F9', cursor: 'pointer' }} onClick={() => navigate(`/tickets/${row.id}`)} onMouseEnter={e => { e.currentTarget.style.background = '#F9F9F9' }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
-                      <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontSize: 12, color: '#FF4713', whiteSpace: 'nowrap', textDecoration: 'underline' }}>TKT-{String(row.id).padStart(4, '0')}</td>
-                      <td style={{ padding: '10px 12px', color: '#262626', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.title}</td>
-                      <td style={{ padding: '10px 12px' }}>
+                      <td style={{ padding: '12px 12px', fontFamily: 'monospace', fontSize: 12, color: '#FF4713', whiteSpace: 'nowrap', textDecoration: 'underline' }}>TKT-{String(row.id).padStart(4, '0')}</td>
+                      <td style={{ padding: '12px 12px', color: '#262626', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.title}</td>
+                      <td style={{ padding: '12px 12px' }}>
                         <span style={{ display: 'inline-block', padding: '1px 7px', borderRadius: 999, fontSize: 11, fontWeight: 600, background: '#F2F2F2', color: '#737373' }}>{row.status.replace('_', ' ')}</span>
                       </td>
-                      <td style={{ padding: '10px 12px', color: '#737373', textTransform: 'capitalize' }}>{row.priority}</td>
-                      <td style={{ padding: '10px 12px', color: '#737373' }}>{row.assignee_name ?? '—'}</td>
-                      <td style={{ padding: '10px 12px', color: '#A3A3A3', fontSize: 12 }}>{new Date(row.responded_at).toLocaleString()}</td>
+                      <td style={{ padding: '12px 12px', color: '#737373', textTransform: 'capitalize' }}>{row.priority}</td>
+                      <td style={{ padding: '12px 12px', color: '#737373' }}>{row.assignee_name ?? '—'}</td>
+                      <td style={{ padding: '12px 12px', color: '#A3A3A3', fontSize: 12 }}>{new Date(row.responded_at).toLocaleString()}</td>
                     </tr>
                   ))}
                 </tbody>

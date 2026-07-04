@@ -1215,7 +1215,7 @@ export default function TicketDetail() {
   if (isLoading) {
     return (
       <AppShell title="Loading…">
-        <div style={{ padding: '28px 32px' }}>
+        <div style={{ padding: '28px 28px 48px' }}>
           <div style={{ height: 24, width: 200, borderRadius: 6, background: '#F2F2F2', animation: 'shimmer 1.5s ease-in-out infinite', marginBottom: 20 }} />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 24 }}>
             <div style={{ height: 400, borderRadius: 14, background: '#F2F2F2', animation: 'shimmer 1.5s ease-in-out infinite' }} />
@@ -1229,7 +1229,7 @@ export default function TicketDetail() {
   if (error || !ticket) {
     return (
       <AppShell title="Not Found">
-        <div style={{ padding: '28px 32px', textAlign: 'center' }}>
+        <div style={{ padding: '28px 28px 48px', textAlign: 'center' }}>
           <p style={{ color: '#737373' }}>Ticket not found or you don&apos;t have permission to view it.</p>
           <button onClick={() => navigate('/queue')} style={{ marginTop: 16, color: '#FF4713', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14 }}>
             ← Back to queue
@@ -1241,7 +1241,7 @@ export default function TicketDetail() {
 
   return (
       <AppShell title={ticket.display_id}>
-        <div style={{ padding: '28px 32px', maxWidth: 1200 }}>
+        <div style={{ padding: '28px 28px 48px', maxWidth: 1200 }}>
           <Breadcrumb ticket={ticket} />
 
           {/* Title */}

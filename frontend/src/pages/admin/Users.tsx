@@ -416,15 +416,11 @@ export default function Users() {
 
   return (
     <AdminPageShell title="User Management">
-      {/* Header row */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-        <div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, color: '#0A0A0A', letterSpacing: '-0.02em', margin: 0 }}>Users</h1>
-          <p style={{ fontSize: 13, color: '#737373', marginTop: 3 }}>Manage accounts, roles and access</p>
-        </div>
+      {/* Header row — action button only, page title lives in the topbar */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 20 }}>
         <button
           onClick={() => setShowCreate(true)}
-          style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg, #FF4713, #AD1164)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+          style={{ padding: '8px 16px', height: 36, borderRadius: 8, border: 'none', background: 'linear-gradient(135deg, #FF4713, #AD1164)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
         >
           <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> Create User
         </button>
@@ -468,9 +464,9 @@ export default function Users() {
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
-              <tr style={{ background: '#FAFAFA', borderBottom: '1px solid #F2F2F2' }}>
+              <tr style={{ background: '#F9F9F9', borderBottom: '1px solid #F2F2F2' }}>
                 {tableHeaders.map(h => (
-                  <th key={h} style={{ padding: '9px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#A3A3A3', textTransform: 'uppercase', letterSpacing: '0.07em', whiteSpace: 'nowrap' }}>
+                  <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#737373', textTransform: 'uppercase', letterSpacing: '0.07em', whiteSpace: 'nowrap' }}>
                     {h}
                   </th>
                 ))}
@@ -511,7 +507,7 @@ export default function Users() {
                     onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                   >
                     {/* User */}
-                    <td style={{ padding: '11px 16px' }}>
+                    <td style={{ padding: '12px 16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <div style={{ width: 32, height: 32, borderRadius: '50%', background: nameGradient(user.name), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
                           {initials(user.name)}
@@ -523,32 +519,32 @@ export default function Users() {
                       </div>
                     </td>
                     {/* Role */}
-                    <td style={{ padding: '11px 16px' }}>
+                    <td style={{ padding: '12px 16px' }}>
                       <RoleBadge user={user} />
                     </td>
                     {/* Slack ID */}
-                    <td style={{ padding: '11px 16px' }}>
+                    <td style={{ padding: '12px 16px' }}>
                       <SlackIdCell user={user} />
                     </td>
                     {/* Status */}
-                    <td style={{ padding: '11px 16px' }}>
+                    <td style={{ padding: '12px 16px' }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 999, fontSize: 11, fontWeight: 600, color: user.is_active ? '#059669' : '#737373', background: user.is_active ? '#D1FAE5' : '#F3F4F6', border: `1px solid ${user.is_active ? '#6EE7B7' : '#E5E5E5'}` }}>
                         <span style={{ width: 5, height: 5, borderRadius: '50%', background: user.is_active ? '#10B981' : '#9CA3AF' }} />
                         {user.is_active ? 'Active' : 'Inactive'}
                       </span>
                     </td>
                     {/* Last login */}
-                    <td style={{ padding: '11px 16px' }}>
+                    <td style={{ padding: '12px 16px' }}>
                       <span style={{ fontSize: 12, color: '#737373' }}>
                         {user.last_login_at ? timeAgo(user.last_login_at) : <span style={{ color: '#C0C0C0', fontStyle: 'italic' }}>Never</span>}
                       </span>
                     </td>
                     {/* Created */}
-                    <td style={{ padding: '11px 16px' }}>
+                    <td style={{ padding: '12px 16px' }}>
                       <span style={{ fontSize: 12, color: '#A3A3A3' }}>{timeAgo(user.created_at)}</span>
                     </td>
                     {/* Actions */}
-                    <td style={{ padding: '11px 16px' }}>
+                    <td style={{ padding: '12px 16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <button
                           onClick={() => toggleActive.mutate({ id: user.id, is_active: !user.is_active })}

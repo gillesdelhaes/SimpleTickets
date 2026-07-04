@@ -9,7 +9,7 @@ export default function StatusBadge({ status, size = 'sm' }: Props) {
   const color = STATUS_COLORS[status]
   const label = STATUS_LABELS[status]
   const fontSize = size === 'sm' ? '11px' : '12px'
-  const padding = size === 'sm' ? '2px 8px' : '3px 10px'
+  const padding = size === 'sm' ? '3px 9px' : '4px 10px'
 
   return (
     <span

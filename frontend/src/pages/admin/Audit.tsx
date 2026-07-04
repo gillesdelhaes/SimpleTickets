@@ -102,20 +102,13 @@ export default function Audit() {
 
   return (
     <AdminPageShell title="Audit Log">
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 700, color: '#0A0A0A', letterSpacing: '-0.02em', margin: 0 }}>Audit Log</h1>
-        <p style={{ fontSize: 13, color: '#737373', marginTop: 3 }}>
-          Immutable record of all significant system actions.
-        </p>
-      </div>
-
       {/* Filters */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
         <input
           value={actionFilter}
           onChange={e => { setActionFilter(e.target.value); setPage(0) }}
           placeholder="Action prefix (e.g. user.)"
-          style={{ padding: '7px 12px', borderRadius: 8, border: '1.5px solid #E5E5E5', fontSize: 14, color: '#262626', outline: 'none', fontFamily: 'JetBrains Mono, monospace', width: 200, transition: 'border-color 0.15s' }}
+          style={{ padding: '9px 12px', borderRadius: 8, border: '1.5px solid #E5E5E5', fontSize: 14, color: '#262626', outline: 'none', fontFamily: 'JetBrains Mono, monospace', width: 200, transition: 'border-color 0.15s' }}
           onFocus={e => (e.currentTarget.style.borderColor = '#FF4713')}
           onBlur={e => (e.currentTarget.style.borderColor = '#E5E5E5')}
         />
@@ -123,7 +116,7 @@ export default function Audit() {
         <select
           value={entityType}
           onChange={e => { setEntityType(e.target.value); setPage(0) }}
-          style={{ padding: '7px 28px 7px 12px', borderRadius: 8, border: '1.5px solid #E5E5E5', fontSize: 14, color: entityType ? '#262626' : '#A3A3A3', outline: 'none', background: '#fff', cursor: 'pointer', appearance: 'none',
+          style={{ padding: '9px 28px 9px 12px', borderRadius: 8, border: '1.5px solid #E5E5E5', fontSize: 14, color: entityType ? '#262626' : '#A3A3A3', outline: 'none', background: '#fff', cursor: 'pointer', appearance: 'none',
             backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M6 9l6 6 6-6' stroke='%23737373' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
             backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', fontFamily: 'Inter, system-ui, sans-serif' }}>
           {ENTITY_TYPES.map(t => (
@@ -135,7 +128,7 @@ export default function Audit() {
           value={actorSearch}
           onChange={e => setActorSearch(e.target.value)}
           placeholder="Filter by actor…"
-          style={{ padding: '7px 12px', borderRadius: 8, border: '1.5px solid #E5E5E5', fontSize: 14, color: '#262626', outline: 'none', fontFamily: 'Inter, system-ui, sans-serif', width: 180, transition: 'border-color 0.15s' }}
+          style={{ padding: '9px 12px', borderRadius: 8, border: '1.5px solid #E5E5E5', fontSize: 14, color: '#262626', outline: 'none', fontFamily: 'Inter, system-ui, sans-serif', width: 180, transition: 'border-color 0.15s' }}
           onFocus={e => (e.currentTarget.style.borderColor = '#FF4713')}
           onBlur={e => (e.currentTarget.style.borderColor = '#E5E5E5')}
         />
@@ -158,9 +151,9 @@ export default function Audit() {
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
-              <tr style={{ background: '#FAFAFA', borderBottom: '1px solid #F2F2F2' }}>
+              <tr style={{ background: '#F9F9F9', borderBottom: '1px solid #F2F2F2' }}>
                 {headers.map(h => (
-                  <th key={h} style={{ padding: '9px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#A3A3A3', textTransform: 'uppercase', letterSpacing: '0.07em', whiteSpace: 'nowrap' }}>
+                  <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#737373', textTransform: 'uppercase', letterSpacing: '0.07em', whiteSpace: 'nowrap' }}>
                     {h}
                   </th>
                 ))}
@@ -171,7 +164,7 @@ export default function Audit() {
                 Array.from({ length: 10 }).map((_, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid #F9F9F9' }}>
                     {[140, 160, 200, 100, 90].map((w, j) => (
-                      <td key={j} style={{ padding: '11px 16px' }}>
+                      <td key={j} style={{ padding: '12px 16px' }}>
                         <div style={{ height: 12, width: w, borderRadius: 4, background: '#F2F2F2', animation: 'shimmer 1.5s ease-in-out infinite' }} />
                       </td>
                     ))}
@@ -192,13 +185,13 @@ export default function Audit() {
                     onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                   >
                     {/* Timestamp */}
-                    <td style={{ padding: '11px 16px', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
                       <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#737373' }}>
                         {formatDate(entry.created_at)}
                       </span>
                     </td>
                     {/* Actor */}
-                    <td style={{ padding: '11px 16px' }}>
+                    <td style={{ padding: '12px 16px' }}>
                       {entry.actor_name ? (
                         <div>
                           <div style={{ fontSize: 12, fontWeight: 500, color: '#262626' }}>{entry.actor_name}</div>
@@ -209,11 +202,11 @@ export default function Audit() {
                       )}
                     </td>
                     {/* Action */}
-                    <td style={{ padding: '11px 16px' }}>
+                    <td style={{ padding: '12px 16px' }}>
                       <ActionBadge action={entry.action} />
                     </td>
                     {/* Entity */}
-                    <td style={{ padding: '11px 16px' }}>
+                    <td style={{ padding: '12px 16px' }}>
                       <span style={{ fontSize: 12, color: '#262626', fontWeight: 500 }}>
                         {entry.entity_type}
                       </span>
@@ -233,7 +226,7 @@ export default function Audit() {
                       )}
                     </td>
                     {/* IP */}
-                    <td style={{ padding: '11px 16px' }}>
+                    <td style={{ padding: '12px 16px' }}>
                       <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#C0C0C0' }}>
                         {entry.ip_address ?? '—'}
                       </span>

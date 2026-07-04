@@ -264,7 +264,7 @@ export default function AppShell({ title, children }: AppShellProps) {
             <>
               {/* Admin section divider */}
               <div style={{
-                margin: '12px 0 6px',
+                margin: '12px 0 4px',
                 padding: collapsed ? '0 10px' : '0 16px',
               }}>
                 {!collapsed && (
@@ -408,7 +408,7 @@ export default function AppShell({ title, children }: AppShellProps) {
           display: 'flex',
           alignItems: 'center',
           padding: '0 24px',
-          gap: 16,
+          gap: 14,
           position: 'sticky',
           top: 0,
           zIndex: 30,
