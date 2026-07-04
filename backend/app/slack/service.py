@@ -721,6 +721,24 @@ async def build_home_view(slack_user_id: str, client: Any, tab: str = "active") 
             "text": {"type": "mrkdwn", "text": empty.get(tab, "_No tickets found._")},
         })
     else:
+        # Fetch all thread permalinks concurrently — one round-trip instead of
+        # N sequential Slack calls each time App Home renders.
+        import asyncio
+
+        async def _permalink(t):
+            try:
+                pl = await client.chat_getPermalink(
+                    channel=t.slack_channel_id, message_ts=t.slack_message_ts,
+                )
+                return t.id, pl.get("permalink")
+            except Exception:  # noqa: BLE001
+                return t.id, None
+
+        _pl_targets = [t for t in tickets if t.slack_channel_id and t.slack_message_ts]
+        permalinks: dict[int, str | None] = (
+            dict(await asyncio.gather(*(_permalink(t) for t in _pl_targets))) if _pl_targets else {}
+        )
+
         for ticket in tickets:
             status_str = ticket.status.value if hasattr(ticket.status, "value") else str(ticket.status)
             priority_str = ticket.priority.value if hasattr(ticket.priority, "value") else str(ticket.priority)
@@ -728,24 +746,16 @@ async def build_home_view(slack_user_id: str, client: Any, tab: str = "active") 
             priority_emoji = _HOME_PRIORITY_EMOJI.get(priority_str, "•")
             status_label = status_str.replace("_", " ").title()
 
-            # View thread permalink button (accessory)
+            # View thread permalink button (accessory) — from the batch above
             view_button: dict | None = None
-            if ticket.slack_channel_id and ticket.slack_message_ts:
-                try:
-                    pl = await client.chat_getPermalink(
-                        channel=ticket.slack_channel_id,
-                        message_ts=ticket.slack_message_ts,
-                    )
-                    permalink: str | None = pl.get("permalink")
-                    if permalink:
-                        view_button = {
-                            "type": "button",
-                            "text": {"type": "plain_text", "text": "View thread ↗", "emoji": False},
-                            "url": permalink,
-                            "action_id": f"view_thread_{ticket.id}",
-                        }
-                except Exception:  # noqa: BLE001
-                    pass
+            permalink = permalinks.get(ticket.id)
+            if permalink:
+                view_button = {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "View thread ↗", "emoji": False},
+                    "url": permalink,
+                    "action_id": f"view_thread_{ticket.id}",
+                }
 
             # Main section
             section: dict = {
@@ -832,6 +842,10 @@ _ALLOWED_MIME_EXACT = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/vnd.ms-excel",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    # Keep in sync with the web upload allowlist (routers/attachments.py) so a
+    # zip attached in Slack isn't silently dropped.
+    "application/zip",
+    "application/x-zip-compressed",
 }
 
 

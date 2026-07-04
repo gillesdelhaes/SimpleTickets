@@ -50,6 +50,7 @@ async def list_replies(
         .outerjoin(Author, TicketReply.author_id == Author.id)
         .where(TicketReply.ticket_id == ticket_id)
         .order_by(TicketReply.created_at.asc())
+        .limit(1000)  # safety cap; no single ticket realistically has more
     )
 
     rows = (await session.execute(stmt)).all()

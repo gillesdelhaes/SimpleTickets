@@ -135,6 +135,62 @@ def _add_business_minutes(
     return dt
 
 
+def _business_seconds_between(
+    start: datetime, end: datetime,
+    biz_days: set[int], biz_start_h: int, biz_start_m: int, biz_end_h: int, biz_end_m: int,
+) -> int:
+    """Business seconds in [start, end] (both tz-aware local). Weekends/off-hours count 0."""
+    if end <= start:
+        return 0
+    total = 0
+    day = start.replace(hour=0, minute=0, second=0, microsecond=0)
+    while day.date() <= end.date():
+        if day.weekday() in biz_days:
+            win_lo = day.replace(hour=biz_start_h, minute=biz_start_m, second=0, microsecond=0)
+            win_hi = day.replace(hour=biz_end_h, minute=biz_end_m, second=0, microsecond=0)
+            lo = max(win_lo, start)
+            hi = min(win_hi, end)
+            if hi > lo:
+                total += int((hi - lo).total_seconds())
+        day += timedelta(days=1)
+    return total
+
+
+async def _elapsed_sla_seconds(start_utc: datetime, end_utc: datetime, session: AsyncSession) -> int:
+    """
+    SLA-clock seconds between two naive-UTC instants. Equals wall-clock time when
+    business hours are off; when on, counts only time inside working hours/days
+    (so a pause over a weekend costs ~0 SLA time).
+    """
+    if end_utc <= start_utc:
+        return 0
+    from app.services.settings_service import get_setting
+
+    enabled = (await get_setting("business_hours_enabled", session, default="false")) == "true"
+    wall = int((end_utc - start_utc).total_seconds())
+    if not enabled:
+        return wall
+
+    tz_name = await get_setting("timezone", session, default="UTC")
+    try:
+        biz_start_h, biz_start_m = (int(x) for x in (await get_setting("business_hours_start", session, default="09:00")).split(":"))
+        biz_end_h, biz_end_m = (int(x) for x in (await get_setting("business_hours_end", session, default="17:00")).split(":"))
+        biz_days = {int(d.strip()) for d in (await get_setting("business_days", session, default="0,1,2,3,4")).split(",") if d.strip()}
+    except (ValueError, AttributeError):
+        return wall
+    if not biz_days or (biz_end_h * 60 + biz_end_m) <= (biz_start_h * 60 + biz_start_m):
+        return wall
+
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    try:
+        tz = ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        tz = ZoneInfo("UTC")
+    s = (start_utc if start_utc.tzinfo else start_utc.replace(tzinfo=timezone.utc)).astimezone(tz)
+    e = (end_utc if end_utc.tzinfo else end_utc.replace(tzinfo=timezone.utc)).astimezone(tz)
+    return _business_seconds_between(s, e, biz_days, biz_start_h, biz_start_m, biz_end_h, biz_end_m)
+
+
 async def compute_sla_deadline(
     start_utc: datetime,
     minutes_to_add: int,
@@ -205,9 +261,10 @@ async def apply_sla_status_change(
         ticket.sla_paused_at = now
 
     elif not pauses and ticket.sla_paused_at is not None:
-        # Leaving a pausing status — extend deadline by time spent paused
-        paused_delta = now - ticket.sla_paused_at
-        paused_secs = int(paused_delta.total_seconds())
+        # Leaving a pausing status — extend the deadline by the SLA-clock time
+        # spent paused. Under business hours this counts only working time, so a
+        # weekend-long pause doesn't gift 48h of SLA budget.
+        paused_secs = await _elapsed_sla_seconds(ticket.sla_paused_at, now, session)
         ticket.sla_paused_seconds = (ticket.sla_paused_seconds or 0) + paused_secs
         ticket.sla_paused_at = None
 

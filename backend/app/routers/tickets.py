@@ -5,7 +5,7 @@ Access: all endpoints require technician or admin role.
 """
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
@@ -419,9 +419,14 @@ async def bulk_update_tickets(
             ticket.priority = body.priority
             if sla_policy:
                 ticket.sla_policy_id = sla_policy.id
+                paused = timedelta(seconds=ticket.sla_paused_seconds or 0)
                 ticket.sla_deadline = await compute_sla_deadline(
                     ticket.created_at, sla_policy.resolution_minutes, session
-                )
+                ) + paused
+                if ticket.first_responded_at is None:
+                    ticket.first_response_deadline = await compute_sla_deadline(
+                        ticket.created_at, sla_policy.first_response_minutes, session
+                    ) + paused
             else:
                 ticket.sla_policy_id = None
                 ticket.sla_deadline = None
@@ -542,9 +547,18 @@ async def update_ticket(
             sla_policy = sla_result.scalar_one_or_none()
             if sla_policy:
                 ticket.sla_policy_id = sla_policy.id
+                # Recompute from created_at, then add back any accrued pause
+                # extension so re-prioritising doesn't silently drop it.
+                paused = timedelta(seconds=ticket.sla_paused_seconds or 0)
                 ticket.sla_deadline = await compute_sla_deadline(
                     ticket.created_at, sla_policy.resolution_minutes, session
-                )
+                ) + paused
+                # The first-response target moves with priority too — but only
+                # while the ticket is still awaiting its first response.
+                if ticket.first_responded_at is None:
+                    ticket.first_response_deadline = await compute_sla_deadline(
+                        ticket.created_at, sla_policy.first_response_minutes, session
+                    ) + paused
             else:
                 ticket.sla_policy_id = None
                 ticket.sla_deadline = None
@@ -755,6 +769,7 @@ async def get_ticket_history(
                 TicketHistory.field_changed.in_(_HISTORY_DISPLAY_FIELDS),
             )
             .order_by(TicketHistory.created_at.asc())
+            .limit(1000)  # safety cap
         )
     ).all()
 

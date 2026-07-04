@@ -245,6 +245,7 @@ function Composer({ ticketId, isTech, disabled }: ComposerProps) {
   const [mode, setMode] = useState<'reply' | 'internal'>('reply')
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [uploading, setUploading] = useState(false)
+  const [attachError, setAttachError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const addReply = useAddReply(ticketId)
@@ -255,23 +256,36 @@ function Composer({ ticketId, isTech, disabled }: ComposerProps) {
     if (!body.trim() || uploading || addReply.isPending) return
     try {
       setUploading(true)
+      setAttachError(null)
       const reply = await addReply.mutateAsync({ body: body.trim(), is_internal: mode === 'internal' })
       setBody('')
       if (pendingFiles.length > 0) {
+        // The reply already posted; upload each file and report any that fail
+        // instead of swallowing the error (which would silently lose files).
+        const failed: File[] = []
         for (const file of pendingFiles) {
-          const form = new FormData()
-          form.append('file', file)
-          await api.post(
-            `/tickets/${ticketId}/attachments?reply_id=${reply.id}`,
-            form,
-            { headers: { 'Content-Type': 'multipart/form-data' } },
+          try {
+            const form = new FormData()
+            form.append('file', file)
+            await api.post(
+              `/tickets/${ticketId}/attachments?reply_id=${reply.id}`,
+              form,
+              { headers: { 'Content-Type': 'multipart/form-data' } },
+            )
+          } catch {
+            failed.push(file)
+          }
+        }
+        setPendingFiles(failed)  // keep only the ones that failed, so they can be retried
+        if (failed.length > 0) {
+          setAttachError(
+            `Reply posted, but ${failed.length} attachment${failed.length > 1 ? 's' : ''} failed to upload: ${failed.map(f => f.name).join(', ')}`,
           )
         }
-        setPendingFiles([])
         queryClient.invalidateQueries({ queryKey: ['attachments', ticketId] })
       }
     } catch {
-      // error shown by addReply.isError
+      // Reply itself failed — surfaced via addReply.isError below.
     } finally {
       setUploading(false)
     }
@@ -451,6 +465,9 @@ function Composer({ ticketId, isTech, disabled }: ComposerProps) {
           {isInternal ? 'Add Note' : 'Send Reply'}
         </button>
       </div>
+      {attachError && (
+        <p style={{ margin: '8px 0 0', fontSize: 12, color: '#DC2626' }}>{attachError}</p>
+      )}
     </form>
   )
 }

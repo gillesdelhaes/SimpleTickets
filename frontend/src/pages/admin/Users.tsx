@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import AdminPageShell from '../../components/admin/AdminPageShell'
 import api from '../../lib/api'
+import { parseUTC } from '../../types/ticket'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -40,12 +41,12 @@ const ROLE_BG: Record<UserRole, string> = {
 }
 
 function timeAgo(d: string) {
-  const diff = Date.now() - new Date(d).getTime()
+  const diff = Date.now() - parseUTC(d).getTime()
   const days = Math.floor(diff / 86400000)
   if (days === 0) return 'Today'
   if (days === 1) return 'Yesterday'
   if (days < 30) return `${days}d ago`
-  return new Date(d).toLocaleDateString()
+  return parseUTC(d).toLocaleDateString()
 }
 
 const AVATAR_GRADIENTS: [string, string][] = [

@@ -870,9 +870,19 @@ def register_handlers(app: Any) -> None:
                 resolved_cfg = res_result.scalar_one_or_none()
                 resolved_status = resolved_cfg.name if resolved_cfg else "resolved"
 
+                # Skip if the ticket is already in ANY resolved state (e.g. already
+                # 'closed') — checking only the first one let a re-click re-fire
+                # history, notifications, and CSAT.
+                resolved_names_result = await session.execute(
+                    select(TicketStatusConfig.name).where(
+                        TicketStatusConfig.is_resolved_state == True,  # noqa: E712
+                    )
+                )
+                resolved_names = {r[0] for r in resolved_names_result.all()} or {"resolved", "closed"}
+
                 old_status = ticket.status
-                if old_status == resolved_status:
-                    return  # already resolved
+                if old_status in resolved_names:
+                    return  # already resolved/closed
 
                 actor_name = "User (Slack)"
                 user_result = await session.execute(

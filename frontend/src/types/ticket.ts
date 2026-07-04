@@ -154,8 +154,17 @@ export function setTimezone(tz: string) {
   _timezone = tz
 }
 
+/**
+ * Parse a backend timestamp as UTC. The API serializes naive datetimes with no
+ * zone suffix, so `new Date(s)` would read them as the viewer's local time and
+ * shift by their offset. Append a 'Z' unless the string already carries a zone.
+ */
+export function parseUTC(dateStr: string): Date {
+  return /[zZ]|[+-]\d\d:?\d\d$/.test(dateStr) ? new Date(dateStr) : new Date(dateStr + 'Z')
+}
+
 export function timeAgo(dateStr: string): string {
-  const date = new Date(dateStr + 'Z')
+  const date = parseUTC(dateStr)
   const diff = Date.now() - date.getTime()
   const mins = Math.floor(diff / 60000)
   if (mins < 1) return 'just now'

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -33,7 +34,7 @@ async def create_category(
     """Create a new category. Admin only."""
     # Check for duplicate name (case-insensitive)
     result = await session.execute(
-        select(Category).where(Category.name == body.name)
+        select(Category).where(func.lower(Category.name) == body.name.lower())
     )
     if result.scalar_one_or_none():
         raise HTTPException(
@@ -64,7 +65,7 @@ async def update_category(
     if body.name is not None:
         # Check name collision
         dup = await session.execute(
-            select(Category).where(Category.name == body.name, Category.id != category_id)
+            select(Category).where(func.lower(Category.name) == body.name.lower(), Category.id != category_id)
         )
         if dup.scalar_one_or_none():
             raise HTTPException(

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import AdminPageShell from '../../components/admin/AdminPageShell'
 import api from '../../lib/api'
+import { parseUTC } from '../../types/ticket'
 
 interface AuditLogRead {
   id: number
@@ -62,7 +63,7 @@ function ActionBadge({ action }: { action: string }) {
 }
 
 function formatDate(d: string) {
-  return new Date(d).toLocaleString(undefined, {
+  return parseUTC(d).toLocaleString(undefined, {
     month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
   })
 }

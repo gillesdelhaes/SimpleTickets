@@ -8,7 +8,7 @@ import {
   ResponsiveContainer, Cell, PieChart, Pie, Legend,
 } from 'recharts'
 import AppShell from '../components/layout/AppShell'
-import { statusColor } from '../types/ticket'
+import { statusColor, parseUTC } from '../types/ticket'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../lib/api'
 
@@ -511,7 +511,7 @@ export default function Reports() {
             <tbody>
               {(techs.data ?? []).length === 0 ? (
                 <tr>
-                  <td colSpan={5} style={{ padding: '24px 12px', textAlign: 'center', color: '#A3A3A3', fontSize: 13 }}>
+                  <td colSpan={6} style={{ padding: '24px 12px', textAlign: 'center', color: '#A3A3A3', fontSize: 13 }}>
                     No assigned tickets in this period
                   </td>
                 </tr>
@@ -612,7 +612,7 @@ export default function Reports() {
                       </td>
                       <td style={{ padding: '12px 12px', color: '#737373', textTransform: 'capitalize' }}>{row.priority}</td>
                       <td style={{ padding: '12px 12px', color: '#737373' }}>{row.assignee_name ?? '—'}</td>
-                      <td style={{ padding: '12px 12px', color: '#EF4444', fontSize: 12 }}>{row.sla_deadline ? new Date(row.sla_deadline).toLocaleString() : '—'}</td>
+                      <td style={{ padding: '12px 12px', color: '#EF4444', fontSize: 12 }}>{row.sla_deadline ? parseUTC(row.sla_deadline).toLocaleString() : '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -653,7 +653,7 @@ export default function Reports() {
                       </td>
                       <td style={{ padding: '12px 12px', color: '#737373', textTransform: 'capitalize' }}>{row.priority}</td>
                       <td style={{ padding: '12px 12px', color: '#737373' }}>{row.assignee_name ?? '—'}</td>
-                      <td style={{ padding: '12px 12px', color: '#A3A3A3', fontSize: 12 }}>{new Date(row.responded_at).toLocaleString()}</td>
+                      <td style={{ padding: '12px 12px', color: '#A3A3A3', fontSize: 12 }}>{parseUTC(row.responded_at).toLocaleString()}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -1,8 +1,25 @@
 import { useState, useEffect, useRef } from 'react'
-import { Link, NavLink, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { useAppConfig } from '../../hooks/useAppConfig'
 import { useUnreadReplies } from '../../hooks/useUnreadReplies'
+
+// Tracks whether the viewport is phone-width. Drives the mobile drawer instead
+// of relying on Tailwind responsive utilities that aren't wired up here.
+function useIsMobile(): boolean {
+  const query = '(max-width: 767px)'
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(query).matches,
+  )
+  useEffect(() => {
+    const mq = window.matchMedia(query)
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mq.addEventListener('change', handler)
+    setIsMobile(mq.matches)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+  return isMobile
+}
 
 // ── Inline SVG icons (18×18, stroke-based) ────────────────────────────────────
 
@@ -135,6 +152,8 @@ const SIDEBAR_COLLAPSED_KEY = 'st_sidebar_collapsed'
 export default function AppShell({ title, children }: AppShellProps) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const isMobile = useIsMobile()
   const { data: appConfig } = useAppConfig()
   const { data: unreadData } = useUnreadReplies()
   const myUnreadCount = unreadData?.my_unread_count ?? 0
@@ -152,8 +171,9 @@ export default function AppShell({ title, children }: AppShellProps) {
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed))
   }, [collapsed])
 
-  // Close mobile drawer on route change
-  useEffect(() => { setMobileOpen(false) }, [navigate])
+  // Close mobile drawer on route change (key on the actual path — navigate is a
+  // stable ref and never triggered this before).
+  useEffect(() => { setMobileOpen(false) }, [location.pathname])
 
   // Close bell dropdown on outside click
   useEffect(() => {
@@ -176,7 +196,9 @@ export default function AppShell({ title, children }: AppShellProps) {
     }
   }
 
-  const sidebarWidth = collapsed ? 60 : 220
+  // On phones the sidebar becomes a slide-in drawer and always renders expanded.
+  const sidebarCollapsed = isMobile ? false : collapsed
+  const sidebarWidth = sidebarCollapsed ? 60 : 220
   const isAdmin = user?.role === 'admin'
   const avatarInitial = user?.name?.charAt(0).toUpperCase() ?? '?'
   const rolePill = user?.role === 'admin' ? 'Admin' : user?.role === 'technician' ? 'Tech' : 'User'
@@ -184,18 +206,17 @@ export default function AppShell({ title, children }: AppShellProps) {
   return (
     <div style={{ display: 'flex', minHeight: '100vh', fontFamily: 'Inter, sans-serif' }}>
       {/* ── Mobile overlay backdrop ── */}
-      {mobileOpen && (
+      {isMobile && mobileOpen && (
         <div
           onClick={() => setMobileOpen(false)}
           style={{
             position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
-            zIndex: 40, display: 'none',
+            zIndex: 40,
           }}
-          className="md:block"
         />
       )}
 
-      {/* ── Sidebar ── */}
+      {/* ── Sidebar (fixed on desktop, slide-in drawer on mobile) ── */}
       <aside
         style={{
           width: sidebarWidth,
@@ -208,25 +229,26 @@ export default function AppShell({ title, children }: AppShellProps) {
           left: 0,
           bottom: 0,
           zIndex: 50,
-          transition: 'width 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+          transform: isMobile && !mobileOpen ? 'translateX(-100%)' : 'translateX(0)',
+          transition: 'width 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
           overflow: 'hidden',
+          boxShadow: isMobile && mobileOpen ? '0 0 40px rgba(0,0,0,0.45)' : 'none',
         }}
-        className="hidden md:flex"
       >
         {/* Top gradient rule */}
         <div style={{ height: 2, background: 'linear-gradient(90deg, #FF4713, #AD1164)', flexShrink: 0 }} />
 
         {/* Wordmark */}
         <div style={{
-          padding: collapsed ? '16px 0' : '18px 20px 16px',
+          padding: sidebarCollapsed ? '16px 0' : '18px 20px 16px',
           flexShrink: 0,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: collapsed ? 'center' : 'flex-start',
+          justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
           height: 60,
           overflow: 'hidden',
         }}>
-          {collapsed ? (
+          {sidebarCollapsed ? (
             <div style={{
               width: 28, height: 28, borderRadius: 6, flexShrink: 0,
               background: 'linear-gradient(135deg, #FF4713, #AD1164)',
@@ -253,11 +275,11 @@ export default function AppShell({ title, children }: AppShellProps) {
         {/* Nav */}
         <nav style={{ flex: 1, padding: '4px 0', overflowY: 'auto', overflowX: 'hidden' }}>
           {NAV_MAIN.map(item => (
-            <NavItem key={item.to} {...item} collapsed={collapsed} />
+            <NavItem key={item.to} {...item} collapsed={sidebarCollapsed} />
           ))}
 
           {!isAdmin && (
-            <NavItem to="/admin/settings" label="My Account" icon={<IconSettings />} collapsed={collapsed} />
+            <NavItem to="/admin/settings" label="My Account" icon={<IconSettings />} collapsed={sidebarCollapsed} />
           )}
 
           {isAdmin && (
@@ -265,18 +287,18 @@ export default function AppShell({ title, children }: AppShellProps) {
               {/* Admin section divider */}
               <div style={{
                 margin: '12px 0 4px',
-                padding: collapsed ? '0 10px' : '0 16px',
+                padding: sidebarCollapsed ? '0 10px' : '0 16px',
               }}>
-                {!collapsed && (
+                {!sidebarCollapsed && (
                   <span style={{
                     fontSize: 9, fontWeight: 700, letterSpacing: '0.12em',
                     textTransform: 'uppercase', color: 'rgba(115,115,115,0.6)',
                   }}>Admin</span>
                 )}
-                {collapsed && <div style={{ height: 1, background: 'rgba(255,255,255,0.06)' }} />}
+                {sidebarCollapsed && <div style={{ height: 1, background: 'rgba(255,255,255,0.06)' }} />}
               </div>
               {NAV_ADMIN.map(item => (
-                <NavItem key={item.to} {...item} collapsed={collapsed} />
+                <NavItem key={item.to} {...item} collapsed={sidebarCollapsed} />
               ))}
             </>
           )}
@@ -285,10 +307,10 @@ export default function AppShell({ title, children }: AppShellProps) {
         {/* Bottom: user section */}
         <div style={{
           borderTop: '1px solid rgba(255,255,255,0.06)',
-          padding: collapsed ? '12px 0' : '12px 16px',
+          padding: sidebarCollapsed ? '12px 0' : '12px 16px',
           flexShrink: 0,
         }}>
-          {!collapsed ? (
+          {!sidebarCollapsed ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               {/* Avatar */}
               <div style={{
@@ -357,7 +379,8 @@ export default function AppShell({ title, children }: AppShellProps) {
             </div>
           )}
 
-          {/* Collapse toggle */}
+          {/* Collapse toggle — desktop only (mobile uses the drawer) */}
+          {!isMobile && (
           <button
             onClick={() => setCollapsed(c => !c)}
             style={{
@@ -382,20 +405,22 @@ export default function AppShell({ title, children }: AppShellProps) {
               e.currentTarget.style.background = 'rgba(255,255,255,0.04)'
               e.currentTarget.style.color = 'rgba(115,115,115,0.6)'
             }}
-            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
-            {collapsed ? <IconChevronRight /> : <IconChevronLeft />}
+            {sidebarCollapsed ? <IconChevronRight /> : <IconChevronLeft />}
           </button>
+          )}
         </div>
       </aside>
 
-      {/* ── Main area (offset by sidebar width on desktop) ── */}
+      {/* ── Main area (offset by sidebar width on desktop, full-width on mobile) ── */}
       <div style={{
         flex: 1,
-        marginLeft: sidebarWidth,
+        marginLeft: isMobile ? 0 : sidebarWidth,
         display: 'flex',
         flexDirection: 'column',
         minHeight: '100vh',
+        minWidth: 0,
         background: '#F2F2F2',
         transition: 'margin-left 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
       }}>
@@ -407,17 +432,35 @@ export default function AppShell({ title, children }: AppShellProps) {
           borderBottom: '1px solid #E5E5E5',
           display: 'flex',
           alignItems: 'center',
-          padding: '0 24px',
+          padding: isMobile ? '0 14px' : '0 24px',
           gap: 14,
           position: 'sticky',
           top: 0,
           zIndex: 30,
           flexShrink: 0,
         }}>
+          {/* Hamburger — mobile only */}
+          {isMobile && (
+            <button
+              onClick={() => setMobileOpen(o => !o)}
+              aria-label="Open navigation"
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: '#262626', padding: 6, marginLeft: -6, display: 'flex',
+                alignItems: 'center', flexShrink: 0,
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                <path d="M3 5h14M3 10h14M3 15h14" />
+              </svg>
+            </button>
+          )}
+
           {/* Page title */}
           <h1 style={{
             fontSize: 15, fontWeight: 700, color: '#0A0A0A',
             letterSpacing: '-0.02em', lineHeight: 1.25, margin: 0, flex: 1,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}>
             {title}
           </h1>

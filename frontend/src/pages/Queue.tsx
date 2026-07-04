@@ -140,6 +140,7 @@ export default function Queue() {
   const [bulkAssignId, setBulkAssignId] = useState<string>('')
   const [bulkPriority, setBulkPriority] = useState<string>('')
   const [bulkLoading, setBulkLoading] = useState(false)
+  const [bulkError, setBulkError] = useState<string | null>(null)
 
   // Read filters from URL
   const selectedStatuses = searchParams.getAll('status')
@@ -264,12 +265,15 @@ export default function Queue() {
   async function bulkAction(payload: Record<string, unknown>) {
     if (selected.size === 0) return
     setBulkLoading(true)
+    setBulkError(null)
     try {
       await api.patch('/tickets/bulk', { ids: [...selected], ...payload })
       queryClient.invalidateQueries({ queryKey: ['tickets'] })
       setSelected(new Set())
       setBulkAssignId('')
       setBulkPriority('')
+    } catch (err: any) {
+      setBulkError(err?.response?.data?.detail ?? 'Bulk update failed — please try again.')
     } finally {
       setBulkLoading(false)
     }
@@ -496,6 +500,12 @@ export default function Queue() {
             >
               Clear
             </button>
+          </div>
+        )}
+
+        {bulkError && (
+          <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(220,38,38,0.06)', border: '1px solid rgba(220,38,38,0.2)', fontSize: 12, color: '#DC2626' }}>
+            {bulkError}
           </div>
         )}
 

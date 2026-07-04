@@ -43,16 +43,33 @@ def _csv_safe(value) -> str:
     return s
 
 
-def _date_range(
+async def _date_range(
     from_date: Optional[date],
     to_date: Optional[date],
+    session: AsyncSession,
 ) -> tuple[datetime, datetime]:
-    today = datetime.now(timezone.utc).date()
+    """
+    Resolve the [start, end] window as naive-UTC bounds. The selected dates are
+    interpreted as calendar days in the configured timezone, so a non-UTC team's
+    "today" lines up with their local day rather than a UTC day.
+    """
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    from app.services.settings_service import get_setting
+
+    tz_name = await get_setting("timezone", session, default="UTC")
+    try:
+        tz = ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        tz = ZoneInfo("UTC")
+
+    today = datetime.now(tz).date()
     end = to_date or today
     start = from_date or (end - timedelta(days=29))
+    start_local = datetime(start.year, start.month, start.day, 0, 0, 0, tzinfo=tz)
+    end_local = datetime(end.year, end.month, end.day, 23, 59, 59, tzinfo=tz)
     return (
-        datetime(start.year, start.month, start.day, 0, 0, 0),
-        datetime(end.year, end.month, end.day, 23, 59, 59),
+        start_local.astimezone(timezone.utc).replace(tzinfo=None),
+        end_local.astimezone(timezone.utc).replace(tzinfo=None),
     )
 
 
@@ -85,7 +102,7 @@ async def get_overview(
     _: User = Depends(require_technician),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    start, end = _date_range(from_date, to_date)
+    start, end = await _date_range(from_date, to_date, session)
 
     resolved_subq = (
         select(TicketStatusConfig.name)
@@ -121,7 +138,9 @@ async def get_overview(
     row = (await session.execute(stmt)).one()
 
     sla_pct = round(row.sla_met * 100 / row.sla_total, 1) if row.sla_total else None
-    avg_h = round(row.avg_resolution_hours, 1) if row.avg_resolution_hours else None
+    # `is not None`, not truthiness — a genuine 0 (0% SLA, 0h avg) is a real value,
+    # not "no data", and must not render as "—".
+    avg_h = round(row.avg_resolution_hours, 1) if row.avg_resolution_hours is not None else None
 
     csat_stmt = (
         select(
@@ -162,7 +181,7 @@ async def get_volume(
     _: User = Depends(require_technician),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    start, end = _date_range(from_date, to_date)
+    start, end = await _date_range(from_date, to_date, session)
 
     stmt = (
         select(
@@ -190,7 +209,7 @@ async def get_by_priority(
     _: User = Depends(require_technician),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    start, end = _date_range(from_date, to_date)
+    start, end = await _date_range(from_date, to_date, session)
     stmt = (
         select(Ticket.priority, func.count().label("count"))
         .where(Ticket.created_at >= start, Ticket.created_at <= end)
@@ -213,7 +232,7 @@ async def get_by_status(
     _: User = Depends(require_technician),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    start, end = _date_range(from_date, to_date)
+    start, end = await _date_range(from_date, to_date, session)
     stmt = (
         select(Ticket.status, func.count().label("count"))
         .where(Ticket.created_at >= start, Ticket.created_at <= end)
@@ -236,7 +255,7 @@ async def get_by_category(
     _: User = Depends(require_technician),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    start, end = _date_range(from_date, to_date)
+    start, end = await _date_range(from_date, to_date, session)
     stmt = (
         select(
             func.coalesce(Category.name, "Uncategorised").label("category"),
@@ -264,7 +283,7 @@ async def get_by_source(
     _: User = Depends(require_technician),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    start, end = _date_range(from_date, to_date)
+    start, end = await _date_range(from_date, to_date, session)
     stmt = (
         select(Ticket.source, func.count().label("count"))
         .where(Ticket.created_at >= start, Ticket.created_at <= end)
@@ -287,7 +306,7 @@ async def get_technicians(
     _user: User = Depends(require_technician),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    start, end = _date_range(from_date, to_date)
+    start, end = await _date_range(from_date, to_date, session)
     resolved_subq = (
         select(TicketStatusConfig.name)
         .where(TicketStatusConfig.is_resolved_state == True)  # noqa: E712
@@ -348,8 +367,8 @@ async def get_technicians(
             "name": row.name,
             "total": row.total,
             "resolved": row.resolved,
-            "avg_hours": round(row.avg_hours, 1) if row.avg_hours else None,
-            "sla_pct": round(float(row.sla_pct), 1) if row.sla_pct else None,
+            "avg_hours": round(row.avg_hours, 1) if row.avg_hours is not None else None,
+            "sla_pct": round(float(row.sla_pct), 1) if row.sla_pct is not None else None,
             "csat_pct": (
                 round(row.csat_positive * 100 / row.csat_total, 1)
                 if row.csat_total
@@ -367,11 +386,12 @@ async def get_technicians(
 async def get_csat_negative(
     from_date: Optional[date] = Query(default=None),
     to_date: Optional[date] = Query(default=None),
+    assignee_id: Optional[int] = Query(default=None),
     _: User = Depends(require_technician),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     """Return all tickets that received a negative CSAT response in the date range."""
-    start, end = _date_range(from_date, to_date)
+    start, end = await _date_range(from_date, to_date, session)
     # Latest negative CSAT per ticket within the date range
     latest_neg = (
         select(
@@ -399,7 +419,10 @@ async def get_csat_negative(
         .join(latest_neg, latest_neg.c.ticket_id == Ticket.id)
         .outerjoin(assignee_alias, Ticket.assignee_id == assignee_alias.id)
         .order_by(latest_neg.c.responded_at.desc())
+        .limit(1000)
     )
+    if assignee_id is not None:
+        stmt = stmt.where(Ticket.assignee_id == assignee_id)
     result = await session.execute(stmt)
     return [
         {
@@ -420,12 +443,20 @@ async def get_csat_negative(
 async def get_sla_breached(
     from_date: Optional[date] = Query(default=None),
     to_date: Optional[date] = Query(default=None),
+    assignee_id: Optional[int] = Query(default=None),
     _: User = Depends(require_technician),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     """Return all SLA-breached tickets created in the date range."""
-    start, end = _date_range(from_date, to_date)
+    start, end = await _date_range(from_date, to_date, session)
     assignee_alias = aliased(User)
+    conditions = [
+        Ticket.sla_breached == True,  # noqa: E712
+        Ticket.created_at >= start,
+        Ticket.created_at <= end,
+    ]
+    if assignee_id is not None:
+        conditions.append(Ticket.assignee_id == assignee_id)
     stmt = (
         select(
             Ticket.id,
@@ -436,12 +467,9 @@ async def get_sla_breached(
             assignee_alias.name.label("assignee_name"),
         )
         .outerjoin(assignee_alias, Ticket.assignee_id == assignee_alias.id)
-        .where(
-            Ticket.sla_breached == True,  # noqa: E712
-            Ticket.created_at >= start,
-            Ticket.created_at <= end,
-        )
+        .where(*conditions)
         .order_by(Ticket.sla_deadline.asc())
+        .limit(1000)
     )
     result = await session.execute(stmt)
     return [

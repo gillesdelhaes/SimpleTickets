@@ -12,6 +12,7 @@ POST /api/tickets/{ticket_id}/mark-read
 from fastapi import APIRouter, Depends, HTTPException, status as http_status
 from pydantic import BaseModel
 from sqlalchemy import and_, or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import get_current_user
@@ -75,7 +76,7 @@ async def get_unread(
     )
 
     unread_ticket_ids: list[int] = list(
-        (await session.execute(unread_stmt)).scalars().all()
+        (await session.execute(unread_stmt.limit(2000))).scalars().all()
     )
 
     # Fetch tickets assigned to me that have unread replies
@@ -116,22 +117,15 @@ async def mark_read(
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Ticket not found")
     now = utcnow()
 
-    result = await session.execute(
-        select(TicketReadMarker).where(
-            TicketReadMarker.user_id == current_user.id,
-            TicketReadMarker.ticket_id == ticket_id,
+    # Atomic upsert — a plain select-then-insert races two concurrent first-opens
+    # into a unique-constraint violation (uq_read_marker_user_ticket) → 500.
+    stmt = (
+        pg_insert(TicketReadMarker)
+        .values(user_id=current_user.id, ticket_id=ticket_id, last_read_at=now)
+        .on_conflict_do_update(
+            constraint="uq_read_marker_user_ticket",
+            set_={"last_read_at": now},
         )
     )
-    marker = result.scalar_one_or_none()
-
-    if marker is None:
-        marker = TicketReadMarker(
-            user_id=current_user.id,
-            ticket_id=ticket_id,
-            last_read_at=now,
-        )
-        session.add(marker)
-    else:
-        marker.last_read_at = now
-
+    await session.execute(stmt)
     await session.commit()

@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import AppShell from '../../components/layout/AppShell'
 import { useAuth } from '../../contexts/AuthContext'
 import api from '../../lib/api'
+import { parseUTC } from '../../types/ticket'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -458,11 +459,11 @@ function SlackGuide() {
 // ── Categories tab ────────────────────────────────────────────────────────────
 
 function timeAgo(d: string) {
-  const days = Math.floor((Date.now() - new Date(d).getTime()) / 86400000)
+  const days = Math.floor((Date.now() - parseUTC(d).getTime()) / 86400000)
   if (days === 0) return 'Today'
   if (days === 1) return 'Yesterday'
   if (days < 30) return `${days}d ago`
-  return new Date(d).toLocaleDateString()
+  return parseUTC(d).toLocaleDateString()
 }
 
 function CategoriesTab() {
@@ -1140,7 +1141,10 @@ export default function Settings() {
   const defaultTab: Tab = isAdmin ? 'general' : 'account'
 
   const [searchParams, setSearchParams] = useSearchParams()
-  const tab = (searchParams.get('tab') as Tab) ?? defaultTab
+  // Validate the tab against what this role can actually see — otherwise a deep
+  // link like ?tab=general for a non-admin (or a bogus value) renders nothing.
+  const rawTab = searchParams.get('tab')
+  const tab: Tab = tabs.some(t => t.id === rawTab) ? (rawTab as Tab) : defaultTab
   function setTab(t: Tab) { setSearchParams({ tab: t }, { replace: true }) }
 
   return (
