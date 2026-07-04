@@ -738,9 +738,10 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
         {/* Status */}
         <MetaRow label="Status">
           <div style={{ position: 'relative' }}>
-            <StatusDropdown ticket={ticket} patch={patch} />
+            <StatusDropdown ticket={ticket} patch={patch} isAdmin={isAdmin} />
             {/* StatusDropdown is defined below — uses dynamic statuses */}
             <SavedFlash show={savedField === 'status'} />
+            <CloseWithoutSurvey ticket={ticket} />
           </div>
         </MetaRow>
 
@@ -966,16 +967,22 @@ function formatHistoryValue(field: string, value: string | null): React.ReactNod
   return <strong style={{ color: '#262626' }}>{value}</strong>
 }
 
-function StatusDropdown({ ticket, patch }: { ticket: TicketRead; patch: (field: string, value: string) => void }) {
+function StatusDropdown({ ticket, patch, isAdmin }: { ticket: TicketRead; patch: (field: string, value: string) => void; isAdmin: boolean }) {
   const { data: appConfig } = useAppConfig()
   const statuses = appConfig?.statuses ?? getAllStatuses()
+  // Technicians can't set a terminal-close state (resolved but no survey) — that
+  // skips CSAT. They use Resolved (which surveys) or "Close without survey" below.
+  // Keep the ticket's current status selectable so the dropdown still shows it.
+  const options = statuses.filter(s =>
+    isAdmin || !(s.is_resolved_state && !s.sends_csat) || s.name === ticket.status
+  )
   return (
     <select
       value={ticket.status}
       onChange={e => patch('status', e.target.value)}
       style={{ ...selectStyle, fontWeight: 600, color: statusColor(ticket.status) }}
     >
-      {statuses.map(s => (
+      {options.map(s => (
         <option key={s.name} value={s.name}>{s.label}</option>
       ))}
       {/* If ticket has a status not in the current list (e.g. archived), show it anyway */}
@@ -983,6 +990,87 @@ function StatusDropdown({ ticket, patch }: { ticket: TicketRead; patch: (field: 
         <option value={ticket.status}>{statusLabel(ticket.status)}</option>
       )}
     </select>
+  )
+}
+
+function CloseWithoutSurvey({ ticket }: { ticket: TicketRead }) {
+  const queryClient = useQueryClient()
+  const { data: appConfig } = useAppConfig()
+  const [open, setOpen] = useState(false)
+  const [reason, setReason] = useState('')
+  const statuses = appConfig?.statuses ?? getAllStatuses()
+  const closeCfg = statuses.find(s => s.is_resolved_state && !s.sends_csat)
+
+  const mutation = useMutation({
+    mutationFn: (r: string) =>
+      api.post<TicketRead>(`/tickets/${ticket.id}/close`, { reason: r }).then(res => res.data),
+    onSuccess: updated => {
+      queryClient.setQueryData(['ticket', ticket.id], updated)
+      queryClient.invalidateQueries({ queryKey: ['tickets'] })
+      setOpen(false)
+      setReason('')
+    },
+  })
+
+  // Nothing to do if there's no closed status, or the ticket is already there.
+  if (!closeCfg || ticket.status === closeCfg.name) return null
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        style={{
+          marginTop: 8, background: 'none', border: 'none', padding: 0,
+          fontSize: 12, color: '#737373', cursor: 'pointer', textDecoration: 'underline',
+        }}
+      >
+        Close without survey…
+      </button>
+    )
+  }
+
+  return (
+    <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <textarea
+        value={reason}
+        onChange={e => setReason(e.target.value)}
+        placeholder="Reason (required) — e.g. spam, duplicate, submitter unreachable"
+        rows={2}
+        autoFocus
+        style={{
+          width: '100%', boxSizing: 'border-box', resize: 'vertical',
+          padding: '8px 10px', fontSize: 13, border: '1px solid #E5E5E5',
+          borderRadius: 8, outline: 'none', fontFamily: 'inherit',
+        }}
+      />
+      {mutation.isError && (
+        <span style={{ fontSize: 11, color: '#DC2626' }}>
+          {(mutation.error as any)?.response?.data?.detail ?? 'Failed to close ticket'}
+        </span>
+      )}
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button
+          disabled={!reason.trim() || mutation.isPending}
+          onClick={() => mutation.mutate(reason.trim())}
+          style={{
+            padding: '6px 12px', borderRadius: 6, border: 'none',
+            background: reason.trim() ? '#737373' : '#D4D4D4', color: '#fff',
+            fontSize: 12, fontWeight: 600, cursor: reason.trim() ? 'pointer' : 'not-allowed',
+          }}
+        >
+          {mutation.isPending ? 'Closing…' : 'Close ticket'}
+        </button>
+        <button
+          onClick={() => { setOpen(false); setReason('') }}
+          style={{
+            padding: '6px 12px', borderRadius: 6, border: '1px solid #E5E5E5',
+            background: '#fff', fontSize: 12, color: '#737373', cursor: 'pointer',
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
   )
 }
 

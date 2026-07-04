@@ -275,7 +275,12 @@ export default function Queue() {
     }
   }
 
-  const resolvedStatuses = allStatuses.filter(s => s.is_resolved_state)
+  // Technicians can't bulk-close (terminal resolved state with no survey) — that
+  // would skip CSAT. They only get survey-sending resolved states (e.g. Resolved).
+  const isAdmin = user?.role === 'admin'
+  const resolvedStatuses = allStatuses.filter(s =>
+    s.is_resolved_state && (isAdmin || s.sends_csat)
+  )
 
   // Status sort is client-side only (dynamic ordering from appConfig); everything
   // else is sorted by the server via sort/sort_dir query params.

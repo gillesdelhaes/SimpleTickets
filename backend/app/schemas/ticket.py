@@ -40,6 +40,21 @@ class MarkDuplicateRequest(BaseModel):
     duplicate_of_id: int
 
 
+class CloseTicketRequest(BaseModel):
+    """Close a ticket without sending a CSAT survey. Reason is required and audited."""
+    reason: str
+
+    @field_validator("reason")
+    @classmethod
+    def reason_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("A reason is required to close without a survey")
+        if len(v) > 500:
+            raise ValueError("Reason cannot exceed 500 characters")
+        return v
+
+
 class BulkTicketUpdate(BaseModel):
     ids: list[int]
     assignee_id: Optional[int] = None

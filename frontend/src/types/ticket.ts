@@ -9,6 +9,7 @@ export interface StatusConfig {
   pauses_sla: boolean
   is_default: boolean
   is_resolved_state: boolean
+  sends_csat: boolean
   sort_order: number
 }
 
@@ -48,11 +49,11 @@ export interface TicketListResponse {
 // ── Dynamic status registry (populated by useAppConfig) ───────────────────────
 
 let _statusMap: Map<string, StatusConfig> = new Map([
-  ['open',         { name: 'open',         label: 'Open',         color: '#3B82F6', pauses_sla: false, is_default: true,  is_resolved_state: false, sort_order: 0 }],
-  ['in_progress',  { name: 'in_progress',  label: 'In Progress',  color: '#FF4713', pauses_sla: false, is_default: false, is_resolved_state: false, sort_order: 1 }],
-  ['pending_user', { name: 'pending_user', label: 'Pending User', color: '#F59E0B', pauses_sla: true,  is_default: false, is_resolved_state: false, sort_order: 2 }],
-  ['resolved',     { name: 'resolved',     label: 'Resolved',     color: '#10B981', pauses_sla: false, is_default: false, is_resolved_state: true,  sort_order: 3 }],
-  ['closed',       { name: 'closed',       label: 'Closed',       color: '#737373', pauses_sla: false, is_default: false, is_resolved_state: true,  sort_order: 4 }],
+  ['open',         { name: 'open',         label: 'Open',         color: '#3B82F6', pauses_sla: false, is_default: true,  is_resolved_state: false, sends_csat: false, sort_order: 0 }],
+  ['in_progress',  { name: 'in_progress',  label: 'In Progress',  color: '#FF4713', pauses_sla: false, is_default: false, is_resolved_state: false, sends_csat: false, sort_order: 1 }],
+  ['pending_user', { name: 'pending_user', label: 'Pending User', color: '#F59E0B', pauses_sla: true,  is_default: false, is_resolved_state: false, sends_csat: false, sort_order: 2 }],
+  ['resolved',     { name: 'resolved',     label: 'Resolved',     color: '#10B981', pauses_sla: false, is_default: false, is_resolved_state: true,  sends_csat: true,  sort_order: 3 }],
+  ['closed',       { name: 'closed',       label: 'Closed',       color: '#737373', pauses_sla: false, is_default: false, is_resolved_state: true,  sends_csat: false, sort_order: 4 }],
 ])
 
 export function setStatuses(statuses: StatusConfig[]) {

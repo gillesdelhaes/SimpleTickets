@@ -7,7 +7,7 @@ import logging
 import re
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 logger = logging.getLogger(__name__)
 from sqlalchemy import case, func, or_, select
@@ -17,9 +17,10 @@ from sqlalchemy.orm import aliased
 from app.auth.deps import get_current_user, require_technician
 from app.database import get_session
 from app.models import Category, SLAPolicy, Ticket, TicketCSAT, TicketHistory, User
-from app.models.enums import Priority
+from app.models.enums import Priority, Role
 from app.models.ticket_status_config import TicketStatusConfig
-from app.schemas.ticket import BulkTicketUpdate, MarkDuplicateRequest, TicketCreate, TicketListResponse, TicketRead, TicketUpdate
+from app.schemas.ticket import BulkTicketUpdate, CloseTicketRequest, MarkDuplicateRequest, TicketCreate, TicketListResponse, TicketRead, TicketUpdate
+from app.services.audit import write_audit
 from app.services.sla import apply_sla_status_change, compute_sla_deadline
 from app.utils import get_ticket_or_404, utcnow
 
@@ -372,6 +373,7 @@ async def bulk_update_tickets(
         sla_policy = sla_result.scalar_one_or_none()
 
     resolved_names: set[str] = set()
+    sends_csat = False
     if body.status is not None:
         valid = await session.execute(
             select(TicketStatusConfig.name).where(
@@ -382,10 +384,28 @@ async def bulk_update_tickets(
         if valid.scalar_one_or_none() is None:
             raise HTTPException(status_code=422, detail=f"Status '{body.status}' does not exist or is archived")
         resolved_names = await _get_resolved_status_names(session)
+        csat_res = await session.execute(
+            select(TicketStatusConfig.sends_csat).where(TicketStatusConfig.name == body.status)
+        )
+        sends_csat = bool(csat_res.scalar_one_or_none())
+        # Same integrity guard as the single-ticket PATCH: technicians can't
+        # bulk-close (terminal resolved state with no survey) to dodge CSAT.
+        if (current_user.role == Role.technician
+                and body.status in resolved_names and not sends_csat):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Technicians can't close tickets directly — use Resolved "
+                    "(which sends the CSAT survey), or Close without survey."
+                ),
+            )
 
     updated = 0
+    # (ticket, changes, entered_csat) for post-commit Slack/CSAT side effects
+    changed: list[tuple[Ticket, dict, bool]] = []
     for ticket in tickets:
         changes: dict = {}
+        entered_csat = False
 
         if body.assignee_id is not None and ticket.assignee_id != body.assignee_id:
             changes["assignee_id"] = (
@@ -413,15 +433,47 @@ async def bulk_update_tickets(
             await apply_sla_status_change(ticket, body.status, session)
             if body.status in resolved_names and old_status not in resolved_names:
                 ticket.resolved_at = now
+                entered_csat = sends_csat
             elif body.status not in resolved_names and old_status in resolved_names:
                 ticket.resolved_at = None
 
         if changes:
             ticket.updated_at = now
             _record_history(session, ticket.id, current_user.id, changes)
+            changed.append((ticket, changes, entered_csat))
             updated += 1
 
     await session.commit()
+
+    # Fire the same Slack thread / assignee-DM / CSAT side effects the
+    # single-ticket PATCH performs, once per changed ticket. All are
+    # fire-and-forget — a Slack failure must not fail the bulk operation.
+    # (expire_on_commit=False keeps ticket column attributes valid post-commit.)
+    assignee_name = assignee.name if body.assignee_id is not None else None
+    assignee_slack_id = assignee.slack_user_id if body.assignee_id is not None else None
+    _SLACK_TRACKED = {"status", "priority", "assignee_id"}
+    for ticket, changes, entered_csat in changed:
+        if changes.keys() & _SLACK_TRACKED:
+            try:
+                from app.slack.service import post_ticket_update_to_slack
+                await post_ticket_update_to_slack(
+                    ticket, changes, current_user.name, assignee_name=assignee_name
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("Failed to post bulk update to Slack for ticket %s", ticket.id)
+        if "assignee_id" in changes and assignee_slack_id:
+            try:
+                from app.slack.service import notify_assignee_dm
+                await notify_assignee_dm(ticket, assignee_slack_id, current_user.name)
+            except Exception:  # noqa: BLE001
+                logger.exception("Failed to notify assignee for ticket %s", ticket.id)
+        if entered_csat:
+            try:
+                from app.slack.service import send_csat_dm
+                await send_csat_dm(ticket)
+            except Exception:  # noqa: BLE001
+                logger.exception("Failed to send CSAT DM for ticket %s", ticket.id)
+
     return {"updated": updated}
 
 
@@ -500,16 +552,30 @@ async def update_ticket(
     # status
     if "status" in provided and body.status is not None:
         if ticket.status != body.status:
-            valid_status = await session.execute(
-                select(TicketStatusConfig.name).where(
+            status_cfg = (await session.execute(
+                select(TicketStatusConfig).where(
                     TicketStatusConfig.name == body.status,
                     TicketStatusConfig.is_archived == False,  # noqa: E712
                 )
-            )
-            if valid_status.scalar_one_or_none() is None:
+            )).scalar_one_or_none()
+            if status_cfg is None:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail=f"Status '{body.status}' does not exist or is archived",
+                )
+            # Integrity guard: technicians may not move a ticket straight into a
+            # terminal-close state (resolved but no survey) — that skips CSAT and
+            # lets a tech dodge a bad score. They must use 'Resolved' (which sends
+            # the survey); 'closed' is reserved for a 👍 response, auto-close, or an
+            # admin. Legit no-survey closes go through POST /tickets/{id}/close.
+            if (current_user.role == Role.technician
+                    and status_cfg.is_resolved_state and not status_cfg.sends_csat):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        "Technicians can't close a ticket directly — set it to Resolved "
+                        "(which sends the CSAT survey), or use Close without survey."
+                    ),
                 )
             resolved_names = await _get_resolved_status_names(session)
             changes["status"] = (ticket.status, body.status)
@@ -522,13 +588,8 @@ async def update_ticket(
             # Track resolved_at transitions
             if body.status in resolved_names and old_status not in resolved_names:
                 ticket.resolved_at = now
-                # Check if this status triggers CSAT (only on first entry into resolved state)
-                csat_cfg_result = await session.execute(
-                    select(TicketStatusConfig.sends_csat).where(
-                        TicketStatusConfig.name == body.status
-                    )
-                )
-                _sends_csat = bool(csat_cfg_result.scalar_one_or_none())
+                # CSAT fires only on first entry into a sends_csat resolved state
+                _sends_csat = bool(status_cfg.sends_csat)
             elif body.status not in resolved_names and old_status in resolved_names:
                 ticket.resolved_at = None
 
@@ -594,6 +655,79 @@ async def update_ticket(
             await send_csat_dm(ticket)
         except Exception:  # noqa: BLE001
             logger.exception("Failed to send CSAT DM for ticket %s", ticket_id)
+
+    return enriched
+
+
+# ── POST /tickets/{id}/close ───────────────────────────────────────────────────
+
+
+@router.post("/{ticket_id}/close", response_model=TicketRead)
+async def close_without_survey(
+    ticket_id: int,
+    body: CloseTicketRequest,
+    request: Request,
+    current_user: User = Depends(require_technician),
+    session: AsyncSession = Depends(get_session),
+) -> TicketRead:
+    """
+    Close a ticket without sending a CSAT survey. This is the accountable escape
+    hatch for cases where a survey doesn't apply (spam, a submitter with no Slack,
+    an internal ticket). A reason is required and the action is written to the
+    audit log so it can't be used silently to dodge a bad score.
+    """
+    ticket = await get_ticket_or_404(session, ticket_id)
+
+    # The terminal-close status: resolved state that does not send a survey.
+    close_cfg = (await session.execute(
+        select(TicketStatusConfig).where(
+            TicketStatusConfig.is_resolved_state == True,  # noqa: E712
+            TicketStatusConfig.sends_csat == False,  # noqa: E712
+            TicketStatusConfig.is_archived == False,  # noqa: E712
+        ).order_by(TicketStatusConfig.sort_order).limit(1)
+    )).scalar_one_or_none()
+    if close_cfg is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No closed status is configured.",
+        )
+    if ticket.status == close_cfg.name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Ticket is already closed.",
+        )
+
+    now = utcnow()
+    resolved_names = await _get_resolved_status_names(session)
+    old_status = ticket.status
+    changes: dict[str, tuple[str | None, str | None]] = {"status": (old_status, close_cfg.name)}
+    ticket.status = close_cfg.name
+    if old_status not in resolved_names:
+        ticket.resolved_at = now
+    ticket.updated_at = now
+    await apply_sla_status_change(ticket, close_cfg.name, session)
+    _record_history(session, ticket.id, current_user.id, changes)
+
+    await write_audit(
+        session,
+        actor_id=current_user.id,
+        action="ticket.closed_no_survey",
+        entity_type="ticket",
+        entity_id=str(ticket_id),
+        payload={"reason": body.reason, "from_status": old_status},
+        ip_address=request.client.host if request.client else None,
+    )
+
+    await session.commit()
+
+    # Mirror the normal update: reflect the change in the Slack thread (no CSAT).
+    items, _ = await _fetch_enriched(session, [Ticket.id == ticket_id])
+    enriched = items[0]
+    try:
+        from app.slack.service import post_ticket_update_to_slack
+        await post_ticket_update_to_slack(ticket, changes, current_user.name)
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to post close update to Slack for ticket %s", ticket_id)
 
     return enriched
 

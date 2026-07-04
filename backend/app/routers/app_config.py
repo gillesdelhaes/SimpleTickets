@@ -20,6 +20,7 @@ class StatusConfigRead(BaseModel):
     pauses_sla: bool
     is_default: bool
     is_resolved_state: bool
+    sends_csat: bool
     sort_order: int
 
 
@@ -52,6 +53,7 @@ async def get_app_config(
             pauses_sla=r.pauses_sla,
             is_default=r.is_default,
             is_resolved_state=r.is_resolved_state,
+            sends_csat=r.sends_csat,
             sort_order=r.sort_order,
         )
         for r in rows
