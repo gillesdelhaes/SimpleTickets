@@ -179,6 +179,30 @@ async def _handle_csat_response(body: dict, client: Any, *, score: bool) -> None
             if current_status not in resolved_names:
                 return
 
+            # Guard against double-counting: a 👍 moves the ticket to another
+            # resolved state (closed), so the status check above still passes on
+            # a second click (or a stale button on an auto-closed ticket). Skip
+            # if this resolve cycle already has a response — same predicate the
+            # auto-close job uses (responded_at >= resolved_at).
+            if ticket.resolved_at is not None:
+                already = await session.execute(
+                    select(TicketCSAT.id).where(
+                        TicketCSAT.ticket_id == ticket_id,
+                        TicketCSAT.responded_at >= ticket.resolved_at,
+                    ).limit(1)
+                )
+                if already.scalar_one_or_none() is not None:
+                    if message_ts and channel_id:
+                        note = "✅ Thanks — we've already recorded your feedback."
+                        try:
+                            await client.chat_update(
+                                channel=channel_id, ts=message_ts, text=note,
+                                blocks=[{"type": "section", "text": {"type": "mrkdwn", "text": note}}],
+                            )
+                        except Exception:  # noqa: BLE001
+                            pass
+                    return
+
             session.add(TicketCSAT(
                 ticket_id=ticket_id,
                 score=score,

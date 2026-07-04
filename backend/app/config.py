@@ -110,21 +110,60 @@ class SettingsManager:
         return self._cache.get("jwt_secret") or settings.app_secret_key
 
     async def ensure_jwt_secret(self, session) -> None:
-        """Generate and persist a strong JWT secret on first boot if not already set."""
-        if self._cache.get("jwt_secret"):
+        """
+        Ensure a strong JWT secret exists and is stored encrypted at rest.
+
+        - Fresh install: generate one and persist it with is_secret=True.
+        - Legacy install (row exists as plaintext, is_secret=False): re-encrypt
+          the *same* value in place and flip is_secret, so the signing key is
+          never stored or served in plaintext. Preserving the value keeps
+          existing sessions valid across the upgrade.
+
+        The signing key must never be readable as plaintext by callers other
+        than the token codec — see the _READABLE_KEYS allowlist in
+        routers/settings.py, which keeps it out of GET /admin/settings.
+        """
+        from app.dt import utcnow
+        from app.models.app_setting import AppSetting
+        from app.services.settings_service import encrypt_value
+
+        row = await session.get(AppSetting, "jwt_secret")
+        if row is not None and row.value:
+            if not row.is_secret:
+                plaintext = row.value
+                row.is_secret = True
+                row.value = encrypt_value(plaintext)
+                row.updated_at = utcnow()
+                try:
+                    await session.commit()
+                except Exception as exc:
+                    await session.rollback()
+                    raise RuntimeError(
+                        f"Failed to migrate JWT secret to encrypted storage: {exc}."
+                    ) from exc
+                self._cache["jwt_secret"] = plaintext
+                logger.info("Migrated JWT secret to encrypted-at-rest storage")
             return
-        from app.services.settings_service import set_setting
+
         new_secret = secrets.token_hex(32)
+        row = AppSetting(
+            key="jwt_secret",
+            value=encrypt_value(new_secret),
+            is_secret=True,
+            group_name="app",
+            updated_at=utcnow(),
+        )
+        session.add(row)
         try:
-            await set_setting("jwt_secret", new_secret, session)
             await session.commit()
         except Exception as exc:
+            await session.rollback()
             raise RuntimeError(
                 f"Failed to persist JWT secret to the database: {exc}. "
                 "The application cannot start safely without a persistent JWT secret."
             ) from exc
         self._cache["jwt_secret"] = new_secret
-        logger.info("Generated new JWT secret and persisted to DB")
+        logger.info("Generated new JWT secret and persisted to DB (encrypted)")
 
     def is_slack_configured(self) -> bool:
         return bool(self.slack_bot_token and self.slack_app_token)

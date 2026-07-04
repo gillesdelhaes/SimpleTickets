@@ -109,10 +109,13 @@ async def is_setup_complete(session: AsyncSession) -> bool:
 
 
 async def has_any_admin(session: AsyncSession) -> bool:
+    from sqlalchemy import func
     from sqlmodel import select as sel
     from app.models.user import User
     from app.models.enums import Role
     result = await session.execute(
-        sel(User).where(User.role == Role.admin, User.is_active == True)  # noqa: E712
+        sel(func.count()).select_from(User).where(
+            User.role == Role.admin, User.is_active == True  # noqa: E712
+        )
     )
-    return result.scalar_one_or_none() is not None
+    return (result.scalar_one() or 0) > 0

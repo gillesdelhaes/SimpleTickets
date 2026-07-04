@@ -35,9 +35,13 @@ router = APIRouter(prefix="/admin", tags=["backup"])
 
 BACKUP_VERSION = 1
 
-# Slack credentials and the JWT secret are excluded — re-enter after restore
+# Secrets are excluded from backups. Slack creds + jwt_secret are re-entered
+# after restore; app_secret_key is the master Fernet key and must never travel
+# in a backup — bootstrap manages it per-instance, and leaking it would expose
+# the key that decrypts every other stored secret.
 _SECRET_KEYS = frozenset({
     "slack_bot_token", "slack_app_token", "slack_signing_secret", "jwt_secret",
+    "app_secret_key",
 })
 
 # Export in dependency order (referenced tables before referencing tables)

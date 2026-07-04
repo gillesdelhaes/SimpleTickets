@@ -37,6 +37,11 @@ _WRITABLE_KEYS = {
     "csat_auto_close_days",
 }
 
+# Keys the GET endpoint may return. Deliberately excludes internal secrets
+# (app_secret_key, jwt_secret) and the setup flag — the UI never reads them,
+# and shipping the JWT signing key to a browser would allow token forgery.
+_READABLE_KEYS = _WRITABLE_KEYS
+
 _SLACK_KEYS = {
     "slack_bot_token", "slack_app_token", "slack_signing_secret",
     "slack_trigger_emoji", "slack_two_way_sync",
@@ -75,7 +80,9 @@ async def list_settings(
     session: AsyncSession = Depends(get_session),
 ) -> SettingsResponse:
     result = await session.execute(
-        select(AppSetting).order_by(AppSetting.group_name, AppSetting.key)
+        select(AppSetting)
+        .where(AppSetting.key.in_(_READABLE_KEYS))
+        .order_by(AppSetting.group_name, AppSetting.key)
     )
     rows = result.scalars().all()
     items = []

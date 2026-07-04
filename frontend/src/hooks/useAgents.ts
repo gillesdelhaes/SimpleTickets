@@ -17,12 +17,11 @@ export function useAgents() {
   return useQuery<UserRead[]>({
     queryKey: ['agents'],
     queryFn: async () => {
-      const p = new URLSearchParams()
-      p.append('role', 'technician')
-      p.append('role', 'admin')
-      p.set('limit', '100')
+      // No role filter: every User row is staff (technician or admin) — submitters
+      // are Slack users, not accounts. Passing role twice used to collapse to a
+      // scalar and silently drop all technicians, so we omit it entirely.
       const { data } = await api.get<{ items: UserRead[]; total: number }>(
-        `/admin/users?${p.toString()}`
+        '/admin/users?limit=100'
       )
       return data.items.filter(u => u.is_active)
     },

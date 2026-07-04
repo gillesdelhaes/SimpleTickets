@@ -85,18 +85,20 @@ export default function CreateTicketModal({ open, onClose }: Props) {
     e.preventDefault()
     if (!title.trim()) { setError('Title is required'); return }
     if (!description.trim()) { setError('Description is required'); return }
-    if (!selectedReporter) { setError('Please select a reporter'); return }
 
     setSubmitting(true)
     setError(null)
     try {
+      // Reporter is optional: without one, the backend files the ticket under
+      // the current user. Only send the Slack identity when a reporter is picked.
       const { data } = await api.post('/tickets', {
         title: title.trim(),
         description: description.trim(),
         priority,
         category_id: categoryId,
-        slack_reporter_id: selectedReporter.id,
-        slack_reporter_name: selectedReporter.name,
+        ...(selectedReporter
+          ? { slack_reporter_id: selectedReporter.id, slack_reporter_name: selectedReporter.name }
+          : {}),
       })
 
       // Upload attachments sequentially — failures are non-fatal
@@ -188,7 +190,7 @@ export default function CreateTicketModal({ open, onClose }: Props) {
         <form onSubmit={handleSubmit} style={{ padding: '20px 24px 24px', overflowY: 'auto', flex: 1 }}>
           {/* Reporter picker */}
           <div style={{ marginBottom: 16 }}>
-            <label style={labelStyle}>Reporter (Slack user)</label>
+            <label style={labelStyle}>Reporter <span style={{ fontWeight: 400, color: '#A3A3A3' }}>(optional — defaults to you)</span></label>
             <div ref={reporterRef} style={{ position: 'relative' }}>
               <div
                 onClick={() => setReporterOpen(o => !o)}

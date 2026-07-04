@@ -169,6 +169,31 @@ async def update_user(
             detail="No fields provided",
         )
 
+    # Guard: never let the last active admin lose admin access. Demoting or
+    # deactivating them would leave zero admins, which flips has_any_admin()
+    # to false and wedges every user into the /setup redirect with no recovery
+    # path but manual SQL. Blocks self-demotion too (the actor is, by
+    # definition, that last admin).
+    removing_admin = (
+        ("role" in provided and body.role is not None
+         and user.role == Role.admin and body.role != Role.admin)
+        or ("is_active" in provided and body.is_active is False
+            and user.is_active and user.role == Role.admin)
+    )
+    if removing_admin:
+        other_admins: int = (await session.execute(
+            select(func.count()).select_from(User).where(
+                User.role == Role.admin,
+                User.is_active == True,  # noqa: E712
+                User.id != user_id,
+            )
+        )).scalar_one()
+        if other_admins == 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot remove the last active admin — promote another admin first.",
+            )
+
     changes: dict = {}
     ip = request.client.host if request.client else None
 
