@@ -22,26 +22,9 @@ const FIELD_LABEL: Record<string, string> = {
 function Skel({ w = '100%', h = 14 }: { w?: string | number; h?: number }) {
   return (
     <div style={{
-      width: w, height: h, borderRadius: 4, background: '#F2F2F2',
+      width: w, height: h, borderRadius: 6, background: 'var(--track)',
       animation: 'shimmer 1.5s ease-in-out infinite', flexShrink: 0,
     }} />
-  )
-}
-
-// ── Section card ───────────────────────────────────────────────────────────────
-
-function Card({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <div style={{ background: '#fff', border: '1px solid #E5E5E5', borderRadius: 14, overflow: 'hidden' }}>
-      <div style={{
-        padding: '14px 18px', borderBottom: '1px solid #F2F2F2',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      }}>
-        <span style={{ fontSize: 14, fontWeight: 600, color: '#0A0A0A' }}>{title}</span>
-        {action}
-      </div>
-      {children}
-    </div>
   )
 }
 
@@ -51,32 +34,17 @@ function AttentionItem({ ticket, reason, onClick }: { ticket: TicketRead; reason
   return (
     <button
       onClick={onClick}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 10,
-        width: '100%', padding: '10px 16px',
-        background: 'none', border: 'none', cursor: 'pointer',
-        borderBottom: '1px solid #F9F9F9', textAlign: 'left',
-        transition: 'background 0.12s',
-      }}
-      onMouseOver={e => (e.currentTarget.style.background = '#FAFAFA')}
-      onMouseOut={e => (e.currentTarget.style.background = 'none')}
+      className="exp w-full text-left bg-transparent border-0 cursor-pointer"
     >
-      <PriorityBadge priority={ticket.priority} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#A3A3A3' }}>
-            {ticket.display_id}
-          </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-[10px] text-ink-3">{ticket.display_id}</span>
+          <PriorityBadge priority={ticket.priority} />
         </div>
-        <div style={{
-          fontSize: 12, fontWeight: 500, color: '#0A0A0A',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1,
-        }}>
-          {ticket.title}
-        </div>
-        <div style={{ fontSize: 11, marginTop: 2 }}>{reason}</div>
+        <div className="text-[13px] font-semibold text-ink truncate mt-0.5">{ticket.title}</div>
+        <div className="text-[11.5px] mt-0.5">{reason}</div>
       </div>
-      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#C0C0C0" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-ink-3 flex-shrink-0">
         <path d="M4.5 2.5l3 3.5-3 3.5" />
       </svg>
     </button>
@@ -118,7 +86,7 @@ function NeedsAttention({ userId }: { userId: number }) {
 
   if (isLoading) {
     return (
-      <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div className="flex flex-col gap-2.5 px-4 py-3.5">
         {[1, 2, 3].map(i => <Skel key={i} h={44} />)}
       </div>
     )
@@ -126,31 +94,26 @@ function NeedsAttention({ userId }: { userId: number }) {
 
   if (all.length === 0) {
     return (
-      <div style={{ padding: '32px 16px', textAlign: 'center' }}>
-        <div style={{
-          width: 36, height: 36, borderRadius: 8, background: '#F0FFF4',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 10px',
-        }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <div className="px-4 py-8 text-center">
+        <div className="w-9 h-9 rounded-[11px] mx-auto mb-2.5 flex items-center justify-center" style={{ background: 'var(--brand-tint)', color: 'var(--brand-ink)' }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="20 6 9 17 4 12" />
           </svg>
         </div>
-        <p style={{ fontSize: 13, fontWeight: 600, color: '#262626', margin: 0 }}>All clear</p>
-        <p style={{ fontSize: 12, color: '#A3A3A3', marginTop: 3 }}>Nothing needs your attention right now.</p>
+        <p className="text-[13px] font-semibold text-ink m-0">All clear</p>
+        <p className="text-[12px] text-ink-3 mt-1 m-0">Nothing needs your attention right now.</p>
       </div>
     )
   }
 
   return (
-    <div>
+    <div className="explist" style={{ paddingTop: 4 }}>
       {breached.map(t => (
         <AttentionItem
           key={t.id}
           ticket={t}
           onClick={() => navigate(`/tickets/${t.id}`)}
-          reason={
-            <span style={{ color: '#EF4444', fontWeight: 600 }}>SLA breached</span>
-          }
+          reason={<span className="font-semibold text-danger-ink">SLA breached</span>}
         />
       ))}
       {unread.map(t => (
@@ -158,9 +121,7 @@ function NeedsAttention({ userId }: { userId: number }) {
           key={t.id}
           ticket={t}
           onClick={() => navigate(`/tickets/${t.id}`)}
-          reason={
-            <span style={{ color: '#FF4713' }}>Unread reply</span>
-          }
+          reason={<span className="text-brand-ink font-medium">Unread reply</span>}
         />
       ))}
       {negativeCsat.map(t => (
@@ -169,7 +130,9 @@ function NeedsAttention({ userId }: { userId: number }) {
           ticket={t}
           onClick={() => navigate(`/tickets/${t.id}`)}
           reason={
-            <span style={{ color: '#DC2626', display: 'inline-flex', alignItems: 'center', gap: 4 }}><ThumbDown size={12} color="#DC2626" /> Negative CSAT — reopened</span>
+            <span className="inline-flex items-center gap-1 font-semibold text-danger-ink">
+              <ThumbDown size={12} /> Negative CSAT — reopened
+            </span>
           }
         />
       ))}
@@ -184,26 +147,22 @@ function SlackUnconfiguredBanner() {
   const { data: config } = useAppConfig()
   if (!config || config.slack_configured) return null
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '12px 18px', marginBottom: 16,
-      background: '#FFFBEB', border: '1px solid #FDE68A',
-      borderRadius: 10, gap: 12,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-          <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+    <div
+      className="flex items-center justify-between gap-3 mb-3.5 px-4 py-3 rounded-block text-[13px] text-warn-ink"
+      style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-bg)' }}
+    >
+      <div className="flex items-center gap-2.5">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+          <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
         </svg>
-        <span style={{ fontSize: 13, color: '#92400E' }}>
-          Slack is not configured — your team won't receive alerts for new tickets.
-        </span>
+        <span>Slack is not configured — your team won't receive alerts for new tickets.</span>
       </div>
       <button
         onClick={() => navigate('/admin/settings')}
-        style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid #FDE68A', background: '#FEF3C7', fontSize: 12, fontWeight: 600, color: '#92400E', cursor: 'pointer', whiteSpace: 'nowrap' }}
+        className="btn ghost sm whitespace-nowrap"
       >
-        Configure Slack →
+        Configure Slack
       </button>
     </div>
   )
@@ -223,40 +182,35 @@ function UnassignedBanner() {
   return (
     <button
       onClick={() => navigate('/queue?assignee=unassigned')}
-      style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        width: '100%', padding: '14px 18px',
-        background: count > 0 ? 'rgba(255,71,19,0.04)' : '#FAFAFA',
-        border: `1px solid ${count > 0 ? 'rgba(255,71,19,0.2)' : '#E5E5E5'}`,
-        borderRadius: 14, cursor: 'pointer', textAlign: 'left',
-        transition: 'background 0.12s',
-      }}
-      onMouseOver={e => (e.currentTarget.style.background = count > 0 ? 'rgba(255,71,19,0.08)' : '#F2F2F2')}
-      onMouseOut={e => (e.currentTarget.style.background = count > 0 ? 'rgba(255,71,19,0.04)' : '#FAFAFA')}
+      className="panel w-full flex items-center justify-between gap-3 px-5 py-4 cursor-pointer text-left border-edge"
+      style={{ font: 'inherit' }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div style={{
-          width: 40, height: 40, borderRadius: 10, flexShrink: 0,
-          background: count > 0 ? 'rgba(255,71,19,0.1)' : '#F2F2F2',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: count > 0 ? '#FF4713' : '#A3A3A3',
-        }}>
+      <div className="flex items-center gap-3.5">
+        <div
+          className="w-10 h-10 rounded-[12px] flex-shrink-0 flex items-center justify-center"
+          style={count > 0
+            ? { background: 'var(--brand-tint)', color: 'var(--brand-ink)' }
+            : { background: 'var(--field)', color: 'var(--ink-3)', border: '1px solid var(--edge)' }}
+        >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-            <circle cx="9" cy="7" r="4"/>
-            <line x1="23" y1="11" x2="17" y2="11"/>
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <line x1="23" y1="11" x2="17" y2="11" />
           </svg>
         </div>
         <div>
-          <div style={{ fontSize: 24, fontWeight: 700, color: count > 0 ? '#FF4713' : '#0A0A0A', lineHeight: 1, letterSpacing: '-0.02em' }}>
+          <div
+            className="text-[26px] font-[650] leading-none tracking-[-0.02em]"
+            style={{ color: count > 0 ? 'var(--brand-ink)' : 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}
+          >
             {count}
           </div>
-          <div style={{ fontSize: 12, color: '#737373', marginTop: 2 }}>
+          <div className="text-[12px] text-ink-2 mt-1">
             unassigned ticket{count !== 1 ? 's' : ''} waiting
           </div>
         </div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 500, color: count > 0 ? '#FF4713' : '#A3A3A3' }}>
+      <div className="flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: count > 0 ? 'var(--brand-ink)' : 'var(--ink-3)' }}>
         View queue
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           <path d="M5 3l4 4-4 4" />
@@ -270,50 +224,46 @@ function UnassignedBanner() {
 
 function ActivityIcon({ event }: { event: ActivityEvent }) {
   const { type } = event
+  let glyph: React.ReactNode
   if (type === 'ticket_created') {
-    return (
-      <div style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(59,130,246,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 5v14M5 12h14" />
-        </svg>
-      </div>
+    glyph = (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 5v14M5 12h14" />
+      </svg>
     )
-  }
-  if (type === 'reply_added') {
-    return (
-      <div style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(16,185,129,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-        </svg>
-      </div>
+  } else if (type === 'reply_added') {
+    glyph = (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      </svg>
     )
-  }
-  if (type === 'field_changed' && event.field === 'csat_response') {
-    return (
-      <div style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(99,102,241,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        {event.new_value === 'positive'
-          ? <ThumbUp size={13} color="#6366F1" />
-          : <ThumbDown size={13} color="#6366F1" />}
-      </div>
-    )
-  }
-  return (
-    <div style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(245,158,11,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  } else if (type === 'field_changed' && event.field === 'csat_response') {
+    glyph = event.new_value === 'positive' ? <ThumbUp size={13} /> : <ThumbDown size={13} />
+  } else {
+    glyph = (
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
         <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
       </svg>
+    )
+  }
+  return (
+    <div
+      className="w-7 h-7 rounded-[9px] flex items-center justify-center flex-shrink-0"
+      style={{ background: 'var(--brand-tint)', color: 'var(--brand-ink)' }}
+    >
+      {glyph}
     </div>
   )
 }
 
 function ActivityDescription({ event }: { event: ActivityEvent }) {
-  const actor = <span style={{ fontWeight: 600, color: '#262626' }}>{event.actor_name ?? 'Someone'}</span>
+  const actor = <span className="font-semibold text-ink">{event.actor_name ?? 'Someone'}</span>
   const ticket = (
     <Link
       to={`/tickets/${event.ticket_id}`}
       onClick={e => e.stopPropagation()}
-      style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#737373', textDecoration: 'none' }}
+      className="font-mono text-[11px] text-ink-2 no-underline hover:text-brand-ink"
     >
       {event.ticket_display_id}
     </Link>
@@ -336,8 +286,11 @@ function ActivityDescription({ event }: { event: ActivityEvent }) {
     return (
       <span>
         Submitter left{' '}
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontWeight: 600, color: isPositive ? '#059669' : '#DC2626' }}>
-          {isPositive ? <ThumbUp size={12} color="#059669" /> : <ThumbDown size={12} color="#DC2626" />}
+        <span
+          className="inline-flex items-center gap-1 font-semibold"
+          style={{ color: isPositive ? 'var(--brand-ink)' : 'var(--danger-ink)' }}
+        >
+          {isPositive ? <ThumbUp size={12} /> : <ThumbDown size={12} />}
           {isPositive ? 'positive' : 'negative'}
         </span>{' '}
         feedback on {ticket}
@@ -346,15 +299,15 @@ function ActivityDescription({ event }: { event: ActivityEvent }) {
   }
 
   if (field === 'status' && newVal) {
+    // Status colors are admin-configured data — inline stays, pill anatomy is Glasshouse
     const color = statusColor(newVal)
     return (
       <span>
         {actor} set {ticket} to{' '}
-        <span style={{
-          display: 'inline-block', padding: '1px 6px', borderRadius: 999,
-          fontSize: 10, fontWeight: 600,
-          background: `${color}18`, color, border: `1px solid ${color}40`,
-        }}>
+        <span
+          className="inline-block px-1.5 py-px rounded-full text-[10px] font-semibold"
+          style={{ background: `${color}24`, color }}
+        >
           {statusLabel(newVal)}
         </span>
       </span>
@@ -363,7 +316,7 @@ function ActivityDescription({ event }: { event: ActivityEvent }) {
 
   return (
     <span>
-      {actor} changed {field} on {ticket} to <strong style={{ color: '#262626' }}>{newVal ?? 'none'}</strong>
+      {actor} changed {field} on {ticket} to <strong className="text-ink font-semibold">{newVal ?? 'none'}</strong>
     </span>
   )
 }
@@ -374,11 +327,11 @@ function ActivityFeed() {
 
   if (isLoading) {
     return (
-      <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="flex flex-col gap-3 px-4 py-3.5">
         {[1, 2, 3, 4, 5].map(i => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div key={i} className="flex items-center gap-2.5">
             <Skel w={28} h={28} />
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div className="flex-1 flex flex-col gap-1.5">
               <Skel w="60%" />
               <Skel w="40%" h={11} />
             </div>
@@ -390,43 +343,33 @@ function ActivityFeed() {
 
   if (!events?.length) {
     return (
-      <div style={{ padding: '40px 16px', textAlign: 'center' }}>
-        <p style={{ fontSize: 13, color: '#A3A3A3', margin: 0 }}>No recent activity.</p>
-      </div>
+      <p className="px-4 py-10 text-center text-[13px] text-ink-3 m-0">
+        No recent activity — new tickets and replies show up here.
+      </p>
     )
   }
 
   return (
-    <div style={{ padding: '8px 0', maxHeight: 480, overflowY: 'auto' }}>
+    <div className="py-2 scrollbar-thin" style={{ maxHeight: 480, overflowY: 'auto' }}>
       {events.map((event, i) => (
         <button
           key={i}
           onClick={() => navigate(`/tickets/${event.ticket_id}`)}
-          style={{
-            display: 'flex', alignItems: 'flex-start', gap: 10,
-            width: '100%', padding: '9px 16px',
-            background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left',
-            transition: 'background 0.12s',
-          }}
-          onMouseOver={e => (e.currentTarget.style.background = '#FAFAFA')}
-          onMouseOut={e => (e.currentTarget.style.background = 'none')}
+          className="flex items-start gap-2.5 w-full px-5 py-2.5 bg-transparent border-0 cursor-pointer text-left hover:bg-row-hover transition-colors"
+          style={{ font: 'inherit' }}
         >
           <ActivityIcon event={event} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, color: '#262626', lineHeight: 1.5 }}>
+          <div className="flex-1 min-w-0">
+            <div className="text-[12.5px] text-ink-2 leading-normal">
               <ActivityDescription event={event} />
             </div>
-            <div style={{
-              fontSize: 11, color: '#A3A3A3', marginTop: 2,
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            }}>
+            <div className="text-[11.5px] text-ink-3 mt-0.5 truncate">
               {event.type === 'reply_added' && event.body
                 ? `"${event.body}"`
-                : event.ticket_title
-              }
+                : event.ticket_title}
             </div>
           </div>
-          <span style={{ fontSize: 11, color: '#C0C0C0', whiteSpace: 'nowrap', flexShrink: 0, marginTop: 2 }}>
+          <span className="font-mono text-[10px] text-ink-3 whitespace-nowrap flex-shrink-0 mt-1">
             {timeAgo(event.created_at)}
           </span>
         </button>
@@ -442,34 +385,27 @@ export default function Dashboard() {
 
   return (
     <AppShell title="Dashboard">
-      <div style={{ padding: '28px 28px 48px', maxWidth: 1200 }}>
+      <SlackUnconfiguredBanner />
 
-        <SlackUnconfiguredBanner />
-
-        {/* Unassigned banner */}
-        <div style={{ marginBottom: 20 }}>
-          <UnassignedBanner />
-        </div>
-
-        {/* Two-column layout */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 16, alignItems: 'start' }}>
-
-          {/* Activity feed */}
-          <Card title="Recent activity">
-            <ActivityFeed />
-          </Card>
-
-          {/* Needs your attention */}
-          <Card title="Needs your attention">
-            {user?.id
-              ? <NeedsAttention userId={user.id} />
-              : null
-            }
-          </Card>
-
-        </div>
+      <div className="mb-3.5">
+        <UnassignedBanner />
       </div>
 
+      <div className="grid">
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Recent activity</h2>
+          </div>
+          <ActivityFeed />
+        </section>
+
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Needs your attention</h2>
+          </div>
+          {user?.id ? <NeedsAttention userId={user.id} /> : null}
+        </section>
+      </div>
     </AppShell>
   )
 }

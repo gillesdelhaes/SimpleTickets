@@ -5,28 +5,23 @@ interface Props {
   size?: 'sm' | 'md'
 }
 
+// Status colors are admin-configured data (from the API), so they stay inline —
+// the pill shape and dot follow the Glasshouse .pill anatomy.
 export default function StatusBadge({ status, size = 'sm' }: Props) {
   const color = STATUS_COLORS[status]
   const label = STATUS_LABELS[status]
-  const fontSize = size === 'sm' ? '11px' : '12px'
-  const padding = size === 'sm' ? '3px 9px' : '4px 10px'
 
   return (
     <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        padding,
-        borderRadius: '999px',
-        fontSize,
-        fontWeight: 600,
-        letterSpacing: '0.02em',
-        whiteSpace: 'nowrap',
-        color,
-        background: `${color}18`,
-        border: `1px solid ${color}30`,
-      }}
+      className={`inline-flex items-center gap-1.5 rounded-full font-semibold whitespace-nowrap ${
+        size === 'sm' ? 'px-2.5 py-1 text-[11.5px]' : 'px-3 py-1 text-[12px]'
+      }`}
+      style={{ backgroundColor: color + '24', color }}
     >
+      <span
+        className="w-[5px] h-[5px] rounded-full flex-shrink-0"
+        style={{ backgroundColor: color }}
+      />
       {label}
     </span>
   )

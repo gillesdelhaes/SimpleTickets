@@ -89,6 +89,11 @@
   to { transform: rotate(360deg); }
 }
 
+@keyframes shimmer {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 .animate-fade-up {
   animation: fadeUp 0.2s ease-out;
 }

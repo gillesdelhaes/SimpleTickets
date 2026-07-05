@@ -4,102 +4,45 @@ interface Props {
   ticket?: TicketRead
   /** Pre-computed SLA result — overrides ticket-based computation when provided */
   slaResult?: SLABarResult | null
-  /** 'bar' = inline progress bar (for tables), 'pill' = text pill (for detail views) */
+  /** 'bar' = countdown meter (for tables), 'pill' = text pill (for detail views) */
   variant?: 'bar' | 'pill'
 }
 
+// Follows the Glasshouse countdown meter (.warr): mono time + short meter,
+// danger red when breached or nearly out, muted when the SLA is paused.
 export default function SLABadge({ ticket, slaResult, variant = 'bar' }: Props) {
   const sla = slaResult !== undefined ? slaResult : (ticket ? parseSLABar(ticket) : null)
 
   if (!sla) {
-    return (
-      <span style={{ fontSize: '11px', color: '#A3A3A3', fontStyle: 'italic' }}>No SLA</span>
-    )
+    return <span className="text-[11px] text-ink-3 italic">No SLA</span>
   }
+
+  const paused = sla.label === 'Paused'
+  const hot = sla.breached || (!paused && sla.pct <= 0.2)
 
   if (variant === 'pill') {
     return (
-      <>
-        <span
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '5px',
-            padding: '2px 8px',
-            borderRadius: '999px',
-            fontSize: '11px',
-            fontWeight: 600,
-            color: sla.color,
-            background: `${sla.color}18`,
-            border: `1px solid ${sla.color}30`,
-            animation: sla.breached ? 'sla-pulse 1.5s ease-in-out infinite' : 'none',
-          }}
-        >
-          {sla.breached && (
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: sla.color, flexShrink: 0 }} />
-          )}
-          {sla.label}
-        </span>
-        {sla.breached && (
-          <style>{`
-            @keyframes sla-pulse {
-              0%, 100% { opacity: 1; }
-              50% { opacity: 0.55; }
-            }
-          `}</style>
-        )}
-      </>
+      <span className={`pill ${sla.breached ? 'danger' : hot ? 'warn' : paused ? 'retired' : 'avail'}`}>
+        {sla.label}
+      </span>
     )
   }
 
-  // Bar variant — progress bar with time/breach label below
+  // Bar variant — countdown meter for table rows
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', minWidth: 90 }}>
-      <div
-        style={{
-          width: '100%',
-          height: 4,
-          borderRadius: 2,
-          background: '#E5E5E5',
-          overflow: 'hidden',
-          position: 'relative',
-        }}
-      >
-        <div
-          style={{
-            position: 'absolute',
-            left: 0,
-            top: 0,
-            height: '100%',
-            width: `${Math.max(sla.breached ? 100 : sla.pct * 100, 2)}%`,
-            borderRadius: 2,
-            background: sla.color,
-            transition: 'width 0.3s ease',
-            animation: sla.breached ? 'sla-bar-pulse 1.5s ease-in-out infinite' : 'none',
-          }}
-        />
-      </div>
-      <span
-        style={{
-          fontSize: '10px',
-          fontFamily: 'JetBrains Mono, monospace',
-          color: sla.breached ? sla.color : '#737373',
-          fontWeight: sla.breached ? 700 : 400,
-          letterSpacing: '0.01em',
-          lineHeight: 1,
-        }}
-      >
+    <span className="warr">
+      <span className={`d${hot ? ' hot' : ''}`} style={paused ? { color: 'var(--ink-3)' } : undefined}>
         {sla.label}
       </span>
-
-      {sla.breached && (
-        <style>{`
-          @keyframes sla-bar-pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.4; }
-          }
-        `}</style>
-      )}
-    </div>
+      <span className="m">
+        <i
+          className={hot ? 'hot' : ''}
+          style={{
+            width: `${Math.max((sla.breached ? 1 : sla.pct) * 100, 4)}%`,
+            ...(paused ? { background: 'var(--ink-3)' } : {}),
+          }}
+        />
+      </span>
+    </span>
   )
 }
