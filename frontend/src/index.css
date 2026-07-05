@@ -1,63 +1,69 @@
+/* App-specific styles. Design system lives in glasshouse.css (canonical copy —
+   never edit it here; see GLASSHOUSE_DESIGN_SYSTEM.md). */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
-  *,
-  *::before,
-  *::after {
-    box-sizing: border-box;
-  }
-
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
   }
-
-  body {
-    @apply font-sans text-neutral-800 bg-neutral-50;
-    margin: 0;
-  }
-
-  :focus-visible {
-    outline: 2px solid #FF4713;
-    outline-offset: 2px;
-  }
 }
 
-@keyframes shimmer { 0%,100%{opacity:1}50%{opacity:0.4} }
-@keyframes spin { to { transform: rotate(360deg); } }
-@keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+/* Manual sidebar collapse — mirrors glasshouse's ≤880px behavior at any width */
+.sidebar.collapsed {
+  width: 70px;
+  flex-basis: 70px;
+  padding: 22px 10px 14px;
+}
+.sidebar.collapsed .wordmark,
+.sidebar.collapsed .nav-item span,
+.sidebar.collapsed .nav-sep,
+.sidebar.collapsed .side-foot .who {
+  display: none;
+}
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  padding: 11px;
+}
+.sidebar.collapsed .side-foot {
+  flex-direction: column;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+}
+.collapse-toggle {
+  margin-top: 10px;
+  width: 100%;
+  padding: 5px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--field);
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.collapse-toggle:hover {
+  color: var(--ink);
+}
+
+/* Mobile drawer — the sidebar slides in over the page below 768px */
+.sidebar.drawer {
+  position: fixed;
+  z-index: 50;
+  transform: translateX(calc(-100% - 20px));
+  transition: transform 0.3s cubic-bezier(0.2, 0.9, 0.25, 1);
+}
+.sidebar.drawer.open {
+  transform: translateX(0);
+}
 
 @layer utilities {
-  /* Gradient text — used on wordmark and key highlights */
-  .gradient-text {
-    background: linear-gradient(135deg, #FF4713 0%, #AD1164 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-  }
-
-  /* Gradient border — used on cards and inputs */
-  .gradient-border {
-    position: relative;
-  }
-  .gradient-border::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    padding: 1px;
-    background: linear-gradient(135deg, #FF4713, #AD1164);
-    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    pointer-events: none;
-  }
-
-  /* Scrollbar styling */
   .scrollbar-thin::-webkit-scrollbar {
     width: 4px;
     height: 4px;
@@ -66,9 +72,27 @@
     background: transparent;
   }
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    @apply bg-neutral-200 rounded-full;
+    background: var(--track);
+    border-radius: 999px;
   }
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    @apply bg-neutral-500;
+    background: var(--edge-hi);
   }
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.animate-fade-up {
+  animation: fadeUp 0.2s ease-out;
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
 }

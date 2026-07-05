@@ -1,17 +1,23 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark" data-app="tickets">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="SimpleTickets — A simple ticketing system for admins with no time to waste." />
     <title>SimpleTickets</title>
+    <!-- Fonts (Onest + JetBrains Mono) load via glasshouse.css @import -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
+    <script>
+      // Restore persisted theme before first paint to avoid a flash.
+      // ?theme=light|dark overrides for previews without touching the saved choice.
+      const param = new URLSearchParams(location.search).get('theme')
+      document.documentElement.dataset.theme =
+        param === 'light' || param === 'dark'
+          ? param
+          : localStorage.getItem('st-theme') === 'light' ? 'light' : 'dark'
+    </script>
   </head>
   <body>
     <div id="root"></div>
