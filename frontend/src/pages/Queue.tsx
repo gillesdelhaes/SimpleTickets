@@ -18,34 +18,27 @@ const PAGE_SIZE = 25
 
 const ALL_PRIORITIES: Priority[] = ['critical', 'high', 'medium', 'low']
 
-// ── Filter pills ───────────────────────────────────────────────────────────────
+// ── Filter chips ───────────────────────────────────────────────────────────────
 
-interface PillProps {
+interface ChipProps {
   label: string
   active: boolean
-  color?: string
   onClick: () => void
 }
 
-function Pill({ label, active, color, onClick }: PillProps) {
+function FilterChip({ label, active, onClick }: ChipProps) {
   return (
-    <button
-      onClick={onClick}
-      style={{
-        padding: '4px 12px',
-        borderRadius: 999,
-        fontSize: 12,
-        fontWeight: active ? 600 : 500,
-        cursor: 'pointer',
-        border: active ? `1.5px solid ${color ?? '#FF4713'}` : '1.5px solid #E5E5E5',
-        background: active ? (color ? `${color}15` : 'rgba(255,71,19,0.08)') : '#fff',
-        color: active ? (color ?? '#FF4713') : '#737373',
-        transition: 'all 0.12s',
-        whiteSpace: 'nowrap',
-      }}
-    >
+    <button type="button" onClick={onClick} className={`chip${active ? ' on' : ''}`}>
       {label}
     </button>
+  )
+}
+
+function FilterLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-ink-3 mr-1 whitespace-nowrap">
+      {children}
+    </span>
   )
 }
 
@@ -66,51 +59,26 @@ function Pagination({ page, total, pageSize, onPrev, onNext }: PaginationProps) 
   const hasNext = end < total
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '12px 24px',
-        borderTop: '1px solid #F2F2F2',
-        background: '#FAFAFA',
-      }}
-    >
-      <span style={{ fontSize: 12, color: '#737373' }}>
+    <div className="flex items-center justify-between px-6 py-3 border-t border-track">
+      <span className="font-mono text-[11px] text-ink-3">
         {total === 0 ? 'No tickets' : `${start}–${end} of ${total}`}
       </span>
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div className="flex gap-2">
         <button
           onClick={onPrev}
           disabled={!hasPrev}
-          style={{
-            padding: '6px 14px',
-            borderRadius: 6,
-            fontSize: 12,
-            fontWeight: 500,
-            border: '1px solid #E5E5E5',
-            background: hasPrev ? '#fff' : '#F9F9F9',
-            color: hasPrev ? '#262626' : '#C0C0C0',
-            cursor: hasPrev ? 'pointer' : 'not-allowed',
-          }}
+          className="btn ghost sm"
+          style={!hasPrev ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}
         >
-          ← Previous
+          Previous
         </button>
         <button
           onClick={onNext}
           disabled={!hasNext}
-          style={{
-            padding: '6px 14px',
-            borderRadius: 6,
-            fontSize: 12,
-            fontWeight: 500,
-            border: '1px solid #E5E5E5',
-            background: hasNext ? '#fff' : '#F9F9F9',
-            color: hasNext ? '#262626' : '#C0C0C0',
-            cursor: hasNext ? 'pointer' : 'not-allowed',
-          }}
+          className="btn ghost sm"
+          style={!hasNext ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}
         >
-          Next →
+          Next
         </button>
       </div>
     </div>
@@ -305,440 +273,341 @@ export default function Queue() {
   }
 
   return (
-    <AppShell title="Ticket Queue">
+    <AppShell title="Queue">
       <CreateTicketModal open={createOpen} onClose={() => setCreateOpen(false)} />
-      <div style={{ padding: '28px 28px 48px' }}>
-        {/* Toolbar */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-          <button
-            onClick={() => setCreateOpen(true)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-              border: 'none',
-              background: 'linear-gradient(135deg, #FF4713, #AD1164)',
-              color: '#fff', cursor: 'pointer',
-              boxShadow: '0 2px 8px rgba(255,71,19,0.25)',
-              transition: 'opacity 0.15s',
-            }}
-            onMouseOver={e => (e.currentTarget.style.opacity = '0.88')}
-            onMouseOut={e => (e.currentTarget.style.opacity = '1')}
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M7 2v10M2 7h10" />
-            </svg>
-            New Ticket
-          </button>
+
+      {/* Filter bar */}
+      <div className="panel px-5 py-4 mb-3.5 flex flex-col gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <FilterLabel>Status</FilterLabel>
+          <FilterChip
+            label="Active"
+            active={selectedStatuses.length === 0}
+            onClick={() => setParam('status', [])}
+          />
+          {allStatuses.map(s => (
+            <FilterChip
+              key={s.name}
+              label={s.label}
+              active={selectedStatuses.includes(s.name)}
+              onClick={() => toggleStatus(s.name)}
+            />
+          ))}
         </div>
-        {/* Filter bar */}
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <FilterLabel>Priority</FilterLabel>
+          <FilterChip
+            label="All"
+            active={selectedPriorities.length === 0}
+            onClick={() => setParam('priority', [])}
+          />
+          {ALL_PRIORITIES.map(p => (
+            <FilterChip
+              key={p}
+              label={PRIORITY_LABELS[p]}
+              active={selectedPriorities.includes(p)}
+              onClick={() => togglePriority(p)}
+            />
+          ))}
+
+          <span className="ml-3" />
+          <FilterLabel>Assignee</FilterLabel>
+          {[
+            { val: 'all', label: 'All' },
+            { val: 'mine', label: 'Mine' },
+            { val: 'unassigned', label: 'Unassigned' },
+          ].map(({ val, label }) => (
+            <FilterChip
+              key={val}
+              label={label}
+              active={assigneeFilter === val}
+              onClick={() => setAssignee(val)}
+            />
+          ))}
+        </div>
+
+        {categories && categories.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <FilterLabel>Category</FilterLabel>
+            <FilterChip label="All" active={categoryFilter === 'all'} onClick={() => setCategory('all')} />
+            {categories.map(c => (
+              <FilterChip
+                key={c.id}
+                label={c.name}
+                active={categoryFilter === String(c.id)}
+                onClick={() => setCategory(String(c.id))}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Bulk action bar */}
+      {selected.size > 0 && (
         <div
-          style={{
-            background: '#fff',
-            border: '1px solid #E5E5E5',
-            borderRadius: 14,
-            padding: '14px 20px',
-            marginBottom: 20,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 12,
-          }}
+          className="flex items-center gap-3 flex-wrap mb-3 px-4 py-2.5 rounded-block"
+          style={{ background: 'var(--brand-tint)', border: '1px solid color-mix(in oklab, var(--b1) 30%, transparent)' }}
         >
-          {/* Status pills */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: '#A3A3A3', textTransform: 'uppercase', letterSpacing: '0.06em', marginRight: 4, whiteSpace: 'nowrap' }}>
-              Status
-            </span>
-            <Pill
-              label="Active"
-              active={selectedStatuses.length === 0}
-              onClick={() => setParam('status', [])}
-            />
-            {allStatuses.map(s => (
-              <Pill
-                key={s.name}
-                label={s.label}
-                active={selectedStatuses.includes(s.name)}
-                color={s.color}
-                onClick={() => toggleStatus(s.name)}
-              />
-            ))}
-          </div>
-
-          {/* Priority + Assignee pills */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: '#A3A3A3', textTransform: 'uppercase', letterSpacing: '0.06em', marginRight: 4, whiteSpace: 'nowrap' }}>
-              Priority
-            </span>
-            <Pill
-              label="All"
-              active={selectedPriorities.length === 0}
-              onClick={() => setParam('priority', [])}
-            />
-            {ALL_PRIORITIES.map(p => (
-              <Pill
-                key={p}
-                label={PRIORITY_LABELS[p]}
-                active={selectedPriorities.includes(p)}
-                color={
-                  p === 'critical' ? '#AD1164' :
-                  p === 'high' ? '#FF4713' :
-                  p === 'medium' ? '#F59E0B' : '#3B82F6'
-                }
-                onClick={() => togglePriority(p)}
-              />
-            ))}
-
-            <span style={{ fontSize: 11, fontWeight: 600, color: '#A3A3A3', textTransform: 'uppercase', letterSpacing: '0.06em', marginLeft: 12, marginRight: 4, whiteSpace: 'nowrap' }}>
-              Assignee
-            </span>
-            {[
-              { val: 'all', label: 'All' },
-              { val: 'mine', label: 'Mine' },
-              { val: 'unassigned', label: 'Unassigned' },
-            ].map(({ val, label }) => (
-              <Pill
-                key={val}
-                label={label}
-                active={assigneeFilter === val}
-                onClick={() => setAssignee(val)}
-              />
-            ))}
-          </div>
-
-          {/* Category pills — only rendered when categories exist */}
-          {categories && categories.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: '#A3A3A3', textTransform: 'uppercase', letterSpacing: '0.06em', marginRight: 4, whiteSpace: 'nowrap' }}>
-                Category
-              </span>
-              <Pill label="All" active={categoryFilter === 'all'} onClick={() => setCategory('all')} />
-              {categories.map(c => (
-                <Pill
-                  key={c.id}
-                  label={c.name}
-                  active={categoryFilter === String(c.id)}
-                  onClick={() => setCategory(String(c.id))}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Bulk action bar */}
-        {selected.size > 0 && (
-          <div style={{
-            background: 'rgba(255,71,19,0.06)',
-            border: '1.5px solid rgba(255,71,19,0.25)',
-            borderRadius: 10,
-            padding: '10px 16px',
-            marginBottom: 12,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            flexWrap: 'wrap',
-          }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#FF4713', whiteSpace: 'nowrap' }}>
-              {selected.size} selected
-            </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span className="text-[12px] font-bold text-brand-ink whitespace-nowrap">
+            {selected.size} selected
+          </span>
+          <div className="flex items-center gap-1.5">
+            <div className="selectwrap">
               <select
+                className="select"
+                style={{ padding: '6px 28px 6px 11px', fontSize: 12, width: 'auto' }}
                 value={bulkAssignId}
                 onChange={e => setBulkAssignId(e.target.value)}
                 disabled={bulkLoading}
-                style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid #E5E5E5', background: '#fff', color: '#262626', cursor: 'pointer' }}
               >
                 <option value="">Assign to…</option>
                 {technicians?.map(t => (
                   <option key={t.id} value={String(t.id)}>{t.name}</option>
                 ))}
               </select>
-              {bulkAssignId && (
-                <button
-                  onClick={() => bulkAction({ assignee_id: Number(bulkAssignId) })}
-                  disabled={bulkLoading}
-                  style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, border: 'none', background: '#FF4713', color: '#fff', cursor: 'pointer' }}
-                >
-                  Apply
-                </button>
-              )}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {bulkAssignId && (
+              <button
+                onClick={() => bulkAction({ assignee_id: Number(bulkAssignId) })}
+                disabled={bulkLoading}
+                className="btn sm"
+              >
+                Apply
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="selectwrap">
               <select
+                className="select"
+                style={{ padding: '6px 28px 6px 11px', fontSize: 12, width: 'auto' }}
                 value={bulkPriority}
                 onChange={e => setBulkPriority(e.target.value)}
                 disabled={bulkLoading}
-                style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid #E5E5E5', background: '#fff', color: '#262626', cursor: 'pointer' }}
               >
                 <option value="">Set priority…</option>
                 {ALL_PRIORITIES.map(p => (
                   <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>
                 ))}
               </select>
-              {bulkPriority && (
-                <button
-                  onClick={() => bulkAction({ priority: bulkPriority })}
-                  disabled={bulkLoading}
-                  style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, border: 'none', background: '#FF4713', color: '#fff', cursor: 'pointer' }}
-                >
-                  Apply
-                </button>
-              )}
             </div>
-            {resolvedStatuses.map(s => (
+            {bulkPriority && (
               <button
-                key={s.name}
-                onClick={() => bulkAction({ status: s.name })}
+                onClick={() => bulkAction({ priority: bulkPriority })}
                 disabled={bulkLoading}
-                style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, border: `1px solid ${s.color}`, background: '#fff', color: s.color, cursor: 'pointer' }}
+                className="btn sm"
               >
-                ✓ {s.label}
+                Apply
               </button>
-            ))}
-            <button
-              onClick={() => setSelected(new Set())}
-              style={{ fontSize: 11, fontWeight: 500, padding: '4px 10px', borderRadius: 6, border: '1px solid #E5E5E5', background: '#fff', color: '#737373', cursor: 'pointer', marginLeft: 'auto' }}
-            >
-              Clear
-            </button>
-          </div>
-        )}
-
-        {bulkError && (
-          <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(220,38,38,0.06)', border: '1px solid rgba(220,38,38,0.2)', fontSize: 12, color: '#DC2626' }}>
-            {bulkError}
-          </div>
-        )}
-
-        {/* Table */}
-        <div
-          style={{
-            background: '#fff',
-            border: '1px solid #E5E5E5',
-            borderRadius: 14,
-            overflow: 'hidden',
-          }}
-        >
-          {/* Table header */}
-          <div
-            style={{
-              padding: '14px 24px',
-              borderBottom: '1px solid #F2F2F2',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-            }}
-          >
-            <div>
-              <h2 style={{ fontSize: 15, fontWeight: 600, color: '#0A0A0A', margin: 0 }}>
-                All Tickets
-              </h2>
-            </div>
-            {data && (
-              <span style={{ fontSize: 11, fontWeight: 600, color: '#737373', background: '#F2F2F2', borderRadius: 6, padding: '3px 8px' }}>
-                {data.total} total
-              </span>
             )}
           </div>
+          {resolvedStatuses.map(s => (
+            <button
+              key={s.name}
+              onClick={() => bulkAction({ status: s.name })}
+              disabled={bulkLoading}
+              className="btn ghost sm"
+            >
+              ✓ {s.label}
+            </button>
+          ))}
+          <button
+            onClick={() => setSelected(new Set())}
+            className="btn ghost sm ml-auto"
+          >
+            Clear
+          </button>
+        </div>
+      )}
 
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #F2F2F2', background: '#F9F9F9' }}>
-                  <th style={{ padding: '10px 8px 10px 20px', width: 36 }}>
-                    <input
-                      type="checkbox"
-                      checked={sortedItems.length > 0 && selected.size === sortedItems.length}
-                      ref={el => { if (el) el.indeterminate = selected.size > 0 && selected.size < sortedItems.length }}
-                      onChange={toggleSelectAll}
-                      style={{ cursor: 'pointer', accentColor: '#FF4713' }}
-                    />
+      {bulkError && (
+        <div
+          className="mb-3 px-3.5 py-2 rounded-control text-[12px] text-danger-ink"
+          style={{ background: 'var(--danger-bg)' }}
+        >
+          {bulkError}
+        </div>
+      )}
+
+      {/* Table */}
+      <section className="panel">
+        <div className="panel-head">
+          <h2>All tickets</h2>
+          {data && <span className="sub mono">{data.total} total</span>}
+          <button className="btn sm" style={{ marginLeft: 'auto' }} onClick={() => setCreateOpen(true)}>
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M7 2v10M2 7h10" />
+            </svg>
+            New ticket
+          </button>
+        </div>
+
+        <div className="tablewrap">
+          <table>
+            <thead>
+              <tr>
+                <th style={{ width: 36 }}>
+                  <input
+                    type="checkbox"
+                    aria-label="Select all tickets"
+                    checked={sortedItems.length > 0 && selected.size === sortedItems.length}
+                    ref={el => { if (el) el.indeterminate = selected.size > 0 && selected.size < sortedItems.length }}
+                    onChange={toggleSelectAll}
+                    style={{ cursor: 'pointer', accentColor: 'var(--b1)' }}
+                  />
+                </th>
+                {([
+                  { label: 'ID', col: null },
+                  { label: 'Title', col: null },
+                  { label: 'Reporter', col: null },
+                  { label: 'Priority', col: 'priority' as SortCol },
+                  { label: 'Status', col: 'status' as SortCol },
+                  { label: 'Assignee', col: null },
+                  { label: 'SLA', col: 'sla' as SortCol },
+                  { label: 'Created', col: 'created_at' as SortCol },
+                ] as { label: string; col: SortCol | null }[]).map(({ label, col }) => (
+                  <th
+                    key={label}
+                    onClick={col ? () => handleSort(col) : undefined}
+                    style={{
+                      cursor: col ? 'pointer' : 'default',
+                      userSelect: 'none',
+                      color: col && sortCol === col ? 'var(--brand-ink)' : undefined,
+                    }}
+                  >
+                    {label}
+                    {col && sortCol === col && (
+                      <span style={{ marginLeft: 4 }}>{sortDir === 'asc' ? '↑' : '↓'}</span>
+                    )}
                   </th>
-                  {([
-                    { label: 'ID', col: null },
-                    { label: 'Title', col: null },
-                    { label: 'Reporter', col: null },
-                    { label: 'Priority', col: 'priority' as SortCol },
-                    { label: 'Status', col: 'status' as SortCol },
-                    { label: 'Assignee', col: null },
-                    { label: 'SLA', col: 'sla' as SortCol },
-                    { label: 'Created', col: 'created_at' as SortCol },
-                  ] as { label: string; col: SortCol | null }[]).map(({ label, col }) => (
-                    <th
-                      key={label}
-                      onClick={col ? () => handleSort(col) : undefined}
-                      style={{
-                        padding: '10px 16px',
-                        textAlign: 'left',
-                        fontSize: 11,
-                        fontWeight: 700,
-                        color: col && sortCol === col ? '#FF4713' : '#737373',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.07em',
-                        whiteSpace: 'nowrap',
-                        cursor: col ? 'pointer' : 'default',
-                        userSelect: 'none',
-                      }}
-                    >
-                      {label}
-                      {col && sortCol === col && (
-                        <span style={{ marginLeft: 4 }}>{sortDir === 'asc' ? '↑' : '↓'}</span>
-                      )}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading ? (
-                  Array.from({ length: PAGE_SIZE }).map((_, i) => (
-                    <tr key={i} style={{ borderBottom: '1px solid #F9F9F9' }}>
-                      <td style={{ padding: '12px 8px 12px 20px', width: 36 }} />
-                      {Array.from({ length: 8 }).map((_, j) => (
-                        <td key={j} style={{ padding: '12px 16px' }}>
-                          <div
-                            style={{
-                              height: 13,
-                              borderRadius: 4,
-                              background: '#F2F2F2',
-                              width: j === 1 ? '55%' : j === 0 ? 60 : '75%',
-                              animation: 'shimmer 1.5s ease-in-out infinite',
-                            }}
-                          />
-                        </td>
-                      ))}
-                    </tr>
-                  ))
-                ) : sortedItems.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} style={{ padding: '60px 24px', textAlign: 'center' }}>
-                      <p style={{ fontSize: 14, fontWeight: 600, color: '#262626', margin: 0 }}>No tickets found</p>
-                      <p style={{ fontSize: 13, color: '#A3A3A3', marginTop: 4 }}>
-                        Try adjusting the filters above.
-                      </p>
-                    </td>
-                  </tr>
-                ) : (
-                  sortedItems.map(ticket => {
-                    const hasUnread = unreadSet.has(ticket.id)
-                    return (
-                    <tr
-                      key={ticket.id}
-                      onClick={() => navigate(`/tickets/${ticket.id}`)}
-                      style={{
-                        borderBottom: '1px solid #F9F9F9',
-                        cursor: 'pointer',
-                        transition: 'background 0.12s',
-                        background: selected.has(ticket.id) ? 'rgba(255,71,19,0.04)' : hasUnread ? 'rgba(255,71,19,0.02)' : 'transparent',
-                      }}
-                      onMouseEnter={e => { if (!selected.has(ticket.id)) e.currentTarget.style.background = '#F9F9F9' }}
-                      onMouseLeave={e => { e.currentTarget.style.background = selected.has(ticket.id) ? 'rgba(255,71,19,0.04)' : hasUnread ? 'rgba(255,71,19,0.02)' : 'transparent' }}
-                    >
-                      <td style={{ padding: '12px 8px 12px 20px', width: 36 }} onClick={e => toggleSelect(e, ticket.id)}>
-                        <input
-                          type="checkbox"
-                          checked={selected.has(ticket.id)}
-                          onChange={() => {}}
-                          style={{ cursor: 'pointer', accentColor: '#FF4713' }}
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                Array.from({ length: 8 }).map((_, i) => (
+                  <tr key={i}>
+                    <td style={{ width: 36 }} />
+                    {Array.from({ length: 8 }).map((_, j) => (
+                      <td key={j}>
+                        <div
+                          style={{
+                            height: 13,
+                            borderRadius: 6,
+                            background: 'var(--track)',
+                            width: j === 1 ? '55%' : j === 0 ? 60 : '75%',
+                            animation: 'shimmer 1.5s ease-in-out infinite',
+                          }}
                         />
                       </td>
-                      <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    ))}
+                  </tr>
+                ))
+              ) : sortedItems.length === 0 ? (
+                <tr>
+                  <td colSpan={9} style={{ padding: '60px 24px', textAlign: 'center', whiteSpace: 'normal' }}>
+                    <p className="text-[14px] font-semibold text-ink m-0">No tickets found</p>
+                    <p className="text-[13px] text-ink-3 mt-1 m-0">Try adjusting the filters above.</p>
+                  </td>
+                </tr>
+              ) : (
+                sortedItems.map(ticket => {
+                  const hasUnread = unreadSet.has(ticket.id)
+                  return (
+                    <tr
+                      key={ticket.id}
+                      className="clickable"
+                      aria-selected={selected.has(ticket.id) || undefined}
+                      onClick={() => navigate(`/tickets/${ticket.id}`)}
+                    >
+                      <td style={{ width: 36 }} onClick={e => toggleSelect(e, ticket.id)}>
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${ticket.display_id}`}
+                          checked={selected.has(ticket.id)}
+                          onChange={() => {}}
+                          style={{ cursor: 'pointer', accentColor: 'var(--b1)' }}
+                        />
+                      </td>
+                      <td>
+                        <div className="flex items-center gap-1.5">
                           {hasUnread && (
                             <span
                               title="New replies"
-                              style={{
-                                width: 7, height: 7, borderRadius: '50%',
-                                background: '#FF4713', flexShrink: 0,
-                                display: 'inline-block',
-                              }}
+                              className="inline-block w-[7px] h-[7px] rounded-full flex-shrink-0"
+                              style={{ background: 'var(--b1)' }}
                             />
                           )}
-                          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#737373', letterSpacing: '0.03em' }}>
-                            {ticket.display_id}
-                          </span>
+                          <span className="sn">{ticket.display_id}</span>
                         </div>
                       </td>
-                      <td style={{ padding: '12px 16px', maxWidth: 280 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden' }}>
+                      <td style={{ maxWidth: 280 }}>
+                        <div className="flex items-center gap-1.5 overflow-hidden">
                           {ticket.channel === 'slack' && (
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0, opacity: 0.7 }}>
-                              <path d="M14.5 10c-.83 0-1.5-.67-1.5-1.5v-5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5z" fill="#10B981"/>
-                              <path d="M20.5 10H19V8.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" fill="#10B981"/>
-                              <path d="M9.5 14c.83 0 1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5S8 21.33 8 20.5v-5c0-.83.67-1.5 1.5-1.5z" fill="#10B981"/>
-                              <path d="M3.5 14H5v1.5c0 .83-.67 1.5-1.5 1.5S2 16.33 2 15.5 2.67 14 3.5 14z" fill="#10B981"/>
-                              <path d="M14 14.5c0-.83.67-1.5 1.5-1.5h5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5h-5c-.83 0-1.5-.67-1.5-1.5z" fill="#10B981"/>
-                              <path d="M15.5 19H14v1.5c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5-.67-1.5-1.5-1.5z" fill="#10B981"/>
-                              <path d="M10 9.5C10 8.67 9.33 8 8.5 8h-5C2.67 8 2 8.67 2 9.5S2.67 11 3.5 11h5c.83 0 1.5-.67 1.5-1.5z" fill="#10B981"/>
-                              <path d="M8.5 5H10V3.5C10 2.67 9.33 2 8.5 2S7 2.67 7 3.5 7.67 5 8.5 5z" fill="#10B981"/>
+                            <svg width="12" height="12" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-ink-3 flex-shrink-0" aria-label="Created from Slack">
+                              <path d="M15.5 11.5a1.5 1.5 0 0 1-1.5 1.5H5l-3 3V4a1.5 1.5 0 0 1 1.5-1.5h10.5A1.5 1.5 0 0 1 15.5 4z" />
                             </svg>
                           )}
                           {ticket.channel === 'web' && ticket.slack_channel_id && (
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.75 }}>
-                              <circle cx="12" cy="12" r="10"/>
-                              <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-ink-3 flex-shrink-0" aria-label="Created on the web">
+                              <circle cx="12" cy="12" r="10" />
+                              <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
                             </svg>
                           )}
-                          <span style={{ fontSize: 13, fontWeight: 500, color: '#0A0A0A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <span className="name truncate" style={{ fontWeight: hasUnread ? 650 : 500 }}>
                             {ticket.title}
                           </span>
                         </div>
                         {ticket.category_name && (
-                          <span style={{ fontSize: 11, color: '#A3A3A3', display: 'block', marginTop: 1 }}>{ticket.category_name}</span>
+                          <span className="model block mt-px">{ticket.category_name}</span>
                         )}
                       </td>
-                      <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
+                      <td>
                         {ticket.submitter_name
-                          ? <span style={{ fontSize: 12, color: '#262626' }}>{ticket.submitter_name}</span>
-                          : <span style={{ fontSize: 12, color: '#A3A3A3', fontStyle: 'italic' }}>Unknown</span>
+                          ? <span className="text-[12.5px] text-ink-2">{ticket.submitter_name}</span>
+                          : <span className="text-[12.5px] text-ink-3 italic">Unknown</span>
                         }
                       </td>
-                      <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
-                        <PriorityBadge priority={ticket.priority} />
-                      </td>
-                      <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
-                        <StatusBadge status={ticket.status} />
-                      </td>
-                      <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
+                      <td><PriorityBadge priority={ticket.priority} /></td>
+                      <td><StatusBadge status={ticket.status} /></td>
+                      <td>
                         {ticket.assignee_name
-                          ? <span style={{ fontSize: 12, color: '#262626', fontWeight: 500 }}>{ticket.assignee_name}</span>
+                          ? <span className="text-[12.5px] text-ink font-medium">{ticket.assignee_name}</span>
                           : (
                             <button
                               type="button"
                               onClick={e => handleClaim(e, ticket.id)}
-                              style={{ padding: '3px 8px', borderRadius: 5, border: '1px solid #E5E5E5', background: '#fff', fontSize: 11, fontWeight: 500, color: '#FF4713', cursor: 'pointer' }}
-                              onMouseEnter={e => (e.currentTarget.style.background = '#FFF5F0')}
-                              onMouseLeave={e => (e.currentTarget.style.background = '#fff')}
+                              className="btn ghost sm"
+                              style={{ padding: '4px 11px', fontSize: 11.5, color: 'var(--brand-ink)' }}
                             >
                               Claim
                             </button>
                           )
                         }
                       </td>
-                      <td style={{ padding: '12px 16px' }}>
-                        <SLABadge ticket={ticket} variant="bar" />
-                      </td>
-                      <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
-                        <span style={{ fontSize: 12, color: '#737373' }}>{timeAgo(ticket.created_at)}</span>
+                      <td><SLABadge ticket={ticket} variant="bar" /></td>
+                      <td>
+                        <span className="font-mono text-[11px] text-ink-3">{timeAgo(ticket.created_at)}</span>
                       </td>
                     </tr>
-                    )
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {data && data.total > PAGE_SIZE && (
-            <Pagination
-              page={page}
-              total={data.total}
-              pageSize={PAGE_SIZE}
-              onPrev={() => setPage(page - 1)}
-              onNext={() => setPage(page + 1)}
-            />
-          )}
+                  )
+                })
+              )}
+            </tbody>
+          </table>
         </div>
-      </div>
 
+        {data && data.total > PAGE_SIZE && (
+          <Pagination
+            page={page}
+            total={data.total}
+            pageSize={PAGE_SIZE}
+            onPrev={() => setPage(page - 1)}
+            onNext={() => setPage(page + 1)}
+          />
+        )}
+      </section>
     </AppShell>
   )
 }

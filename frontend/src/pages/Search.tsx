@@ -55,11 +55,11 @@ function sanitizeHeadline(html: string): string {
 function Headline({ html }: { html: string }) {
   if (!html) return null
   const safe = sanitizeHeadline(html)
-    .replace(/<b>/g, '<mark style="background:rgba(255,71,19,0.12);color:#CC3300;border-radius:2px;padding:0 2px;font-weight:600">')
+    .replace(/<b>/g, '<mark style="background:var(--brand-tint);color:var(--brand-ink);border-radius:3px;padding:0 2px;font-weight:600">')
     .replace(/<\/b>/g, '</mark>')
   return (
     <p
-      style={{ margin: 0, fontSize: 12, color: '#737373', lineHeight: 1.6 }}
+      className="m-0 text-[12.5px] text-ink-2 leading-relaxed"
       // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitized — only <mark> tags remain
       dangerouslySetInnerHTML={{ __html: safe }}
     />
@@ -71,67 +71,33 @@ function Headline({ html }: { html: string }) {
 function ResultCard({ item, onClick }: { item: SearchResultItem; onClick: () => void }) {
   const { ticket, headline } = item
   return (
-    <button
-      onClick={onClick}
-      style={{
-        display: 'block', width: '100%', textAlign: 'left',
-        padding: '14px 18px',
-        background: '#fff',
-        border: '1px solid #E5E5E5',
-        borderRadius: 14,
-        cursor: 'pointer',
-        transition: 'border-color 0.15s, box-shadow 0.15s',
-      }}
-      onMouseOver={e => {
-        e.currentTarget.style.borderColor = '#FF4713'
-        e.currentTarget.style.boxShadow = '0 0 0 3px rgba(255,71,19,0.07)'
-      }}
-      onMouseOut={e => {
-        e.currentTarget.style.borderColor = '#E5E5E5'
-        e.currentTarget.style.boxShadow = 'none'
-      }}
-    >
-      {/* Top row */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-        <span style={{
-          fontFamily: 'JetBrains Mono, monospace',
-          fontSize: 10, letterSpacing: '0.06em',
-          color: '#A3A3A3', flexShrink: 0,
-        }}>
+    <button onClick={onClick} className="panel block w-full text-left px-5 py-4 cursor-pointer" style={{ font: 'inherit' }}>
+      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+        <span className="font-mono text-[10.5px] tracking-wide text-ink-3 flex-shrink-0">
           {ticket.display_id}
         </span>
         <StatusBadge status={ticket.status as never} />
         <PriorityBadge priority={ticket.priority as never} />
         {ticket.category_name && (
-          <span style={{
-            fontSize: 11, color: '#737373',
-            background: '#F5F5F5', borderRadius: 4,
-            padding: '1px 7px', border: '1px solid #E5E5E5',
-          }}>
+          <span className="text-[11px] text-ink-2 rounded-full px-2 py-px border border-edge bg-field">
             {ticket.category_name}
           </span>
         )}
-        <span style={{ flex: 1 }} />
-        <span style={{ fontSize: 11, color: '#A3A3A3', flexShrink: 0 }}>
+        <span className="flex-1" />
+        <span className="font-mono text-[10.5px] text-ink-3 flex-shrink-0">
           {timeAgo(ticket.updated_at)}
         </span>
       </div>
 
-      {/* Title */}
-      <p style={{
-        margin: '0 0 6px', fontSize: 14, fontWeight: 600,
-        color: '#0A0A0A', lineHeight: 1.4,
-      }}>
+      <p className="m-0 mb-1.5 text-[14px] font-semibold text-ink leading-snug">
         {ticket.title}
       </p>
 
-      {/* Headline snippet */}
       <Headline html={headline} />
 
-      {/* Bottom row */}
       {ticket.assignee_name && (
-        <p style={{ margin: '6px 0 0', fontSize: 11, color: '#A3A3A3' }}>
-          Assigned to <strong style={{ fontWeight: 600, color: '#737373' }}>{ticket.assignee_name}</strong>
+        <p className="m-0 mt-1.5 text-[11.5px] text-ink-3">
+          Assigned to <strong className="font-semibold text-ink-2">{ticket.assignee_name}</strong>
         </p>
       )}
     </button>
@@ -180,64 +146,31 @@ export default function Search() {
 
   return (
     <AppShell title="Search">
-      <div style={{ padding: '28px 28px 48px' }}>
       <div style={{ maxWidth: 780, margin: '0 auto' }}>
 
         {/* Search bar */}
-        <form onSubmit={handleSubmit} style={{ marginBottom: 24 }}>
-          <div style={{ position: 'relative', display: 'flex', gap: 8 }}>
-            <div style={{ position: 'relative', flex: 1 }}>
-              <span style={{
-                position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
-                color: '#A3A3A3', pointerEvents: 'none', display: 'flex',
-              }}>
-                <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+        <form onSubmit={handleSubmit} className="mb-6">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-3 pointer-events-none flex">
+                <svg width="15" height="15" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                   <circle cx="8" cy="8" r="5.5" /><path d="M12.5 12.5L16 16" />
                 </svg>
               </span>
               <input
                 ref={inputRef}
+                className="input"
+                style={{ paddingLeft: 38 }}
                 value={inputVal}
                 onChange={e => setInputVal(e.target.value)}
                 placeholder='Search tickets, replies, notes… (supports AND, OR, "phrases", -negation)'
-                style={{
-                  width: '100%',
-                  height: 42,
-                  paddingLeft: 36,
-                  paddingRight: 12,
-                  border: '1.5px solid #E5E5E5',
-                  borderRadius: 10,
-                  fontSize: 13,
-                  color: '#0A0A0A',
-                  background: '#fff',
-                  outline: 'none',
-                  boxSizing: 'border-box',
-                  transition: 'border-color 0.15s, box-shadow 0.15s',
-                }}
-                onFocus={e => {
-                  e.target.style.borderColor = '#FF4713'
-                  e.target.style.boxShadow = '0 0 0 3px rgba(255,71,19,0.09)'
-                }}
-                onBlur={e => {
-                  e.target.style.borderColor = '#E5E5E5'
-                  e.target.style.boxShadow = 'none'
-                }}
               />
             </div>
             <button
               type="submit"
+              className="btn"
               disabled={inputVal.trim().length < 2}
-              style={{
-                height: 42, paddingLeft: 20, paddingRight: 20,
-                borderRadius: 10, border: 'none',
-                background: inputVal.trim().length < 2
-                  ? 'rgba(255,71,19,0.35)'
-                  : 'linear-gradient(135deg, #FF4713 0%, #AD1164 100%)',
-                color: '#fff', fontWeight: 600, fontSize: 13,
-                cursor: inputVal.trim().length < 2 ? 'not-allowed' : 'pointer',
-                flexShrink: 0,
-                transition: 'background 0.15s',
-              }}
+              style={inputVal.trim().length < 2 ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
             >
               Search
             </button>
@@ -246,20 +179,17 @@ export default function Search() {
 
         {/* Status bar */}
         {hasQuery && (
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            marginBottom: 14,
-          }}>
-            <p style={{ margin: 0, fontSize: 13, color: '#737373' }}>
+          <div className="flex items-center justify-between mb-3.5">
+            <p className="m-0 text-[13px] text-ink-2">
               {isFetching ? (
                 <span>Searching…</span>
               ) : isError ? (
-                <span style={{ color: '#EF4444' }}>Search failed. Try again.</span>
+                <span className="text-danger-ink">Search failed — try again.</span>
               ) : (
                 <>
-                  <strong style={{ color: '#0A0A0A' }}>{data?.total ?? 0}</strong>{' '}
+                  <strong className="text-ink">{data?.total ?? 0}</strong>{' '}
                   result{(data?.total ?? 0) !== 1 ? 's' : ''} for{' '}
-                  <strong style={{ color: '#0A0A0A' }}>"{q}"</strong>
+                  <strong className="text-ink">"{q}"</strong>
                 </>
               )}
             </p>
@@ -268,7 +198,7 @@ export default function Search() {
 
         {/* Results */}
         {hasQuery && !isFetching && !isError && results.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="flex flex-col gap-2.5">
             {results.map(item => (
               <ResultCard
                 key={item.ticket.id}
@@ -281,34 +211,27 @@ export default function Search() {
 
         {/* Empty state */}
         {hasQuery && !isFetching && !isError && results.length === 0 && (
-          <div style={{
-            textAlign: 'center', padding: '60px 24px',
-            background: '#fff', border: '1px solid #E5E5E5', borderRadius: 14,
-          }}>
-            <p style={{ fontSize: 13, color: '#A3A3A3', margin: 0 }}>
-              No tickets found for <strong style={{ color: '#737373' }}>"{q}"</strong>
+          <div className="panel text-center px-6 py-14">
+            <p className="text-[13px] text-ink-2 m-0">
+              No tickets found for <strong className="text-ink">"{q}"</strong>
             </p>
-            <p style={{ fontSize: 12, color: '#C3C3C3', margin: '6px 0 0' }}>
-              Try different keywords or check your spelling
+            <p className="text-[12px] text-ink-3 mt-1.5 m-0">
+              Try different keywords or check your spelling.
             </p>
           </div>
         )}
 
         {/* Idle state */}
         {!hasQuery && (
-          <div style={{
-            textAlign: 'center', padding: '60px 24px',
-            background: '#fff', border: '1px solid #E5E5E5', borderRadius: 14,
-          }}>
-            <p style={{ fontSize: 13, color: '#A3A3A3', margin: 0 }}>
-              Enter at least 2 characters to search
+          <div className="panel text-center px-6 py-14">
+            <p className="text-[13px] text-ink-2 m-0">
+              Enter at least 2 characters to search.
             </p>
-            <p style={{ fontSize: 12, color: '#C3C3C3', margin: '6px 0 0' }}>
-              Searches ticket titles, descriptions, replies, and internal notes
+            <p className="text-[12px] text-ink-3 mt-1.5 m-0">
+              Searches ticket titles, descriptions, replies, and internal notes.
             </p>
           </div>
         )}
-      </div>
       </div>
     </AppShell>
   )
