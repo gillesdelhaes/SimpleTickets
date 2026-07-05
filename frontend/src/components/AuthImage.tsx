@@ -32,10 +32,10 @@ export default function AuthImage({ attachmentId, alt, style, onClick }: AuthIma
   if (!src) {
     return (
       <div style={{
-        width: 120, height: 80, borderRadius: 6,
-        background: '#F2F2F2', display: 'flex',
+        width: 120, height: 80, borderRadius: 10,
+        background: 'var(--track)', display: 'flex',
         alignItems: 'center', justifyContent: 'center',
-        fontSize: 11, color: '#A3A3A3',
+        fontSize: 11, color: 'var(--ink-3)',
         ...(style ?? {}),
       }}>
         Loading…
@@ -50,9 +50,9 @@ export default function AuthImage({ attachmentId, alt, style, onClick }: AuthIma
       onClick={onClick}
       style={{
         maxWidth: 320, maxHeight: 240,
-        borderRadius: 8, objectFit: 'contain',
+        borderRadius: 10, objectFit: 'contain',
         cursor: onClick ? 'zoom-in' : undefined,
-        border: '1px solid #E5E5E5',
+        border: '1px solid var(--edge)',
         display: 'block',
         ...(style ?? {}),
       }}

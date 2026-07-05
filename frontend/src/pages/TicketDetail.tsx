@@ -21,30 +21,21 @@ import {
   getAllStatuses,
   statusColor,
   statusLabel,
-  PRIORITY_COLORS,
   PRIORITY_LABELS,
   timeAgo,
   type TicketRead,
   type Priority,
 } from '../types/ticket'
 
-// ── Avatar ─────────────────────────────────────────────────────────────────────
-
-const AVATAR_GRADIENTS = [
-  ['#FF4713', '#AD1164'],
-  ['#3B82F6', '#6366F1'],
-  ['#10B981', '#059669'],
-  ['#F59E0B', '#EF4444'],
-  ['#8B5CF6', '#EC4899'],
-  ['#0EA5E9', '#06B6D4'],
-]
-
-function nameToGradient(name: string | null): string {
-  if (!name) return `linear-gradient(135deg, #E5E5E5, #D4D4D4)`
-  const idx = name.charCodeAt(0) % AVATAR_GRADIENTS.length
-  const [a, b] = AVATAR_GRADIENTS[idx]
-  return `linear-gradient(135deg, ${a}, ${b})`
+// Priority text wears the reserved semantic tokens (matches PriorityBadge)
+const PRIORITY_INK: Record<Priority, string> = {
+  critical: 'var(--danger-ink)',
+  high: 'var(--warn-ink)',
+  medium: 'var(--ink)',
+  low: 'var(--ink-2)',
 }
+
+// ── Avatar ─────────────────────────────────────────────────────────────────────
 
 function initials(name: string | null): string {
   if (!name) return '?'
@@ -61,20 +52,8 @@ interface AvatarProps {
 function Avatar({ name, size = 32 }: AvatarProps) {
   return (
     <div
-      style={{
-        width: size,
-        height: size,
-        borderRadius: '50%',
-        background: nameToGradient(name),
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexShrink: 0,
-        fontSize: size * 0.38,
-        fontWeight: 700,
-        color: '#fff',
-        letterSpacing: '0.01em',
-      }}
+      className="avatar"
+      style={{ width: size, height: size, fontSize: size * 0.36, borderRadius: size * 0.32 }}
     >
       {initials(name)}
     </div>
@@ -89,7 +68,7 @@ function AttachmentList({ attachments }: { attachments: AttachmentRead[] }) {
 
   return (
     <>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+      <div className="flex flex-wrap gap-2 mt-2.5">
         {attachments.map(att => (
           isImage(att.mime_type) ? (
             <AuthImage
@@ -112,24 +91,14 @@ function AttachmentList({ attachments }: { attachments: AttachmentRead[] }) {
                   URL.revokeObjectURL(url)
                 })
               }}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '5px 10px', borderRadius: 6,
-                border: '1px solid #E5E5E5', background: '#FAFAFA',
-                fontSize: 12, color: '#262626', cursor: 'pointer',
-                transition: 'background 0.12s',
-              }}
-              onMouseOver={e => (e.currentTarget.style.background = '#F2F2F2')}
-              onMouseOut={e => (e.currentTarget.style.background = '#FAFAFA')}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-[10px] border border-edge bg-field text-[12px] text-ink cursor-pointer hover:bg-row-hover"
             >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 2H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V6L9 2z"/>
-                <path d="M9 2v4h4"/>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-ink-2">
+                <path d="M9 2H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V6L9 2z" />
+                <path d="M9 2v4h4" />
               </svg>
-              <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {att.filename}
-              </span>
-              <span style={{ color: '#A3A3A3', flexShrink: 0 }}>{formatBytes(att.size_bytes)}</span>
+              <span className="max-w-[160px] truncate">{att.filename}</span>
+              <span className="font-mono text-[10.5px] text-ink-3 flex-shrink-0">{formatBytes(att.size_bytes)}</span>
             </button>
           )
         ))}
@@ -140,14 +109,15 @@ function AttachmentList({ attachments }: { attachments: AttachmentRead[] }) {
         <div
           onClick={() => setLightbox(null)}
           style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)',
+            position: 'fixed', inset: 0, background: 'var(--scrim)',
+            backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
             zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: 'zoom-out',
           }}
         >
           <AuthImage
             attachmentId={lightbox}
-            style={{ maxWidth: '90vw', maxHeight: '90vh', border: 'none', borderRadius: 8 }}
+            style={{ maxWidth: '90vw', maxHeight: '90vh', border: 'none', borderRadius: 12 }}
           />
         </div>
       )}
@@ -169,19 +139,23 @@ function ReplyBubble({ reply, isOwn, isTech, attachments }: ReplyBubbleProps) {
 
   if (isInternal) {
     return (
-      <div style={{ display: 'flex', gap: 10, animation: 'fadeUp 0.2s ease' }}>
+      <div className="flex gap-2.5 animate-fade-up">
         <Avatar name={reply.author_name} size={30} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#262626' }}>
-              {reply.author_name ?? 'Unknown'}
-            </span>
-            <span style={{ fontSize: 10, fontWeight: 700, color: '#92400E', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 4, padding: '1px 6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="text-[12px] font-semibold text-ink">{reply.author_name ?? 'Unknown'}</span>
+            <span
+              className="text-[10px] font-bold uppercase tracking-[0.06em] rounded-md px-1.5 py-px text-warn-ink"
+              style={{ background: 'var(--warn-bg)' }}
+            >
               Internal
             </span>
-            <span style={{ fontSize: 11, color: '#A3A3A3' }}>{timeAgo(reply.created_at)}</span>
+            <span className="font-mono text-[10.5px] text-ink-3">{timeAgo(reply.created_at)}</span>
           </div>
-          <div style={{ borderLeft: '3px solid #F59E0B', background: '#FFFBEB', borderRadius: '0 8px 8px 0', padding: '10px 14px', fontSize: 14, color: '#451A03', lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          <div
+            className="rounded-r-[12px] px-3.5 py-2.5 text-[13.5px] text-ink leading-relaxed whitespace-pre-wrap break-words"
+            style={{ borderLeft: '3px solid var(--warn-ink)', background: 'var(--warn-bg)' }}
+          >
             {reply.body}
             <AttachmentList attachments={attachments} />
           </div>
@@ -192,13 +166,20 @@ function ReplyBubble({ reply, isOwn, isTech, attachments }: ReplyBubbleProps) {
 
   if (isOwn) {
     return (
-      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', animation: 'fadeUp 0.2s ease' }}>
+      <div className="flex gap-2.5 justify-end animate-fade-up">
         <div style={{ maxWidth: '72%' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, justifyContent: 'flex-end' }}>
-            <span style={{ fontSize: 11, color: '#A3A3A3' }}>{timeAgo(reply.created_at)}</span>
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#262626' }}>You</span>
+          <div className="flex items-center gap-2 mb-1.5 justify-end">
+            <span className="font-mono text-[10.5px] text-ink-3">{timeAgo(reply.created_at)}</span>
+            <span className="text-[12px] font-semibold text-ink">You</span>
           </div>
-          <div style={{ background: 'linear-gradient(135deg, rgba(255,71,19,0.08), rgba(173,17,100,0.06))', border: '1px solid rgba(255,71,19,0.15)', borderRadius: '12px 4px 12px 12px', padding: '10px 14px', fontSize: 14, color: '#262626', lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          <div
+            className="px-3.5 py-2.5 text-[13.5px] text-ink leading-relaxed whitespace-pre-wrap break-words"
+            style={{
+              background: 'var(--brand-tint)',
+              border: '1px solid color-mix(in oklab, var(--b1) 25%, transparent)',
+              borderRadius: '14px 5px 14px 14px',
+            }}
+          >
             {reply.body}
             <AttachmentList attachments={attachments} />
           </div>
@@ -209,21 +190,22 @@ function ReplyBubble({ reply, isOwn, isTech, attachments }: ReplyBubbleProps) {
   }
 
   return (
-    <div style={{ display: 'flex', gap: 10, animation: 'fadeUp 0.2s ease' }}>
+    <div className="flex gap-2.5 animate-fade-up">
       <Avatar name={reply.author_name} size={30} />
       <div style={{ maxWidth: '72%' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#262626' }}>
-            {reply.author_name ?? 'Support'}
-          </span>
+        <div className="flex items-center gap-2 mb-1.5">
+          <span className="text-[12px] font-semibold text-ink">{reply.author_name ?? 'Support'}</span>
           {isTech && (
-            <span style={{ fontSize: 10, fontWeight: 600, color: '#737373', background: '#F2F2F2', borderRadius: 4, padding: '1px 5px' }}>
+            <span className="text-[10px] font-semibold text-ink-3 rounded-md px-1.5 py-px bg-field border border-edge">
               Team
             </span>
           )}
-          <span style={{ fontSize: 11, color: '#A3A3A3' }}>{timeAgo(reply.created_at)}</span>
+          <span className="font-mono text-[10.5px] text-ink-3">{timeAgo(reply.created_at)}</span>
         </div>
-        <div style={{ background: '#fff', border: '1px solid #E5E5E5', borderRadius: '4px 12px 12px 12px', padding: '10px 14px', fontSize: 14, color: '#262626', lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+        <div
+          className="px-3.5 py-2.5 text-[13.5px] text-ink leading-relaxed whitespace-pre-wrap break-words bg-field border border-edge"
+          style={{ borderRadius: '5px 14px 14px 14px', boxShadow: 'inset 0 1px 0 var(--specular)' }}
+        >
           {reply.body}
           <AttachmentList attachments={attachments} />
         </div>
@@ -307,101 +289,61 @@ function Composer({ ticketId, isTech, disabled }: ComposerProps) {
 
   return (
     <form onSubmit={handleSubmit}>
-      {/* Tab toggle for technicians */}
+      {/* Mode toggle for technicians */}
       {isTech && (
-        <div
-          style={{
-            display: 'flex',
-            gap: 0,
-            marginBottom: 10,
-            background: '#F2F2F2',
-            borderRadius: 8,
-            padding: 3,
-            width: 'fit-content',
-          }}
-        >
-          {(['reply', 'internal'] as const).map(m => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setMode(m)}
-              style={{
-                padding: '5px 14px',
-                borderRadius: 6,
-                border: 'none',
-                fontSize: 12,
-                fontWeight: mode === m ? 600 : 500,
-                color: mode === m ? (m === 'internal' ? '#92400E' : '#0A0A0A') : '#737373',
-                background: mode === m ? '#fff' : 'transparent',
-                cursor: 'pointer',
-                transition: 'all 0.12s',
-                boxShadow: mode === m ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-              }}
-            >
-              {m === 'reply' ? 'Reply to user' : '🔒 Internal note'}
-            </button>
-          ))}
+        <div className="flex gap-1.5 mb-2.5">
+          <button
+            type="button"
+            onClick={() => setMode('reply')}
+            className={`chip${mode === 'reply' ? ' on' : ''}`}
+          >
+            Reply to user
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('internal')}
+            className={`chip${mode === 'internal' ? ' on' : ''}`}
+            style={mode === 'internal' ? { borderColor: 'var(--warn-ink)', color: 'var(--warn-ink)' } : undefined}
+          >
+            Internal note
+          </button>
         </div>
       )}
 
-      <div style={{ position: 'relative' }}>
-        <textarea
-          ref={textareaRef}
-          value={body}
-          onChange={e => setBody(e.target.value)}
-          placeholder={
-            isInternal
-              ? 'Add an internal note — only visible to your team…'
-              : 'Write a reply to the user…'
-          }
-          rows={4}
-          disabled={disabled}
-          style={{
-            width: '100%',
-            padding: '12px 14px',
-            borderRadius: 8,
-            border: isInternal ? '1.5px solid #F59E0B' : '1.5px solid #E5E5E5',
-            borderLeft: isInternal ? '4px solid #F59E0B' : '1.5px solid #E5E5E5',
-            background: isInternal ? '#FFFDF5' : '#fff',
-            fontSize: 14,
-            color: '#262626',
-            lineHeight: 1.6,
-            resize: 'vertical',
-            minHeight: 100,
-            fontFamily: 'Inter, system-ui, sans-serif',
-            outline: 'none',
-            transition: 'border-color 0.15s',
-            boxSizing: 'border-box',
-          }}
-          onFocus={e => {
-            if (!isInternal) e.currentTarget.style.borderColor = '#FF4713'
-          }}
-          onBlur={e => {
-            if (!isInternal) e.currentTarget.style.borderColor = '#E5E5E5'
-          }}
-        />
-      </div>
+      <textarea
+        ref={textareaRef}
+        className="input"
+        value={body}
+        onChange={e => setBody(e.target.value)}
+        placeholder={
+          isInternal
+            ? 'Add an internal note — only visible to your team…'
+            : 'Write a reply to the user…'
+        }
+        rows={4}
+        disabled={disabled}
+        style={{
+          resize: 'vertical',
+          minHeight: 100,
+          lineHeight: 1.6,
+          ...(isInternal ? { borderLeft: '3px solid var(--warn-ink)' } : {}),
+        }}
+      />
 
       {/* File previews */}
       {pendingFiles.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+        <div className="flex flex-wrap gap-1.5 mt-2">
           {pendingFiles.map((file, idx) => (
-            <div key={idx} style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              padding: '4px 8px 4px 10px', borderRadius: 6,
-              background: '#F2F2F2', border: '1px solid #E5E5E5',
-              fontSize: 12, color: '#262626', maxWidth: 220,
-            }}>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                {file.name}
-              </span>
+            <div key={idx} className="inline-flex items-center gap-1.5 pl-2.5 pr-2 py-1 rounded-[10px] bg-field border border-edge text-[12px] text-ink max-w-[220px]">
+              <span className="truncate flex-1">{file.name}</span>
               <button
                 type="button"
                 onClick={() => removeFile(idx)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#A3A3A3', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+                aria-label={`Remove ${file.name}`}
+                className="bg-transparent border-0 cursor-pointer p-0 text-ink-3 hover:text-ink flex items-center flex-shrink-0"
               >
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-                  <path d="M2 2l8 8M10 2l-8 8"/>
+                  <path d="M2 2l8 8M10 2l-8 8" />
                 </svg>
               </button>
             </div>
@@ -409,8 +351,7 @@ function Composer({ ticketId, isTech, disabled }: ComposerProps) {
         </div>
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
-        {/* File attach button */}
+      <div className="flex justify-between items-center mt-2.5">
         <div>
           <input
             ref={fileInputRef}
@@ -424,19 +365,12 @@ function Composer({ ticketId, isTech, disabled }: ComposerProps) {
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={disabled}
-            title="Attach files"
-            style={{
-              background: 'none', border: '1px solid #E5E5E5', borderRadius: 7,
-              cursor: disabled ? 'not-allowed' : 'pointer', padding: '5px 8px',
-              color: '#737373', display: 'flex', alignItems: 'center', gap: 5,
-              fontSize: 12, transition: 'background 0.12s, color 0.12s',
-            }}
-            onMouseOver={e => { if (!disabled) { e.currentTarget.style.background = '#F2F2F2'; e.currentTarget.style.color = '#262626' } }}
-            onMouseOut={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#737373' }}
+            className="btn ghost sm"
+            style={disabled ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
           >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M13.5 8.5v3a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-3"/>
-              <path d="M8 1v8M5.5 3.5L8 1l2.5 2.5"/>
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M13.5 8.5v3a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-3" />
+              <path d="M8 1v8M5.5 3.5L8 1l2.5 2.5" />
             </svg>
             Attach
           </button>
@@ -444,29 +378,21 @@ function Composer({ ticketId, isTech, disabled }: ComposerProps) {
 
         <button
           type="submit"
+          className="btn"
           disabled={!canSubmit}
-          style={{
-            padding: '9px 22px', borderRadius: 8, border: 'none',
-            background: canSubmit
-              ? isInternal ? 'linear-gradient(135deg, #F59E0B, #D97706)' : 'linear-gradient(135deg, #FF4713, #AD1164)'
-              : '#E5E5E5',
-            color: canSubmit ? '#fff' : '#A3A3A3',
-            fontSize: 13, fontWeight: 600,
-            cursor: canSubmit ? 'pointer' : 'not-allowed',
-            transition: 'opacity 0.15s',
-            display: 'flex', alignItems: 'center', gap: 7,
-          }}
-          onMouseEnter={e => { if (canSubmit) e.currentTarget.style.opacity = '0.9' }}
-          onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
+          style={!canSubmit ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
         >
           {isBusy && (
-            <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.35)', borderTopColor: '#fff', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+            <span
+              className="animate-spin inline-block rounded-full"
+              style={{ width: 12, height: 12, border: '2px solid rgba(255,255,255,0.35)', borderTopColor: '#fff' }}
+            />
           )}
-          {isInternal ? 'Add Note' : 'Send Reply'}
+          {isInternal ? 'Add note' : 'Send reply'}
         </button>
       </div>
       {attachError && (
-        <p style={{ margin: '8px 0 0', fontSize: 12, color: '#DC2626' }}>{attachError}</p>
+        <p className="mt-2 mb-0 text-[12px] text-danger-ink">{attachError}</p>
       )}
     </form>
   )
@@ -481,16 +407,8 @@ interface MetaRowProps {
 
 function MetaRow({ label, children }: MetaRowProps) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-      <span
-        style={{
-          fontSize: 10,
-          fontWeight: 700,
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
-          color: '#A3A3A3',
-        }}
-      >
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-ink-3">
         {label}
       </span>
       {children}
@@ -503,14 +421,8 @@ function MetaRow({ label, children }: MetaRowProps) {
 function SavedFlash({ show }: { show: boolean }) {
   return (
     <span
-      style={{
-        fontSize: 11,
-        color: '#10B981',
-        fontWeight: 600,
-        opacity: show ? 1 : 0,
-        transition: 'opacity 0.3s ease',
-        marginLeft: 6,
-      }}
+      className="text-[11px] font-semibold text-brand-ink ml-1.5 transition-opacity duration-300"
+      style={{ opacity: show ? 1 : 0 }}
     >
       ✓ Saved
     </span>
@@ -556,22 +468,14 @@ function DuplicatePickerRow({ ticket }: { ticket: TicketRead }) {
     const displayId = `TKT-${String(ticket.duplicate_of_id).padStart(4, '0')}`
     return (
       <MetaRow label="Duplicate of">
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+        <div className="flex items-start justify-between gap-2">
           <button
             onClick={() => navigate(`/tickets/${ticket.duplicate_of_id}`)}
-            style={{
-              background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-              textAlign: 'left', flex: 1,
-            }}
+            className="bg-transparent border-0 p-0 cursor-pointer text-left flex-1"
           >
-            <span style={{
-              fontFamily: 'JetBrains Mono, monospace', fontSize: 11,
-              fontWeight: 700, color: '#F59E0B',
-            }}>
-              {displayId}
-            </span>
+            <span className="font-mono text-[11px] font-bold text-warn-ink">{displayId}</span>
             {ticket.duplicate_of_title && (
-              <span style={{ display: 'block', fontSize: 12, color: '#737373', marginTop: 2, lineHeight: 1.4 }}>
+              <span className="block text-[12px] text-ink-2 mt-0.5 leading-snug">
                 {ticket.duplicate_of_title}
               </span>
             )}
@@ -579,14 +483,8 @@ function DuplicatePickerRow({ ticket }: { ticket: TicketRead }) {
           <button
             onClick={() => unmarkDuplicate.mutate()}
             disabled={unmarkDuplicate.isPending}
-            title="Unlink duplicate"
-            style={{
-              background: 'none', border: '1px solid #E5E5E5', borderRadius: 5,
-              padding: '2px 7px', fontSize: 11, color: '#A3A3A3',
-              cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-            }}
-            onMouseEnter={e => { e.currentTarget.style.color = '#EF4444'; e.currentTarget.style.borderColor = '#EF4444' }}
-            onMouseLeave={e => { e.currentTarget.style.color = '#A3A3A3'; e.currentTarget.style.borderColor = '#E5E5E5' }}
+            className="btn ghost sm danger"
+            style={{ padding: '3px 9px', fontSize: 11 }}
           >
             Unlink
           </button>
@@ -597,55 +495,36 @@ function DuplicatePickerRow({ ticket }: { ticket: TicketRead }) {
 
   return (
     <MetaRow label="Duplicate of">
-      <div style={{ position: 'relative' }}>
+      <div className="relative">
         <input
           type="text"
+          className="input"
+          style={{ padding: '7px 11px', fontSize: 12.5 }}
           value={query}
           onChange={handleQueryChange}
           onFocus={() => results.length > 0 && setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           placeholder="Search by ID or title…"
-          style={{
-            width: '100%', padding: '6px 10px', borderRadius: 6,
-            border: '1px solid #E5E5E5', fontSize: 12, color: '#262626',
-            background: '#fff', outline: 'none', boxSizing: 'border-box',
-            fontFamily: 'Inter, system-ui, sans-serif',
-          }}
         />
         {markDuplicate.isPending && (
-          <span style={{
-            position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
-            width: 10, height: 10, borderRadius: '50%',
-            border: '2px solid #E5E5E5', borderTopColor: '#FF4713',
-            display: 'inline-block', animation: 'spin 0.7s linear infinite',
-          }} />
+          <span
+            className="animate-spin absolute right-2.5 top-1/2 -translate-y-1/2 inline-block rounded-full"
+            style={{ width: 10, height: 10, border: '2px solid var(--track)', borderTopColor: 'var(--b1)' }}
+          />
         )}
         {open && (
-          <div style={{
-            position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20,
-            background: '#fff', border: '1px solid #E5E5E5', borderRadius: 8,
-            marginTop: 4, boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
-            overflow: 'hidden',
-          }}>
+          <div
+            className="overlay-surface absolute left-0 right-0 z-20 mt-1 overflow-hidden"
+            style={{ top: '100%', borderRadius: 14 }}
+          >
             {results.map(t => (
               <button
                 key={t.id}
                 onMouseDown={() => selectResult(t)}
-                style={{
-                  display: 'block', width: '100%', padding: '8px 12px',
-                  background: 'none', border: 'none', textAlign: 'left',
-                  cursor: 'pointer', borderBottom: '1px solid #F2F2F2',
-                }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#F9F9F9')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                className="block w-full px-3 py-2 bg-transparent border-0 text-left cursor-pointer hover:bg-row-hover border-b border-track"
               >
-                <span style={{
-                  fontFamily: 'JetBrains Mono, monospace', fontSize: 10,
-                  color: '#A3A3A3', marginRight: 6,
-                }}>
-                  {t.display_id}
-                </span>
-                <span style={{ fontSize: 12, color: '#262626' }}>{t.title}</span>
+                <span className="font-mono text-[10px] text-ink-3 mr-1.5">{t.display_id}</span>
+                <span className="text-[12px] text-ink">{t.title}</span>
               </button>
             ))}
           </div>
@@ -661,24 +540,6 @@ interface MetaSidebarProps {
   ticket: TicketRead
   isAdmin: boolean
   currentUserId: number
-}
-
-const selectStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '7px 10px',
-  borderRadius: 6,
-  border: '1px solid #E5E5E5',
-  fontSize: 13,
-  color: '#262626',
-  background: '#fff',
-  cursor: 'pointer',
-  outline: 'none',
-  fontFamily: 'Inter, system-ui, sans-serif',
-  appearance: 'none',
-  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M6 9l6 6 6-6' stroke='%23737373' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
-  backgroundRepeat: 'no-repeat',
-  backgroundPosition: 'right 8px center',
-  paddingRight: 28,
 }
 
 function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
@@ -703,60 +564,28 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
     patchMutation.mutate({ [field]: value })
   }
 
-  const channelColors: Record<string, string> = {
-    web: '#3B82F6',
-    slack: '#10B981',
-  }
-
   const channelLabels: Record<string, string> = {
     web: 'Web',
     slack: 'Slack',
   }
 
   return (
-    <div
-      style={{
-        background: '#FAFAFA',
-        border: '1px solid #E5E5E5',
-        borderRadius: 14,
-        overflow: 'hidden',
-        position: 'sticky',
-        top: 80,
-      }}
-    >
-      <div
-        style={{
-          padding: '12px 16px',
-          borderBottom: '1px solid #E5E5E5',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
-        <span style={{ fontSize: 12, fontWeight: 700, color: '#262626', letterSpacing: '0.01em' }}>
-          Details
-        </span>
+    <section className="panel" style={{ position: 'sticky', top: 14 }}>
+      <div className="panel-head" style={{ paddingBottom: 4 }}>
+        <h2>Details</h2>
         {patchMutation.isPending && (
           <span
-            style={{
-              width: 12,
-              height: 12,
-              borderRadius: '50%',
-              border: '2px solid #E5E5E5',
-              borderTopColor: '#FF4713',
-              display: 'inline-block',
-              animation: 'spin 0.7s linear infinite',
-            }}
+            className="animate-spin inline-block rounded-full ml-auto"
+            style={{ width: 12, height: 12, border: '2px solid var(--track)', borderTopColor: 'var(--b1)' }}
           />
         )}
       </div>
 
-      <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="px-5 pb-5 pt-3 flex flex-col gap-4">
         {/* Status */}
         <MetaRow label="Status">
-          <div style={{ position: 'relative' }}>
+          <div className="relative">
             <StatusDropdown ticket={ticket} patch={patch} isAdmin={isAdmin} />
-            {/* StatusDropdown is defined below — uses dynamic statuses */}
             <SavedFlash show={savedField === 'status'} />
             <CloseWithoutSurvey ticket={ticket} />
           </div>
@@ -764,40 +593,41 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
 
         {/* Priority */}
         <MetaRow label="Priority">
-          <div style={{ position: 'relative' }}>
-            <select
-              value={ticket.priority}
-              onChange={e => patch('priority', e.target.value)}
-              style={{
-                ...selectStyle,
-                fontWeight: 600,
-                color: PRIORITY_COLORS[ticket.priority as Priority],
-              }}
-            >
-              {(Object.entries(PRIORITY_LABELS) as [Priority, string][]).map(([v, l]) => (
-                <option key={v} value={v}>{l}</option>
-              ))}
-            </select>
+          <div className="relative">
+            <div className="selectwrap">
+              <select
+                className="select"
+                value={ticket.priority}
+                onChange={e => patch('priority', e.target.value)}
+                style={{ fontWeight: 600, color: PRIORITY_INK[ticket.priority as Priority] }}
+              >
+                {(Object.entries(PRIORITY_LABELS) as [Priority, string][]).map(([v, l]) => (
+                  <option key={v} value={v}>{l}</option>
+                ))}
+              </select>
+            </div>
             <SavedFlash show={savedField === 'priority'} />
           </div>
         </MetaRow>
 
         {/* Assignee */}
         <MetaRow label="Assignee">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div className="flex flex-col gap-1.5">
             {isAdmin && agents && agents.length > 0 ? (
-              <select
-                value={ticket.assignee_id ?? ''}
-                onChange={e => patch('assignee_id', e.target.value ? Number(e.target.value) : null)}
-                style={selectStyle}
-              >
-                <option value="">Unassigned</option>
-                {agents.map(a => (
-                  <option key={a.id} value={a.id}>{a.name}</option>
-                ))}
-              </select>
+              <div className="selectwrap">
+                <select
+                  className="select"
+                  value={ticket.assignee_id ?? ''}
+                  onChange={e => patch('assignee_id', e.target.value ? Number(e.target.value) : null)}
+                >
+                  <option value="">Unassigned</option>
+                  {agents.map(a => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
+                </select>
+              </div>
             ) : (
-              <span style={{ fontSize: 13, color: ticket.assignee_name ? '#262626' : '#A3A3A3', fontStyle: ticket.assignee_name ? 'normal' : 'italic' }}>
+              <span className={`text-[13px] ${ticket.assignee_name ? 'text-ink' : 'text-ink-3 italic'}`}>
                 {ticket.assignee_name ?? 'Unassigned'}
               </span>
             )}
@@ -805,22 +635,10 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
               <button
                 type="button"
                 onClick={() => patch('assignee_id', currentUserId)}
-                style={{
-                  padding: '5px 10px',
-                  borderRadius: 6,
-                  border: '1px solid #E5E5E5',
-                  background: '#fff',
-                  fontSize: 12,
-                  fontWeight: 500,
-                  color: '#FF4713',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  transition: 'background 0.12s',
-                }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#FFF5F0')}
-                onMouseLeave={e => (e.currentTarget.style.background = '#fff')}
+                className="btn ghost sm"
+                style={{ color: 'var(--brand-ink)', justifyContent: 'flex-start' }}
               >
-                → Assign to me
+                Assign to me
               </button>
             )}
             <SavedFlash show={savedField === 'assignee_id'} />
@@ -829,17 +647,19 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
 
         {/* Category */}
         <MetaRow label="Category">
-          <div style={{ position: 'relative' }}>
-            <select
-              value={ticket.category_id ?? ''}
-              onChange={e => patch('category_id', e.target.value ? Number(e.target.value) : null)}
-              style={selectStyle}
-            >
-              <option value="">No category</option>
-              {categories?.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
+          <div className="relative">
+            <div className="selectwrap">
+              <select
+                className="select"
+                value={ticket.category_id ?? ''}
+                onChange={e => patch('category_id', e.target.value ? Number(e.target.value) : null)}
+              >
+                <option value="">No category</option>
+                {categories?.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
             <SavedFlash show={savedField === 'category_id'} />
           </div>
         </MetaRow>
@@ -853,34 +673,14 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
           const label = awaitingFirstResponse ? '1st response' : 'SLA'
           return (
             <MetaRow label={label}>
-              <SLABadge slaResult={slaResult} variant="pill" />
+              <span><SLABadge slaResult={slaResult} variant="pill" /></span>
             </MetaRow>
           )
         })()}
 
         {/* Channel */}
         <MetaRow label="Channel">
-          <span
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-              fontSize: 12,
-              fontWeight: 600,
-              color: channelColors[ticket.channel] ?? '#737373',
-            }}
-          >
-            <span
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: '50%',
-                background: channelColors[ticket.channel] ?? '#737373',
-                flexShrink: 0,
-              }}
-            />
-            {channelLabels[ticket.channel] ?? ticket.channel}
-          </span>
+          <span className="pill avail">{channelLabels[ticket.channel] ?? ticket.channel}</span>
         </MetaRow>
 
         {/* Duplicate link */}
@@ -889,46 +689,32 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
         {/* Submitter */}
         {ticket.submitter_name && (
           <MetaRow label="Submitted by">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <div className="flex items-center gap-2">
               <Avatar name={ticket.submitter_name} size={22} />
-              <span style={{ fontSize: 13, color: '#262626' }}>{ticket.submitter_name}</span>
+              <span className="text-[13px] text-ink">{ticket.submitter_name}</span>
             </div>
           </MetaRow>
         )}
 
         {/* Timestamps */}
-        <div
-          style={{
-            borderTop: '1px solid #E5E5E5',
-            paddingTop: 12,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 6,
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 11, color: '#A3A3A3' }}>Created</span>
-            <span style={{ fontSize: 11, color: '#737373', fontFamily: 'JetBrains Mono, monospace' }}>
-              {timeAgo(ticket.created_at)}
-            </span>
+        <div className="border-t border-track pt-3 flex flex-col gap-1.5">
+          <div className="flex justify-between items-center">
+            <span className="text-[11px] text-ink-3">Created</span>
+            <span className="font-mono text-[11px] text-ink-2">{timeAgo(ticket.created_at)}</span>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 11, color: '#A3A3A3' }}>Updated</span>
-            <span style={{ fontSize: 11, color: '#737373', fontFamily: 'JetBrains Mono, monospace' }}>
-              {timeAgo(ticket.updated_at)}
-            </span>
+          <div className="flex justify-between items-center">
+            <span className="text-[11px] text-ink-3">Updated</span>
+            <span className="font-mono text-[11px] text-ink-2">{timeAgo(ticket.updated_at)}</span>
           </div>
           {ticket.resolved_at && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 11, color: '#A3A3A3' }}>Resolved</span>
-              <span style={{ fontSize: 11, color: '#10B981', fontFamily: 'JetBrains Mono, monospace' }}>
-                {timeAgo(ticket.resolved_at)}
-              </span>
+            <div className="flex justify-between items-center">
+              <span className="text-[11px] text-ink-3">Resolved</span>
+              <span className="font-mono text-[11px] text-brand-ink">{timeAgo(ticket.resolved_at)}</span>
             </div>
           )}
         </div>
       </div>
-    </div>
+    </section>
   )
 }
 
@@ -944,15 +730,15 @@ const FIELD_LABELS: Record<string, string> = {
 }
 
 function formatHistoryValue(field: string, value: string | null): React.ReactNode {
-  if (value == null) return <em style={{ color: '#A3A3A3' }}>none</em>
+  if (value == null) return <em className="text-ink-3">none</em>
   if (field === 'status') {
+    // Status colors are admin-configured data — inline stays, pill anatomy is Glasshouse
     const color = statusColor(value)
     return (
-      <span style={{
-        display: 'inline-block', padding: '1px 7px', borderRadius: 999,
-        fontSize: 11, fontWeight: 600,
-        background: `${color}18`, color, border: `1px solid ${color}40`,
-      }}>
+      <span
+        className="inline-block px-2 py-px rounded-full text-[11px] font-semibold"
+        style={{ background: `${color}24`, color }}
+      >
         {statusLabel(value)}
       </span>
     )
@@ -960,28 +746,21 @@ function formatHistoryValue(field: string, value: string | null): React.ReactNod
   if (field === 'csat_response') {
     const isPositive = value === 'positive'
     return (
-      <span style={{
-        display: 'inline-block', padding: '1px 8px', borderRadius: 999,
-        fontSize: 11, fontWeight: 600,
-        background: isPositive ? '#D1FAE5' : '#FEE2E2',
-        color: isPositive ? '#065F46' : '#991B1B',
-        border: `1px solid ${isPositive ? '#6EE7B7' : '#FCA5A5'}`,
-      }}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-          {isPositive ? <ThumbUp size={11} color="#065F46" /> : <ThumbDown size={11} color="#991B1B" />}
-          {isPositive ? 'Positive' : 'Negative'}
-        </span>
+      <span
+        className="inline-flex items-center gap-1 px-2 py-px rounded-full text-[11px] font-semibold"
+        style={isPositive
+          ? { background: 'var(--brand-tint)', color: 'var(--brand-ink)' }
+          : { background: 'var(--danger-bg)', color: 'var(--danger-ink)' }}
+      >
+        {isPositive ? <ThumbUp size={11} /> : <ThumbDown size={11} />}
+        {isPositive ? 'Positive' : 'Negative'}
       </span>
     )
   }
   if (field === 'duplicate_of') {
-    return (
-      <strong style={{ color: '#F59E0B', fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>
-        {value}
-      </strong>
-    )
+    return <strong className="font-mono text-[11px] text-warn-ink">{value}</strong>
   }
-  return <strong style={{ color: '#262626' }}>{value}</strong>
+  return <strong className="text-ink font-semibold">{value}</strong>
 }
 
 function StatusDropdown({ ticket, patch, isAdmin }: { ticket: TicketRead; patch: (field: string, value: string) => void; isAdmin: boolean }) {
@@ -994,19 +773,22 @@ function StatusDropdown({ ticket, patch, isAdmin }: { ticket: TicketRead; patch:
     isAdmin || !(s.is_resolved_state && !s.sends_csat) || s.name === ticket.status
   )
   return (
-    <select
-      value={ticket.status}
-      onChange={e => patch('status', e.target.value)}
-      style={{ ...selectStyle, fontWeight: 600, color: statusColor(ticket.status) }}
-    >
-      {options.map(s => (
-        <option key={s.name} value={s.name}>{s.label}</option>
-      ))}
-      {/* If ticket has a status not in the current list (e.g. archived), show it anyway */}
-      {!statuses.find(s => s.name === ticket.status) && (
-        <option value={ticket.status}>{statusLabel(ticket.status)}</option>
-      )}
-    </select>
+    <div className="selectwrap">
+      <select
+        className="select"
+        value={ticket.status}
+        onChange={e => patch('status', e.target.value)}
+        style={{ fontWeight: 600, color: statusColor(ticket.status) }}
+      >
+        {options.map(s => (
+          <option key={s.name} value={s.name}>{s.label}</option>
+        ))}
+        {/* If ticket has a status not in the current list (e.g. archived), show it anyway */}
+        {!statuses.find(s => s.name === ticket.status) && (
+          <option value={ticket.status}>{statusLabel(ticket.status)}</option>
+        )}
+      </select>
+    </div>
   )
 }
 
@@ -1036,10 +818,7 @@ function CloseWithoutSurvey({ ticket }: { ticket: TicketRead }) {
     return (
       <button
         onClick={() => setOpen(true)}
-        style={{
-          marginTop: 8, background: 'none', border: 'none', padding: 0,
-          fontSize: 12, color: '#737373', cursor: 'pointer', textDecoration: 'underline',
-        }}
+        className="mt-2 bg-transparent border-0 p-0 text-[12px] text-ink-3 hover:text-ink cursor-pointer underline"
       >
         Close without survey…
       </button>
@@ -1047,42 +826,33 @@ function CloseWithoutSurvey({ ticket }: { ticket: TicketRead }) {
   }
 
   return (
-    <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div className="mt-2 flex flex-col gap-1.5">
       <textarea
+        className="input"
         value={reason}
         onChange={e => setReason(e.target.value)}
         placeholder="Reason (required) — e.g. spam, duplicate, submitter unreachable"
         rows={2}
         autoFocus
-        style={{
-          width: '100%', boxSizing: 'border-box', resize: 'vertical',
-          padding: '8px 10px', fontSize: 13, border: '1px solid #E5E5E5',
-          borderRadius: 8, outline: 'none', fontFamily: 'inherit',
-        }}
+        style={{ resize: 'vertical', fontSize: 12.5 }}
       />
       {mutation.isError && (
-        <span style={{ fontSize: 11, color: '#DC2626' }}>
+        <span className="text-[11px] text-danger-ink">
           {(mutation.error as any)?.response?.data?.detail ?? 'Failed to close ticket'}
         </span>
       )}
-      <div style={{ display: 'flex', gap: 6 }}>
+      <div className="flex gap-1.5">
         <button
           disabled={!reason.trim() || mutation.isPending}
           onClick={() => mutation.mutate(reason.trim())}
-          style={{
-            padding: '6px 12px', borderRadius: 6, border: 'none',
-            background: reason.trim() ? '#737373' : '#D4D4D4', color: '#fff',
-            fontSize: 12, fontWeight: 600, cursor: reason.trim() ? 'pointer' : 'not-allowed',
-          }}
+          className="btn ghost sm danger"
+          style={!reason.trim() ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
         >
           {mutation.isPending ? 'Closing…' : 'Close ticket'}
         </button>
         <button
           onClick={() => { setOpen(false); setReason('') }}
-          style={{
-            padding: '6px 12px', borderRadius: 6, border: '1px solid #E5E5E5',
-            background: '#fff', fontSize: 12, color: '#737373', cursor: 'pointer',
-          }}
+          className="btn ghost sm"
         >
           Cancel
         </button>
@@ -1094,23 +864,20 @@ function CloseWithoutSurvey({ ticket }: { ticket: TicketRead }) {
 function HistoryEventRow({ event }: { event: HistoryEvent }) {
   const label = FIELD_LABELS[event.field] ?? event.field
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 8,
-      padding: '4px 0', justifyContent: 'center',
-    }}>
-      <div style={{ flex: 1, height: 1, background: '#F2F2F2' }} />
-      <div style={{ fontSize: 11, color: '#A3A3A3', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}>
-        <span style={{ fontWeight: 500, color: '#737373' }}>{event.actor_name ?? 'System'}</span>
+    <div className="flex items-center gap-2 py-1 justify-center">
+      <div className="flex-1 h-px bg-track" />
+      <div className="text-[11px] text-ink-3 whitespace-nowrap flex items-center gap-1.5">
+        <span className="font-medium text-ink-2">{event.actor_name ?? 'System'}</span>
         <span>changed {label}</span>
         {event.old_value != null && (
           <>{' '}from {formatHistoryValue(event.field, event.old_value)}</>
         )}
         <span>to</span>
         {formatHistoryValue(event.field, event.new_value)}
-        <span style={{ color: '#C0C0C0' }}>·</span>
-        <span>{timeAgo(event.created_at)}</span>
+        <span>·</span>
+        <span className="font-mono text-[10px]">{timeAgo(event.created_at)}</span>
       </div>
-      <div style={{ flex: 1, height: 1, background: '#F2F2F2' }} />
+      <div className="flex-1 h-px bg-track" />
     </div>
   )
 }
@@ -1161,39 +928,21 @@ function ThreadColumn({ ticket, isTech, currentUserId }: ThreadColumnProps) {
   const isClosed = statuses.find(s => s.name === ticket.status)?.is_resolved_state ?? false
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+    <div className="flex flex-col">
       {/* Description bubble — the "first message" */}
-      <div
-        style={{
-          background: '#fff',
-          border: '1px solid #E5E5E5',
-          borderRadius: 14,
-          padding: '20px 24px',
-          marginBottom: 8,
-          boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+      <div className="panel px-6 py-5 mb-2">
+        <div className="flex items-center gap-2.5 mb-3.5">
           <Avatar name={ticket.submitter_name} size={36} />
           <div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#262626' }}>
+            <div className="text-[13px] font-semibold text-ink">
               {ticket.submitter_name ?? 'Unknown'}
             </div>
-            <div style={{ fontSize: 11, color: '#A3A3A3' }}>
-              {timeAgo(ticket.created_at)} · Original request
+            <div className="font-mono text-[10.5px] text-ink-3">
+              {timeAgo(ticket.created_at)} · original request
             </div>
           </div>
         </div>
-        <p
-          style={{
-            fontSize: 14,
-            color: '#262626',
-            lineHeight: 1.7,
-            margin: 0,
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-          }}
-        >
+        <p className="m-0 text-[14px] text-ink leading-relaxed whitespace-pre-wrap break-words">
           {ticket.description}
         </p>
         <AttachmentList attachments={attachmentsByReply['__ticket__'] ?? []} />
@@ -1201,19 +950,19 @@ function ThreadColumn({ ticket, isTech, currentUserId }: ThreadColumnProps) {
 
       {/* Reply thread */}
       {isLoading ? (
-        <div style={{ padding: '24px 0', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="py-6 flex flex-col gap-3">
           {[1, 2].map(i => (
-            <div key={i} style={{ display: 'flex', gap: 10 }}>
-              <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#F2F2F2', flexShrink: 0 }} />
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div style={{ width: 80, height: 12, borderRadius: 4, background: '#F2F2F2', animation: 'shimmer 1.5s ease-in-out infinite' }} />
-                <div style={{ width: '60%', height: 60, borderRadius: 8, background: '#F2F2F2', animation: 'shimmer 1.5s ease-in-out infinite' }} />
+            <div key={i} className="flex gap-2.5">
+              <div className="w-[30px] h-[30px] rounded-full bg-track flex-shrink-0" />
+              <div className="flex-1 flex flex-col gap-1.5">
+                <div style={{ width: 80, height: 12, borderRadius: 6, background: 'var(--track)', animation: 'shimmer 1.5s ease-in-out infinite' }} />
+                <div style={{ width: '60%', height: 60, borderRadius: 12, background: 'var(--track)', animation: 'shimmer 1.5s ease-in-out infinite' }} />
               </div>
             </div>
           ))}
         </div>
       ) : timeline.length > 0 ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '12px 0' }}>
+        <div className="flex flex-col gap-3 py-3">
           {timeline.map(item =>
             item.kind === 'reply' ? (
               <ReplyBubble
@@ -1230,24 +979,14 @@ function ThreadColumn({ ticket, isTech, currentUserId }: ThreadColumnProps) {
           <div ref={bottomRef} />
         </div>
       ) : (
-        <div style={{ padding: '28px 0 16px', textAlign: 'center' }}>
-          <p style={{ fontSize: 13, color: '#A3A3A3' }}>No replies yet.</p>
-        </div>
+        <p className="text-center text-[13px] text-ink-3 pt-7 pb-4 m-0">No replies yet.</p>
       )}
 
       {/* Composer */}
-      <div
-        style={{
-          background: '#fff',
-          border: '1px solid #E5E5E5',
-          borderRadius: 14,
-          padding: '16px 20px',
-          marginTop: 8,
-        }}
-      >
+      <div className="panel px-5 py-4 mt-2">
         {isClosed ? (
-          <p style={{ fontSize: 13, color: '#A3A3A3', margin: 0, textAlign: 'center' }}>
-            This ticket is {ticket.status}. Reopen it to reply.
+          <p className="text-[13px] text-ink-3 m-0 text-center">
+            This ticket is {statusLabel(ticket.status).toLowerCase()}. Reopen it to reply.
           </p>
         ) : (
           <Composer ticketId={ticket.id} isTech={isTech} />
@@ -1265,35 +1004,12 @@ interface BreadcrumbProps {
 
 function Breadcrumb({ ticket }: BreadcrumbProps) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 6,
-        marginBottom: 20,
-        fontSize: 13,
-        color: '#A3A3A3',
-      }}
-    >
-      <Link
-        to="/queue"
-        style={{ color: '#737373', textDecoration: 'none', fontWeight: 500 }}
-        onMouseEnter={e => (e.currentTarget.style.color = '#FF4713')}
-        onMouseLeave={e => (e.currentTarget.style.color = '#737373')}
-      >
+    <div className="flex items-center gap-1.5 mb-4 text-[13px] text-ink-3">
+      <Link to="/queue" className="text-ink-2 no-underline font-medium hover:text-brand-ink">
         Queue
       </Link>
-      <span style={{ color: '#D4D4D4' }}>/</span>
-      <span
-        style={{
-          fontFamily: 'JetBrains Mono, monospace',
-          fontSize: 12,
-          color: '#737373',
-          letterSpacing: '0.03em',
-        }}
-      >
-        {ticket.display_id}
-      </span>
+      <span>/</span>
+      <span className="font-mono text-[12px] text-ink-2 tracking-wide">{ticket.display_id}</span>
     </div>
   )
 }
@@ -1320,12 +1036,10 @@ export default function TicketDetail() {
   if (isLoading) {
     return (
       <AppShell title="Loading…">
-        <div style={{ padding: '28px 28px 48px' }}>
-          <div style={{ height: 24, width: 200, borderRadius: 6, background: '#F2F2F2', animation: 'shimmer 1.5s ease-in-out infinite', marginBottom: 20 }} />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 24 }}>
-            <div style={{ height: 400, borderRadius: 14, background: '#F2F2F2', animation: 'shimmer 1.5s ease-in-out infinite' }} />
-            <div style={{ height: 400, borderRadius: 14, background: '#F2F2F2', animation: 'shimmer 1.5s ease-in-out infinite' }} />
-          </div>
+        <div style={{ height: 24, width: 200, borderRadius: 8, background: 'var(--track)', animation: 'shimmer 1.5s ease-in-out infinite', marginBottom: 20 }} />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 24 }}>
+          <div style={{ height: 400, borderRadius: 22, background: 'var(--track)', animation: 'shimmer 1.5s ease-in-out infinite' }} />
+          <div style={{ height: 400, borderRadius: 22, background: 'var(--track)', animation: 'shimmer 1.5s ease-in-out infinite' }} />
         </div>
       </AppShell>
     )
@@ -1333,11 +1047,13 @@ export default function TicketDetail() {
 
   if (error || !ticket) {
     return (
-      <AppShell title="Not Found">
-        <div style={{ padding: '28px 28px 48px', textAlign: 'center' }}>
-          <p style={{ color: '#737373' }}>Ticket not found or you don&apos;t have permission to view it.</p>
-          <button onClick={() => navigate('/queue')} style={{ marginTop: 16, color: '#FF4713', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14 }}>
-            ← Back to queue
+      <AppShell title="Not found">
+        <div className="panel text-center px-6 py-14" style={{ maxWidth: 480, margin: '40px auto' }}>
+          <p className="text-[13.5px] text-ink-2 m-0">
+            Ticket not found or you don&apos;t have permission to view it.
+          </p>
+          <button onClick={() => navigate('/queue')} className="btn ghost sm mt-4">
+            Back to queue
           </button>
         </div>
       </AppShell>
@@ -1345,114 +1061,74 @@ export default function TicketDetail() {
   }
 
   return (
-      <AppShell title={ticket.display_id}>
-        <div style={{ padding: '28px 28px 48px', maxWidth: 1200 }}>
-          <Breadcrumb ticket={ticket} />
+    <AppShell title={ticket.display_id}>
+      <div style={{ maxWidth: 1200 }}>
+        <Breadcrumb ticket={ticket} />
 
-          {/* Title */}
-          <h1
-            style={{
-              fontSize: 20,
-              fontWeight: 700,
-              color: '#0A0A0A',
-              letterSpacing: '-0.02em',
-              marginBottom: 20,
-              lineHeight: 1.3,
-            }}
+        {/* Title */}
+        <h1 className="text-[20px] font-bold text-ink tracking-[-0.01em] leading-tight mt-0 mb-5">
+          {ticket.title}
+        </h1>
+
+        {/* Slack sync notice — shown for any ticket with an active Slack thread */}
+        {ticket.slack_channel_id && ticket.slack_message_ts && (
+          <div
+            className="flex items-center gap-2 px-3.5 py-2 mb-5 rounded-block text-[12px] text-ink-2 bg-field border border-edge"
+            style={{ boxShadow: 'inset 0 1px 0 var(--specular)' }}
           >
-            {ticket.title}
-          </h1>
-
-          {/* Slack sync notice — shown for any ticket with an active Slack thread */}
-          {ticket.slack_channel_id && ticket.slack_message_ts && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '8px 14px',
-                marginBottom: 20,
-                background: '#F0FFF4',
-                border: '1px solid #BBF7D0',
-                borderLeft: '3px solid #10B981',
-                borderRadius: '0 8px 8px 0',
-                fontSize: 12,
-                color: '#065F46',
-              }}
-            >
-              {/* Slack icon */}
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-                <path d="M14.5 10c-.83 0-1.5-.67-1.5-1.5v-5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5z" fill="#10B981"/>
-                <path d="M20.5 10H19V8.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" fill="#10B981"/>
-                <path d="M9.5 14c.83 0 1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5S8 21.33 8 20.5v-5c0-.83.67-1.5 1.5-1.5z" fill="#10B981"/>
-                <path d="M3.5 14H5v1.5c0 .83-.67 1.5-1.5 1.5S2 16.33 2 15.5 2.67 14 3.5 14z" fill="#10B981"/>
-                <path d="M14 14.5c0-.83.67-1.5 1.5-1.5h5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5h-5c-.83 0-1.5-.67-1.5-1.5z" fill="#10B981"/>
-                <path d="M15.5 19H14v1.5c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5-.67-1.5-1.5-1.5z" fill="#10B981"/>
-                <path d="M10 9.5C10 8.67 9.33 8 8.5 8h-5C2.67 8 2 8.67 2 9.5S2.67 11 3.5 11h5c.83 0 1.5-.67 1.5-1.5z" fill="#10B981"/>
-                <path d="M8.5 5H10V3.5C10 2.67 9.33 2 8.5 2S7 2.67 7 3.5 7.67 5 8.5 5z" fill="#10B981"/>
-              </svg>
-              <span>
-                {ticket.channel === 'slack'
-                  ? 'This ticket was created from Slack. Replies sync automatically.'
-                  : <>
-                      Replies are synced to Slack
-                      {ticket.submitter_name && (
-                        <> via DM to <strong>{ticket.submitter_name}</strong></>
-                      )}
-                      .
-                    </>
-                }
-              </span>
-            </div>
-          )}
-
-          {/* Duplicate banner */}
-          {ticket.duplicate_of_id && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '8px 14px',
-                marginBottom: 20,
-                background: '#FFFBEB',
-                border: '1px solid #FDE68A',
-                borderLeft: '3px solid #F59E0B',
-                borderRadius: '0 8px 8px 0',
-                fontSize: 12,
-                color: '#78350F',
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-              </svg>
-              <span>
-                This ticket is a duplicate of{' '}
-                <Link
-                  to={`/tickets/${ticket.duplicate_of_id}`}
-                  style={{ color: '#B45309', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
-                >
-                  TKT-{String(ticket.duplicate_of_id).padStart(4, '0')}
-                </Link>
-                {ticket.duplicate_of_title && (
-                  <> — {ticket.duplicate_of_title}</>
-                )}
-              </span>
-            </div>
-          )}
-
-          {/* Two-column layout */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 24, alignItems: 'start' }}>
-            <ThreadColumn ticket={ticket} isTech={isTech} currentUserId={user?.id} />
-            <MetaSidebar
-              ticket={ticket}
-              isAdmin={isAdmin}
-              currentUserId={user?.id ?? 0}
-            />
+            <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-brand-ink flex-shrink-0">
+              <path d="M15.5 11.5a1.5 1.5 0 0 1-1.5 1.5H5l-3 3V4a1.5 1.5 0 0 1 1.5-1.5h10.5A1.5 1.5 0 0 1 15.5 4z" />
+            </svg>
+            <span>
+              {ticket.channel === 'slack'
+                ? 'This ticket was created from Slack. Replies sync automatically.'
+                : <>
+                    Replies are synced to Slack
+                    {ticket.submitter_name && (
+                      <> via DM to <strong className="text-ink">{ticket.submitter_name}</strong></>
+                    )}
+                    .
+                  </>
+              }
+            </span>
           </div>
-        </div>
+        )}
 
-      </AppShell>
+        {/* Duplicate banner */}
+        {ticket.duplicate_of_id && (
+          <div
+            className="flex items-center gap-2 px-3.5 py-2 mb-5 rounded-block text-[12px] text-warn-ink"
+            style={{ background: 'var(--warn-bg)' }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+            </svg>
+            <span>
+              This ticket is a duplicate of{' '}
+              <Link
+                to={`/tickets/${ticket.duplicate_of_id}`}
+                className="font-mono text-[11px] font-bold text-warn-ink"
+              >
+                TKT-{String(ticket.duplicate_of_id).padStart(4, '0')}
+              </Link>
+              {ticket.duplicate_of_title && (
+                <> — {ticket.duplicate_of_title}</>
+              )}
+            </span>
+          </div>
+        )}
+
+        {/* Two-column layout */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 14, alignItems: 'start' }}>
+          <ThreadColumn ticket={ticket} isTech={isTech} currentUserId={user?.id} />
+          <MetaSidebar
+            ticket={ticket}
+            isAdmin={isAdmin}
+            currentUserId={user?.id ?? 0}
+          />
+        </div>
+      </div>
+    </AppShell>
   )
 }
