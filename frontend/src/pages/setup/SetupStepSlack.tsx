@@ -32,6 +32,15 @@ const MANIFEST = JSON.stringify({
   },
 }, null, 2)
 
+function StepCard({ n, children }: { n: number; children: React.ReactNode }) {
+  return (
+    <div className="so-block" style={{ marginBottom: 0 }}>
+      <div className="bl">Step {n}</div>
+      {children}
+    </div>
+  )
+}
+
 export default function SetupStepSlack({ onNext }: Props) {
   const [botToken, setBotToken] = useState('')
   const [appToken, setAppToken] = useState('')
@@ -86,213 +95,140 @@ export default function SetupStepSlack({ onNext }: Props) {
   }
 
   return (
-    <div style={{ maxWidth: 540, width: '100%' }}>
-      <div style={{ marginBottom: 28 }}>
-        <h2 style={{ fontSize: 28, fontWeight: 700, color: '#fff', letterSpacing: '-0.025em', marginBottom: 8 }}>
-          Connect Slack
-        </h2>
-        <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6 }}>
-          Create your Slack app in 3 steps using the manifest below — no manual configuration needed.
-        </p>
-      </div>
+    <div className="login-card w-full" style={{ maxWidth: 560 }}>
+      <h1>Connect Slack</h1>
+      <p className="sub">Create your Slack app in 3 steps using the manifest below — no manual configuration needed.</p>
 
       {/* 3-step manifest guide */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 28 }}>
-
-        {/* Step 1 */}
-        <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '14px 16px' }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#FF4713', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>Step 1</div>
-          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', margin: '0 0 10px' }}>
-            Copy the manifest and open the Slack App Console.
-          </p>
-          <div style={{ display: 'flex', gap: 8 }}>
+      <div className="flex flex-col gap-3 mb-6">
+        <StepCard n={1}>
+          <p className="text-[13px] text-ink-2 m-0 mb-2.5">Copy the manifest and open the Slack App Console.</p>
+          <div className="flex gap-2">
             <button
+              type="button"
               onClick={copyManifest}
-              style={{
-                height: 34, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.15)',
-                background: copied ? 'rgba(74,222,128,0.1)' : 'rgba(255,255,255,0.06)',
-                color: copied ? '#4ADE80' : 'rgba(255,255,255,0.7)',
-                fontSize: 12, fontWeight: 600, cursor: 'pointer',
-              }}
+              className="btn ghost sm"
+              style={copied ? { color: 'var(--brand-ink)' } : undefined}
             >
               {copied ? '✓ Copied' : 'Copy manifest'}
             </button>
-            <a
-              href="https://api.slack.com/apps?new_app=1"
-              target="_blank"
-              rel="noreferrer"
-              style={{
-                height: 34, padding: '0 14px', borderRadius: 8,
-                background: 'linear-gradient(135deg, #FF4713 0%, #AD1164 100%)',
-                color: '#fff', fontSize: 12, fontWeight: 600,
-                display: 'inline-flex', alignItems: 'center', textDecoration: 'none',
-              }}
-            >
-              Open Slack App Console →
+            <a href="https://api.slack.com/apps?new_app=1" target="_blank" rel="noreferrer" className="btn sm" style={{ textDecoration: 'none' }}>
+              Open Slack App Console
             </a>
           </div>
-        </div>
+        </StepCard>
 
-        {/* Step 2 */}
-        <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '14px 16px' }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#FF4713', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>Step 2</div>
-          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', margin: '0 0 10px', lineHeight: 1.6 }}>
-            Click <strong style={{ color: '#fff' }}>Create New App</strong> → <strong style={{ color: '#fff' }}>From a manifest</strong> → select your workspace → paste the manifest → <strong style={{ color: '#fff' }}>Next</strong> → <strong style={{ color: '#fff' }}>Create</strong>. Then in the left sidebar go to <strong style={{ color: '#fff' }}>Settings → Install App</strong> → <strong style={{ color: '#fff' }}>Install to Workspace</strong> → Allow.
+        <StepCard n={2}>
+          <p className="text-[13px] text-ink-2 m-0 mb-2 leading-relaxed">
+            Click <strong className="text-ink">Create New App</strong> → <strong className="text-ink">From a manifest</strong> → select your workspace → paste the manifest → <strong className="text-ink">Next</strong> → <strong className="text-ink">Create</strong>. Then in the left sidebar go to <strong className="text-ink">Settings → Install App</strong> → <strong className="text-ink">Install to Workspace</strong> → Allow.
           </p>
-          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', margin: 0, lineHeight: 1.6 }}>
-            Then go to <strong style={{ color: '#fff' }}>Basic Information</strong> → <strong style={{ color: '#fff' }}>App-Level Tokens</strong> → <strong style={{ color: '#fff' }}>Generate Token and Scopes</strong> → name it anything → add scope <strong style={{ color: '#fff', fontFamily: 'monospace' }}>connections:write</strong> → <strong style={{ color: '#fff' }}>Generate</strong>. Copy the <strong style={{ color: '#fff' }}>xapp-…</strong> token.
+          <p className="text-[13px] text-ink-2 m-0 leading-relaxed">
+            Then go to <strong className="text-ink">Basic Information</strong> → <strong className="text-ink">App-Level Tokens</strong> → <strong className="text-ink">Generate Token and Scopes</strong> → name it anything → add scope <strong className="text-ink font-mono text-[12px]">connections:write</strong> → <strong className="text-ink">Generate</strong>. Copy the <strong className="text-ink font-mono text-[12px]">xapp-…</strong> token.
           </p>
-        </div>
+        </StepCard>
 
-        {/* Step 3 */}
-        <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '14px 16px' }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#FF4713', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>Step 3</div>
-          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', margin: '0 0 6px', lineHeight: 1.6 }}>
-            Copy your tokens into the fields below:
-          </p>
-          <ul style={{ margin: 0, paddingLeft: 16, display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <StepCard n={3}>
+          <p className="text-[13px] text-ink-2 m-0 mb-1.5 leading-relaxed">Copy your tokens into the fields below:</p>
+          <ul className="m-0 pl-4 flex flex-col gap-1">
             {[
-              'Bot Token (xoxb-…) — OAuth & Permissions → OAuth Tokens',
-              'App-Level Token (xapp-…) — Basic Information → App-Level Tokens',
-              'Signing Secret — Basic Information → App Credentials',
+              'Bot token (xoxb-…) — OAuth & Permissions → OAuth Tokens',
+              'App-level token (xapp-…) — Basic Information → App-Level Tokens',
+              'Signing secret — Basic Information → App Credentials',
             ].map(t => (
-              <li key={t} style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', fontFamily: 'JetBrains Mono, monospace' }}>{t}</li>
+              <li key={t} className="font-mono text-[11px] text-ink-3">{t}</li>
             ))}
           </ul>
-        </div>
+        </StepCard>
       </div>
 
       {/* Token fields */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-        <Field label="Bot Token" hint="Starts with xoxb-">
-          <input value={botToken} onChange={e => setBotToken(e.target.value)} placeholder="xoxb-…" style={inputStyle} onFocus={focusStyle} onBlur={blurStyle} />
-        </Field>
+      <div className="fieldrow">
+        <label htmlFor="slack-bot">Bot token <span className="font-normal text-ink-3">starts with xoxb-</span></label>
+        <input id="slack-bot" className="input font-mono" value={botToken} onChange={e => setBotToken(e.target.value)} placeholder="xoxb-…" />
+      </div>
 
-        <Field label="App-Level Token" hint="Socket Mode — starts with xapp-">
-          <input value={appToken} onChange={e => setAppToken(e.target.value)} placeholder="xapp-…" style={inputStyle} onFocus={focusStyle} onBlur={blurStyle} />
-        </Field>
+      <div className="fieldrow">
+        <label htmlFor="slack-app">App-level token <span className="font-normal text-ink-3">Socket Mode — starts with xapp-</span></label>
+        <input id="slack-app" className="input font-mono" value={appToken} onChange={e => setAppToken(e.target.value)} placeholder="xapp-…" />
+      </div>
 
-        <Field label="Signing Secret" hint="From Basic Information → App Credentials">
-          <input value={signingSecret} onChange={e => setSigningSecret(e.target.value)} placeholder="••••••••" type="password" style={inputStyle} onFocus={focusStyle} onBlur={blurStyle} />
-        </Field>
+      <div className="fieldrow">
+        <label htmlFor="slack-secret">Signing secret <span className="font-normal text-ink-3">Basic Information → App Credentials</span></label>
+        <input id="slack-secret" className="input font-mono" value={signingSecret} onChange={e => setSigningSecret(e.target.value)} placeholder="••••••••" type="password" />
+      </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button
-            type="button"
-            onClick={handleTest}
-            disabled={testing || !botToken || !appToken}
-            style={{
-              height: 38, paddingLeft: 18, paddingRight: 18,
-              background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)',
-              borderRadius: 10, cursor: testing || !botToken ? 'not-allowed' : 'pointer',
-              fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.7)',
-              opacity: !botToken || !appToken ? 0.5 : 1,
-            }}
-          >
-            {testing ? 'Testing…' : 'Test connection'}
-          </button>
-          {testResult && (
-            <span style={{ fontSize: 13, color: testResult.ok ? '#4ADE80' : '#FCA5A5' }}>
-              {testResult.ok ? `✓ Connected to ${testResult.team_name}` : `✗ ${testResult.error}`}
-            </span>
-          )}
-        </div>
-
-        <details style={{ marginTop: 4 }}>
-          <summary style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', cursor: 'pointer', userSelect: 'none', marginBottom: 16 }}>
-            Advanced options
-          </summary>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingTop: 4 }}>
-            <Field label="Trigger emoji" hint="The reaction that creates a ticket (without colons)">
-              <input value={triggerEmoji} onChange={e => setTriggerEmoji(e.target.value)} placeholder="clipboard" style={{ ...inputStyle, maxWidth: 180 }} onFocus={focusStyle} onBlur={blurStyle} />
-            </Field>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
-              <div
-                onClick={() => setTwoWaySync(v => !v)}
-                style={{
-                  width: 44, height: 24, borderRadius: 12, cursor: 'pointer', flexShrink: 0,
-                  background: twoWaySync ? 'linear-gradient(135deg, #FF4713 0%, #AD1164 100%)' : 'rgba(255,255,255,0.1)',
-                  position: 'relative', transition: 'background 0.2s',
-                }}
-              >
-                <div style={{
-                  position: 'absolute', top: 3, left: twoWaySync ? 23 : 3,
-                  width: 18, height: 18, borderRadius: '50%', background: '#fff',
-                  transition: 'left 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
-                }} />
-              </div>
-              <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>
-                Two-way sync (web replies → Slack threads, and vice versa)
-              </span>
-            </label>
-          </div>
-        </details>
-
-        {error && (
-          <div style={{ padding: '12px 16px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10, fontSize: 13, color: '#FCA5A5' }}>
-            {error}
-          </div>
+      <div className="flex items-center gap-3 mb-4">
+        <button
+          type="button"
+          onClick={handleTest}
+          disabled={testing || !botToken || !appToken}
+          className="btn ghost sm"
+          style={(!botToken || !appToken) ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+        >
+          {testing ? 'Testing…' : 'Test connection'}
+        </button>
+        {testResult && (
+          <span className={`text-[13px] ${testResult.ok ? 'text-brand-ink' : 'text-danger-ink'}`}>
+            {testResult.ok ? `✓ Connected to ${testResult.team_name}` : `✗ ${testResult.error}`}
+          </span>
         )}
+      </div>
 
-        <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-          <button
-            type="button"
-            onClick={() => onNext(false, '')}
-            style={{
-              flex: 1, height: 52, borderRadius: 14, border: '1px solid rgba(255,255,255,0.12)',
-              background: 'transparent', cursor: 'pointer',
-              fontSize: 14, fontWeight: 600, color: 'rgba(255,255,255,0.5)',
-            }}
-          >
-            Skip for now
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving || !botToken || !appToken}
-            style={{
-              flex: 2, height: 52, borderRadius: 14, border: 'none',
-              cursor: saving || !botToken || !appToken ? 'not-allowed' : 'pointer',
-              background: (!botToken || !appToken) ? 'rgba(255,71,19,0.4)' : 'linear-gradient(135deg, #FF4713 0%, #AD1164 100%)',
-              fontSize: 15, fontWeight: 700, color: '#fff',
-              boxShadow: saving ? 'none' : '0 4px 20px rgba(255,71,19,0.3)',
-            }}
-          >
-            {saving ? 'Saving…' : 'Save & continue →'}
-          </button>
+      <details className="mb-4">
+        <summary className="text-[13px] text-ink-2 cursor-pointer select-none mb-3">Advanced options</summary>
+        <div className="flex flex-col gap-1 pt-1">
+          <div className="fieldrow">
+            <label htmlFor="slack-emoji">Trigger emoji <span className="font-normal text-ink-3">reaction that creates a ticket, without colons</span></label>
+            <input id="slack-emoji" className="input font-mono" value={triggerEmoji} onChange={e => setTriggerEmoji(e.target.value)} placeholder="clipboard" style={{ maxWidth: 180 }} />
+          </div>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <div
+              onClick={() => setTwoWaySync(v => !v)}
+              role="switch"
+              aria-checked={twoWaySync}
+              style={{
+                width: 44, height: 24, borderRadius: 12, cursor: 'pointer', flexShrink: 0,
+                background: twoWaySync ? 'var(--brand-grad)' : 'var(--track)',
+                position: 'relative', transition: 'background 0.2s',
+              }}
+            >
+              <div style={{
+                position: 'absolute', top: 3, left: twoWaySync ? 23 : 3,
+                width: 18, height: 18, borderRadius: '50%', background: '#fff',
+                transition: 'left 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
+              }} />
+            </div>
+            <span className="text-[13px] text-ink-2">
+              Two-way sync (web replies → Slack threads, and vice versa)
+            </span>
+          </label>
         </div>
+      </details>
+
+      {error && (
+        <div
+          role="alert"
+          className="rounded-control px-4 py-3 mb-4 text-[13px] text-danger-ink"
+          style={{ background: 'var(--danger-bg)' }}
+        >
+          {error}
+        </div>
+      )}
+
+      <div className="flex gap-3 mt-2">
+        <button type="button" className="btn ghost" style={{ flex: 1 }} onClick={() => onNext(false, '')}>
+          Skip for now
+        </button>
+        <button
+          type="button"
+          className="btn"
+          style={{ flex: 2, ...((saving || !botToken || !appToken) ? { opacity: 0.6, cursor: 'not-allowed' } : {}) }}
+          onClick={handleSave}
+          disabled={saving || !botToken || !appToken}
+        >
+          {saving ? 'Saving…' : 'Save & continue'}
+        </button>
       </div>
     </div>
   )
-}
-
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-        <label style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.6)' }}>{label}</label>
-        {hint && <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>{hint}</span>}
-      </div>
-      {children}
-    </div>
-  )
-}
-
-const inputStyle: React.CSSProperties = {
-  width: '100%', height: 46, borderRadius: 12,
-  background: 'rgba(255,255,255,0.06)',
-  border: '1px solid rgba(255,255,255,0.12)',
-  color: '#fff', fontSize: 13, padding: '0 14px',
-  outline: 'none', boxSizing: 'border-box',
-  fontFamily: 'JetBrains Mono, monospace',
-}
-
-function focusStyle(e: React.FocusEvent<HTMLInputElement>) {
-  e.target.style.borderColor = '#FF4713'
-  e.target.style.boxShadow = '0 0 0 3px rgba(255,71,19,0.15)'
-}
-
-function blurStyle(e: React.FocusEvent<HTMLInputElement>) {
-  e.target.style.borderColor = 'rgba(255,255,255,0.12)'
-  e.target.style.boxShadow = 'none'
 }

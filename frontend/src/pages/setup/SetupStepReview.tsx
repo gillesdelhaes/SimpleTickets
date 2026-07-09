@@ -26,85 +26,69 @@ export default function SetupStepReview({ data }: { data: WizardData }) {
   }
 
   return (
-    <div style={{ maxWidth: 480, width: '100%' }}>
-      <div style={{ marginBottom: 40 }}>
-        <h2 style={{ fontSize: 28, fontWeight: 700, color: '#fff', letterSpacing: '-0.025em', marginBottom: 8 }}>
-          You're all set
-        </h2>
-        <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6 }}>
-          Review your configuration and finish setup.
-        </p>
-      </div>
+    <div className="login-card w-full" style={{ maxWidth: 480 }}>
+      <h1>You're all set</h1>
+      <p className="sub">Review your configuration and finish setup.</p>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 40 }}>
+      <div className="flex flex-col gap-3 mb-6">
         {/* Admin account */}
         <ReviewCard
           icon={
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="8" r="4" stroke="#4ADE80" strokeWidth="1.5"/>
-              <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="#4ADE80" strokeWidth="1.5" strokeLinecap="round"/>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <circle cx="12" cy="8" r="4" />
+              <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
             </svg>
           }
           title="Admin account"
           status="configured"
         >
-          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>
-            {data.adminEmail}
-          </span>
-          <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>{data.adminName}</span>
+          <span className="font-mono text-[12px] text-ink-2">{data.adminEmail}</span>
+          <span className="text-[12px] text-ink-3">{data.adminName}</span>
         </ReviewCard>
 
         {/* Slack */}
         <ReviewCard
           icon={
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-              <path d="M14.5 10c-.83 0-1.5-.67-1.5-1.5v-5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5z" fill={data.slackConfigured ? '#4ADE80' : '#737373'}/>
-              <path d="M20.5 10H19V8.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" fill={data.slackConfigured ? '#4ADE80' : '#737373'}/>
-              <path d="M9.5 14c.83 0 1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5S8 21.33 8 20.5v-5c0-.83.67-1.5 1.5-1.5z" fill={data.slackConfigured ? '#4ADE80' : '#737373'}/>
-              <path d="M3.5 14H5v1.5c0 .83-.67 1.5-1.5 1.5S2 16.33 2 15.5 2.67 14 3.5 14z" fill={data.slackConfigured ? '#4ADE80' : '#737373'}/>
-              <path d="M14 14.5c0-.83.67-1.5 1.5-1.5h5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5h-5c-.83 0-1.5-.67-1.5-1.5z" fill={data.slackConfigured ? '#4ADE80' : '#737373'}/>
-              <path d="M15.5 19H14v1.5c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5-.67-1.5-1.5-1.5z" fill={data.slackConfigured ? '#4ADE80' : '#737373'}/>
-              <path d="M10 9.5C10 8.67 9.33 8 8.5 8h-5C2.67 8 2 8.67 2 9.5S2.67 11 3.5 11h5c.83 0 1.5-.67 1.5-1.5z" fill={data.slackConfigured ? '#4ADE80' : '#737373'}/>
-              <path d="M8.5 5H10V3.5C10 2.67 9.33 2 8.5 2S7 2.67 7 3.5 7.67 5 8.5 5z" fill={data.slackConfigured ? '#4ADE80' : '#737373'}/>
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15.5 11.5a1.5 1.5 0 0 1-1.5 1.5H5l-3 3V4a1.5 1.5 0 0 1 1.5-1.5h10.5A1.5 1.5 0 0 1 15.5 4z" />
             </svg>
           }
           title="Slack integration"
           status={data.slackConfigured ? 'configured' : 'skipped'}
         >
           {data.slackConfigured ? (
-            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>
-              Connected to <strong style={{ color: 'rgba(255,255,255,0.8)' }}>{data.slackTeamName || 'your workspace'}</strong>
+            <span className="text-[12px] text-ink-2">
+              Connected to <strong className="text-ink">{data.slackTeamName || 'your workspace'}</strong>
             </span>
           ) : (
-            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>
-              Skipped — configure later in Admin → Settings
+            <span className="text-[12px] text-ink-3">
+              Skipped — configure later in Settings → Slack
             </span>
           )}
         </ReviewCard>
       </div>
 
       {error && (
-        <div style={{ padding: '12px 16px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10, fontSize: 13, color: '#FCA5A5', marginBottom: 20 }}>
+        <div
+          role="alert"
+          className="rounded-control px-4 py-3 mb-4 text-[13px] text-danger-ink"
+          style={{ background: 'var(--danger-bg)' }}
+        >
           {error}
         </div>
       )}
 
       <button
+        className="btn"
         onClick={handleFinish}
         disabled={loading}
-        style={{
-          width: '100%', height: 52, borderRadius: 14, border: 'none',
-          cursor: loading ? 'not-allowed' : 'pointer',
-          background: loading ? 'rgba(255,71,19,0.4)' : 'linear-gradient(135deg, #FF4713 0%, #AD1164 100%)',
-          fontSize: 15, fontWeight: 700, color: '#fff',
-          boxShadow: loading ? 'none' : '0 4px 20px rgba(255,71,19,0.3)',
-        }}
+        style={loading ? { opacity: 0.6, cursor: 'wait' } : undefined}
       >
-        {loading ? 'Finishing setup…' : 'Finish setup & sign in →'}
+        {loading ? 'Finishing setup…' : 'Finish setup & sign in'}
       </button>
 
-      <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)', textAlign: 'center', marginTop: 16 }}>
-        You can change all settings anytime from Admin → Settings
+      <p className="text-[12px] text-ink-3 text-center mt-4 mb-0">
+        You can change all settings anytime from Settings.
       </p>
     </div>
   )
@@ -119,28 +103,16 @@ function ReviewCard({
   children: React.ReactNode
 }) {
   return (
-    <div style={{
-      padding: '16px 20px',
-      background: 'rgba(255,255,255,0.04)',
-      border: `1px solid ${status === 'configured' ? 'rgba(74,222,128,0.2)' : 'rgba(255,255,255,0.08)'}`,
-      borderRadius: 14,
-      display: 'flex', gap: 16, alignItems: 'flex-start',
-    }}>
-      <div style={{ marginTop: 2, flexShrink: 0 }}>{icon}</div>
-      <div style={{ flex: 1 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-          <span style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>{title}</span>
-          <span style={{
-            fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
-            padding: '2px 8px', borderRadius: 999,
-            background: status === 'configured' ? 'rgba(74,222,128,0.15)' : 'rgba(255,255,255,0.06)',
-            color: status === 'configured' ? '#4ADE80' : 'rgba(255,255,255,0.35)',
-            border: `1px solid ${status === 'configured' ? 'rgba(74,222,128,0.3)' : 'rgba(255,255,255,0.1)'}`,
-          }}>
-            {status}
-          </span>
+    <div className="so-block flex gap-4 items-start" style={{ marginBottom: 0 }}>
+      <div className="mt-0.5 flex-shrink-0" style={{ color: status === 'configured' ? 'var(--brand-ink)' : 'var(--ink-3)' }}>
+        {icon}
+      </div>
+      <div className="flex-1">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[14px] font-semibold text-ink">{title}</span>
+          <span className={`pill ${status === 'configured' ? 'use' : 'retired'}`}>{status}</span>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>{children}</div>
+        <div className="flex flex-col gap-0.5">{children}</div>
       </div>
     </div>
   )

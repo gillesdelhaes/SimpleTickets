@@ -80,13 +80,6 @@ export const STATUS_LABELS: Record<string, string> = new Proxy({} as Record<stri
   get: (_t, name: string) => statusLabel(name),
 })
 
-export const PRIORITY_COLORS: Record<Priority, string> = {
-  low: '#3B82F6',
-  medium: '#F59E0B',
-  high: '#FF4713',
-  critical: '#AD1164',
-}
-
 export const PRIORITY_LABELS: Record<Priority, string> = {
   low: 'Low',
   medium: 'Medium',
