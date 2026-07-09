@@ -14,14 +14,14 @@ const ADMIN_TABS: { id: Tab; label: string }[] = [
   { id: 'general', label: 'General' },
   { id: 'slack', label: 'Slack' },
   { id: 'categories', label: 'Categories' },
-  { id: 'sla', label: 'SLA Policies' },
+  { id: 'sla', label: 'SLA policies' },
   { id: 'statuses', label: 'Statuses' },
-  { id: 'backup', label: 'Backup & Restore' },
-  { id: 'account', label: 'My Account' },
+  { id: 'backup', label: 'Backup & restore' },
+  { id: 'account', label: 'My account' },
 ]
 
 const USER_TABS: { id: Tab; label: string }[] = [
-  { id: 'account', label: 'My Account' },
+  { id: 'account', label: 'My account' },
 ]
 
 type Priority = 'low' | 'medium' | 'high' | 'critical'
@@ -32,43 +32,37 @@ interface SLAPolicyRead { id: number; name: string; priority: Priority; first_re
 interface StatusRow { id: number; name: string; label: string; color: string; pauses_sla: boolean; is_default: boolean; is_resolved_state: boolean; sort_order: number; is_archived: boolean }
 interface StatusForm { name: string; label: string; color: string; pauses_sla: boolean; is_default: boolean; is_resolved_state: boolean; sort_order: number }
 
-// ── Shared styles ─────────────────────────────────────────────────────────────
-
-const inp: React.CSSProperties = {
-  width: '100%', padding: '9px 12px',
-  border: '1.5px solid #E5E5E5', borderRadius: 8,
-  fontSize: 14, color: '#0A0A0A', background: '#fff',
-  outline: 'none', boxSizing: 'border-box',
-  fontFamily: 'Inter, system-ui, sans-serif',
-  transition: 'border-color 0.15s',
-}
+// ── Shared building blocks ────────────────────────────────────────────────────
 
 function Card({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
-  return <div style={{ background: '#fff', border: '1px solid #E5E5E5', borderRadius: 12, overflow: 'hidden', ...style }}>{children}</div>
+  return <section className="panel" style={{ overflow: 'hidden', ...style }}>{children}</section>
 }
 
 function CardHeader({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ padding: '12px 20px', borderBottom: '1px solid #F2F2F2', background: '#FAFAFA', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <div className="panel-head" style={{ paddingBottom: 12, borderBottom: '1px solid var(--track)' }}>
       {children}
     </div>
   )
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <span style={{ fontSize: 12, fontWeight: 700, color: '#262626', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{children}</span>
+  return <h2 style={{ margin: 0, fontSize: 14.5, fontWeight: 650 }}>{children}</h2>
 }
 
 function SaveBar({ dirty, pending, onSave }: { dirty: boolean; pending: boolean; onSave: () => void }) {
   if (!dirty) return null
   return (
-    <div style={{ padding: '10px 20px', borderTop: '1px solid #F2F2F2', background: '#FAFAFA', display: 'flex', justifyContent: 'flex-end' }}>
-      <button onClick={onSave} disabled={pending}
-        style={{ height: 36, padding: '0 20px', background: 'linear-gradient(135deg, #FF4713, #AD1164)', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+    <div className="px-5 py-3 border-t border-track flex justify-end">
+      <button className="btn" onClick={onSave} disabled={pending} style={pending ? { opacity: 0.7, cursor: 'wait' } : undefined}>
         {pending ? 'Saving…' : 'Save changes'}
       </button>
     </div>
   )
+}
+
+function Saved() {
+  return <span className="text-[12px] font-semibold text-brand-ink">✓ Saved</span>
 }
 
 // ── Settings API helpers ───────────────────────────────────────────────────────
@@ -107,7 +101,14 @@ const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 function SettingSwitch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
-    <div onClick={() => onChange(!on)} style={{ width: 44, height: 24, borderRadius: 12, cursor: 'pointer', background: on ? 'linear-gradient(135deg, #FF4713, #AD1164)' : '#E5E5E5', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
+    <div
+      onClick={() => onChange(!on)}
+      role="switch"
+      aria-checked={on}
+      tabIndex={0}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onChange(!on) } }}
+      style={{ width: 44, height: 24, borderRadius: 12, cursor: 'pointer', background: on ? 'var(--brand-grad)' : 'var(--track)', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}
+    >
       <div style={{ position: 'absolute', top: 3, left: on ? 23 : 3, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
     </div>
   )
@@ -115,10 +116,13 @@ function SettingSwitch({ on, onChange }: { on: boolean; onChange: (v: boolean) =
 
 function SettingRow({ label, hint, children, last }: { label: string; hint: string; children: React.ReactNode; last?: boolean }) {
   return (
-    <div style={{ padding: '20px', borderBottom: last ? 'none' : '1px solid #F2F2F2', display: 'grid', gridTemplateColumns: '220px 1fr', gap: 24, alignItems: 'center' }}>
+    <div
+      className={last ? '' : 'border-b border-track'}
+      style={{ padding: '18px 22px', display: 'grid', gridTemplateColumns: '220px 1fr', gap: 24, alignItems: 'center' }}
+    >
       <div>
-        <div style={{ fontSize: 14, fontWeight: 600, color: '#262626' }}>{label}</div>
-        <div style={{ fontSize: 12, color: '#A3A3A3', marginTop: 2 }}>{hint}</div>
+        <div className="text-[13.5px] font-semibold text-ink">{label}</div>
+        <div className="text-[12px] text-ink-3 mt-0.5">{hint}</div>
       </div>
       {children}
     </div>
@@ -131,7 +135,7 @@ function GeneralTab() {
   const [saved, setSaved] = useState(false)
   const mutation = useSaveMutation(() => { setEdits({}); setSaved(true); setTimeout(() => setSaved(false), 2000) })
 
-  if (isLoading) return <div style={{ color: '#737373', fontSize: 13 }}>Loading…</div>
+  if (isLoading) return <div className="text-[13px] text-ink-3">Loading…</div>
 
   const sm = Object.fromEntries((data?.settings ?? []).map(s => [s.key, s.value ?? '']))
   function get(key: string, def: string) { return key in edits ? edits[key] : (sm[key] || def) }
@@ -157,43 +161,42 @@ function GeneralTab() {
     <Card>
       <CardHeader>
         <SectionLabel>General</SectionLabel>
-        {saved && <span style={{ fontSize: 12, color: '#059669', fontWeight: 600 }}>✓ Saved</span>}
+        {saved && <span className="ml-auto"><Saved /></span>}
       </CardHeader>
 
       <SettingRow label="Timezone" hint="All timestamps are displayed in this timezone">
-        <select value={tz} onChange={e => set('timezone', e.target.value)}
-          style={{ ...inp, height: 38, padding: '0 12px', border: 'timezone' in edits ? '1.5px solid #FF4713' : '1.5px solid #E5E5E5', background: 'timezone' in edits ? '#FFF9F7' : '#FAFAFA', cursor: 'pointer' }}>
-          {TIMEZONES.map(t => <option key={t} value={t}>{t}</option>)}
-        </select>
+        <div className="selectwrap" style={{ maxWidth: 320 }}>
+          <select className="select" value={tz} onChange={e => set('timezone', e.target.value)}>
+            {TIMEZONES.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
       </SettingRow>
 
-      <SettingRow label="Business Hours" hint="SLA deadlines only count time within working hours" last={!bizEnabled}>
+      <SettingRow label="Business hours" hint="SLA deadlines only count time within working hours" last={!bizEnabled}>
         <SettingSwitch on={bizEnabled} onChange={v => set('business_hours_enabled', v ? 'true' : 'false')} />
       </SettingRow>
 
       {bizEnabled && (
         <>
           <SettingRow label="Working hours" hint="SLA clock runs between these times">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <input type="time" value={bizStart} onChange={e => set('business_hours_start', e.target.value)}
-                style={{ ...inp, width: 120 }} />
-              <span style={{ color: '#A3A3A3', fontSize: 13 }}>to</span>
-              <input type="time" value={bizEnd} onChange={e => set('business_hours_end', e.target.value)}
-                style={{ ...inp, width: 120 }} />
+            <div className="flex items-center gap-2.5">
+              <input type="time" className="input" style={{ width: 120 }} value={bizStart} onChange={e => set('business_hours_start', e.target.value)} />
+              <span className="text-[13px] text-ink-3">to</span>
+              <input type="time" className="input" style={{ width: 120 }} value={bizEnd} onChange={e => set('business_hours_end', e.target.value)} />
             </div>
           </SettingRow>
 
           <SettingRow label="Working days" hint="Days when the SLA clock is active" last>
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div className="flex gap-1.5">
               {DAY_LABELS.map((label, i) => (
-                <button key={i} onClick={() => toggleDay(i)}
-                  style={{
-                    width: 38, height: 32, borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                    border: '1.5px solid', transition: 'all 0.15s',
-                    background: bizDays.has(i) ? 'linear-gradient(135deg, #FF4713, #AD1164)' : '#FAFAFA',
-                    borderColor: bizDays.has(i) ? '#FF4713' : '#E5E5E5',
-                    color: bizDays.has(i) ? '#fff' : '#737373',
-                  }}>
+                <button
+                  key={i}
+                  onClick={() => toggleDay(i)}
+                  className="chip"
+                  style={bizDays.has(i)
+                    ? { background: 'var(--brand-grad)', color: '#fff', borderColor: 'transparent' }
+                    : undefined}
+                >
                   {label}
                 </button>
               ))}
@@ -203,20 +206,17 @@ function GeneralTab() {
       )}
 
       <SettingRow label="CSAT auto-close" hint="Resolved tickets with no survey response close after this many days" last>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div className="flex items-center gap-2">
           <input
             type="number"
+            className="input"
             min={1}
             max={90}
             value={csatDays}
             onChange={e => set('csat_auto_close_days', e.target.value)}
-            style={{
-              ...inp, width: 80, height: 38, padding: '0 12px',
-              border: 'csat_auto_close_days' in edits ? '1.5px solid #FF4713' : '1.5px solid #E5E5E5',
-              background: 'csat_auto_close_days' in edits ? '#FFF9F7' : '#FAFAFA',
-            }}
+            style={{ width: 90 }}
           />
-          <span style={{ fontSize: 13, color: '#737373' }}>days</span>
+          <span className="text-[13px] text-ink-2">days</span>
         </div>
       </SettingRow>
 
@@ -229,10 +229,10 @@ function GeneralTab() {
 
 const SLACK_KEYS = ['slack_bot_token', 'slack_app_token', 'slack_signing_secret', 'slack_trigger_emoji', 'slack_two_way_sync'] as const
 const SLACK_META: Record<string, { label: string; hint: string; placeholder?: string }> = {
-  slack_bot_token:      { label: 'Bot Token',       hint: 'Starts with xoxb-',                         placeholder: 'xoxb-…'   },
-  slack_app_token:      { label: 'App-Level Token', hint: 'Socket Mode — starts with xapp-',           placeholder: 'xapp-…'   },
-  slack_signing_secret: { label: 'Signing Secret',  hint: 'From Basic Information → App Credentials',  placeholder: '••••••••' },
-  slack_trigger_emoji:  { label: 'Trigger Emoji',   hint: 'Reaction name that creates a ticket',       placeholder: 'clipboard'},
+  slack_bot_token:      { label: 'Bot token',       hint: 'Starts with xoxb-',                         placeholder: 'xoxb-…'   },
+  slack_app_token:      { label: 'App-level token', hint: 'Socket Mode — starts with xapp-',           placeholder: 'xapp-…'   },
+  slack_signing_secret: { label: 'Signing secret',  hint: 'From Basic Information → App Credentials',  placeholder: '••••••••' },
+  slack_trigger_emoji:  { label: 'Trigger emoji',   hint: 'Reaction name that creates a ticket',       placeholder: 'clipboard'},
   slack_two_way_sync:   { label: 'Two-way sync',    hint: 'Sync web replies to Slack threads and vice versa' },
 }
 
@@ -269,29 +269,27 @@ function SlackTab() {
     finally { setTesting(false) }
   }
 
-  if (isLoading) return <div style={{ color: '#737373', fontSize: 13 }}>Loading…</div>
+  if (isLoading) return <div className="text-[13px] text-ink-3">Loading…</div>
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div className="flex flex-col gap-4">
       <Card>
         <CardHeader>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <SectionLabel>Slack Integration</SectionLabel>
+          <div className="flex items-center gap-2">
+            <SectionLabel>Slack integration</SectionLabel>
             {slackStatus && (
-              <span style={{
-                display: 'inline-flex', alignItems: 'center', gap: 5,
-                padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 600,
-                background: slackStatus.ok ? '#D1FAE5' : '#FEE2E2',
-                color: slackStatus.ok ? '#059669' : '#DC2626',
-              }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: slackStatus.ok ? '#10B981' : '#EF4444' }} />
+              <span className={`pill ${slackStatus.ok ? 'use' : 'danger'}`}>
                 {slackStatus.ok ? slackStatus.team_name : 'Disconnected'}
               </span>
             )}
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {saved && <span style={{ fontSize: 12, color: '#059669', fontWeight: 600 }}>✓ Saved</span>}
-            {testResult && <span style={{ fontSize: 12, color: testResult.ok ? '#059669' : '#DC2626' }}>{testResult.ok ? `✓ Connected to ${testResult.team_name}` : `✗ ${testResult.error}`}</span>}
-            <button onClick={handleTest} disabled={testing} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 8, border: '1px solid #E5E5E5', background: '#fff', cursor: 'pointer', color: '#737373', fontWeight: 500 }}>
+          <div className="flex gap-2 items-center ml-auto">
+            {saved && <Saved />}
+            {testResult && (
+              <span className={`text-[12px] ${testResult.ok ? 'text-brand-ink' : 'text-danger-ink'}`}>
+                {testResult.ok ? `✓ Connected to ${testResult.team_name}` : `✗ ${testResult.error}`}
+              </span>
+            )}
+            <button className="btn ghost sm" onClick={handleTest} disabled={testing}>
               {testing ? 'Testing…' : 'Test connection'}
             </button>
           </div>
@@ -303,35 +301,39 @@ function SlackTab() {
           const isToggle = key === 'slack_two_way_sync'
           const isRevealing = revealing[key] ?? false
           const val = getValue(key)
-          const changed = key in edits
 
           return (
-            <div key={key} style={{ padding: '14px 20px', borderBottom: i < SLACK_KEYS.length - 1 ? '1px solid #F9F9F9' : 'none', display: 'grid', gridTemplateColumns: '220px 1fr auto', gap: 16, alignItems: 'center' }}>
+            <div
+              key={key}
+              className={i < SLACK_KEYS.length - 1 ? 'border-b border-track' : ''}
+              style={{ padding: '14px 22px', display: 'grid', gridTemplateColumns: '220px 1fr auto', gap: 16, alignItems: 'center' }}
+            >
               <div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: '#262626' }}>{meta.label}</div>
-                <div style={{ fontSize: 12, color: '#A3A3A3', marginTop: 2 }}>{meta.hint}</div>
+                <div className="text-[13.5px] font-semibold text-ink">{meta.label}</div>
+                <div className="text-[12px] text-ink-3 mt-0.5">{meta.hint}</div>
               </div>
               <div>
                 {isToggle ? (
-                  <div onClick={() => edit(key, val === 'false' ? 'true' : 'false')}
-                    style={{ width: 44, height: 24, borderRadius: 12, cursor: 'pointer', background: val !== 'false' ? 'linear-gradient(135deg, #FF4713, #AD1164)' : '#E5E5E5', position: 'relative', transition: 'background 0.2s' }}>
-                    <div style={{ position: 'absolute', top: 3, left: val !== 'false' ? 23 : 3, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
-                  </div>
+                  <SettingSwitch on={val !== 'false'} onChange={v => edit(key, v ? 'true' : 'false')} />
                 ) : row?.is_secret && !isRevealing ? (
-                  <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 13, color: '#A3A3A3' }}>{val || '—'}</span>
+                  <span className="font-mono text-[13px] text-ink-3">{val || '—'}</span>
                 ) : (
-                  <input value={val} type={row?.is_secret ? 'password' : 'text'}
+                  <input
+                    className={`input${row?.is_secret ? ' font-mono' : ''}`}
+                    value={val}
+                    type={row?.is_secret ? 'password' : 'text'}
                     onChange={e => edit(key, e.target.value)}
                     placeholder={meta.placeholder ?? ''}
-                    style={{ ...inp, height: 38, padding: '0 12px', border: changed ? '1.5px solid #FF4713' : '1.5px solid #E5E5E5', background: changed ? '#FFF9F7' : '#FAFAFA', fontFamily: row?.is_secret ? 'JetBrains Mono, monospace' : 'inherit', boxShadow: changed ? '0 0 0 3px rgba(255,71,19,0.08)' : 'none' }}
                     onFocus={() => { if (row?.is_secret && !isRevealing) { setRevealing(r => ({ ...r, [key]: true })); edit(key, '') } }}
                   />
                 )}
               </div>
               <div style={{ width: 60, textAlign: 'right' }}>
                 {row?.is_secret && !isRevealing && (
-                  <button onClick={() => { setRevealing(r => ({ ...r, [key]: true })); edit(key, '') }}
-                    style={{ fontSize: 12, color: '#FF4713', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, padding: '4px 8px' }}>
+                  <button
+                    onClick={() => { setRevealing(r => ({ ...r, [key]: true })); edit(key, '') }}
+                    className="bg-transparent border-0 cursor-pointer text-[12px] font-semibold text-brand-ink px-2 py-1"
+                  >
                     Edit
                   </button>
                 )}
@@ -344,8 +346,10 @@ function SlackTab() {
 
       {/* Setup guide */}
       <div>
-        <button onClick={() => setShowGuide(v => !v)}
-          style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500, color: '#737373', padding: '4px 0' }}>
+        <button
+          onClick={() => setShowGuide(v => !v)}
+          className="flex items-center gap-2 bg-transparent border-0 cursor-pointer text-[13px] font-medium text-ink-2 hover:text-ink py-1 px-0"
+        >
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
             style={{ transition: 'transform 0.2s', transform: showGuide ? 'rotate(90deg)' : 'none' }}>
             <path d="M4 2l4 4-4 4" />
@@ -390,36 +394,66 @@ const SLACK_MANIFEST = JSON.stringify({
 function CopyBtn({ value }: { value: string }) {
   const [copied, setCopied] = useState(false)
   return (
-    <button onClick={() => { navigator.clipboard.writeText(value).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800) }) }}
-      style={{ background: copied ? 'rgba(16,185,129,0.08)' : 'rgba(255,255,255,0.06)', border: `1px solid ${copied ? 'rgba(16,185,129,0.3)' : 'rgba(255,255,255,0.1)'}`, borderRadius: 5, padding: '2px 8px', cursor: 'pointer', fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: copied ? '#10B981' : 'rgba(255,255,255,0.7)', display: 'inline-flex', alignItems: 'center', gap: 4, transition: 'all 0.15s', flexShrink: 0 }}>
+    <button
+      onClick={() => { navigator.clipboard.writeText(value).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800) }) }}
+      className="font-mono text-[11px] inline-flex items-center gap-1 px-2 py-0.5 rounded-md cursor-pointer flex-shrink-0"
+      style={{
+        background: copied ? 'var(--brand-tint)' : 'rgba(255,255,255,0.06)',
+        border: `1px solid ${copied ? 'transparent' : 'rgba(255,255,255,0.1)'}`,
+        color: copied ? 'var(--brand-ink)' : 'rgba(255,255,255,0.7)',
+        transition: 'all 0.15s',
+      }}
+    >
       {copied ? '✓ Copied' : 'Copy'}
     </button>
   )
 }
 
+function StepDot({ n }: { n: number }) {
+  return (
+    <div
+      className="flex items-center justify-center flex-shrink-0 text-[12px] font-bold text-white mt-0.5"
+      style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--brand-grad)' }}
+    >
+      {n}
+    </div>
+  )
+}
+
+function Code({ children, brand }: { children: React.ReactNode; brand?: boolean }) {
+  return (
+    <code
+      className={`font-mono text-[12px] px-1 py-px rounded ${brand ? 'text-brand-ink' : 'text-ink'}`}
+      style={{ background: 'var(--field)' }}
+    >
+      {children}
+    </code>
+  )
+}
+
 function SlackGuide() {
   return (
-    <div style={{ marginTop: 12, maxWidth: 720 }}>
-      <p style={{ fontSize: 13, color: '#737373', marginBottom: 20, lineHeight: 1.6 }}>
-        SimpleTickets uses a <strong>private Slack app</strong> installed in your workspace.
+    <div className="mt-3" style={{ maxWidth: 720 }}>
+      <p className="text-[13px] text-ink-2 mb-5 leading-relaxed">
+        SimpleTickets uses a <strong className="text-ink">private Slack app</strong> installed in your workspace.
         Instead of configuring it manually, use the manifest below — Slack will set everything up automatically.
       </p>
 
       {/* Step 1 */}
-      <div style={{ display: 'flex', gap: 14, marginBottom: 16 }}>
-        <div style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, background: 'linear-gradient(135deg, #FF4713, #AD1164)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff', marginTop: 1 }}>1</div>
-        <div style={{ flex: 1 }}>
-          <p style={{ fontSize: 14, fontWeight: 600, color: '#0A0A0A', margin: '0 0 8px' }}>Copy the manifest and open the Slack App Console</p>
-          <div style={{ background: '#0A0A0A', border: '1px solid #E5E5E5', borderRadius: 10, overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.04)' }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>slack-manifest.json</span>
+      <div className="flex gap-3.5 mb-4">
+        <StepDot n={1} />
+        <div className="flex-1">
+          <p className="text-[14px] font-semibold text-ink m-0 mb-2">Copy the manifest and open the Slack App Console</p>
+          {/* Code block stays deliberately dark in both themes */}
+          <div style={{ background: '#0A0C10', border: '1px solid var(--edge)', borderRadius: 14, overflow: 'hidden' }}>
+            <div className="flex items-center justify-between px-3.5 py-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.04)' }}>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: 'rgba(255,255,255,0.4)' }}>slack-manifest.json</span>
               <CopyBtn value={SLACK_MANIFEST} />
             </div>
-            <pre style={{ margin: 0, padding: '14px 16px', fontSize: 11, fontFamily: 'JetBrains Mono, monospace', color: 'rgba(255,255,255,0.55)', overflowX: 'auto', lineHeight: 1.6, maxHeight: 220, overflowY: 'auto' }}>{SLACK_MANIFEST}</pre>
+            <pre className="m-0 px-4 py-3.5 font-mono text-[11px] overflow-x-auto scrollbar-thin" style={{ color: 'rgba(255,255,255,0.55)', lineHeight: 1.6, maxHeight: 220, overflowY: 'auto' }}>{SLACK_MANIFEST}</pre>
           </div>
-          <div style={{ marginTop: 10 }}>
-            <a href="https://api.slack.com/apps?new_app=1" target="_blank" rel="noreferrer"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: 'rgba(255,71,19,0.08)', border: '1px solid rgba(255,71,19,0.3)', borderRadius: 7, fontSize: 13, fontWeight: 600, color: '#FF4713', textDecoration: 'none', transition: 'all 0.15s' }}>
+          <div className="mt-2.5">
+            <a href="https://api.slack.com/apps?new_app=1" target="_blank" rel="noreferrer" className="btn ghost sm" style={{ textDecoration: 'none', color: 'var(--brand-ink)' }}>
               Open Slack App Console →
             </a>
           </div>
@@ -427,28 +461,28 @@ function SlackGuide() {
       </div>
 
       {/* Step 2 */}
-      <div style={{ display: 'flex', gap: 14, marginBottom: 16 }}>
-        <div style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, background: 'linear-gradient(135deg, #FF4713, #AD1164)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff', marginTop: 1 }}>2</div>
-        <div style={{ flex: 1 }}>
-          <p style={{ fontSize: 14, fontWeight: 600, color: '#0A0A0A', margin: '0 0 8px' }}>Create the app and generate your App-Level Token</p>
-          <p style={{ fontSize: 13, color: '#737373', margin: '0 0 8px', lineHeight: 1.6 }}>
-            In the Slack App Console: <strong style={{ color: '#262626' }}>Create New App</strong> → <strong style={{ color: '#262626' }}>From a manifest</strong> → select your workspace → paste the manifest → <strong style={{ color: '#262626' }}>Next</strong> → <strong style={{ color: '#262626' }}>Create</strong>. Then in the left sidebar go to <strong style={{ color: '#262626' }}>Settings → Install App</strong> → <strong style={{ color: '#262626' }}>Install to Workspace</strong> → <strong style={{ color: '#262626' }}>Allow</strong>.
+      <div className="flex gap-3.5 mb-4">
+        <StepDot n={2} />
+        <div className="flex-1">
+          <p className="text-[14px] font-semibold text-ink m-0 mb-2">Create the app and generate your app-level token</p>
+          <p className="text-[13px] text-ink-2 m-0 mb-2 leading-relaxed">
+            In the Slack App Console: <strong className="text-ink">Create New App</strong> → <strong className="text-ink">From a manifest</strong> → select your workspace → paste the manifest → <strong className="text-ink">Next</strong> → <strong className="text-ink">Create</strong>. Then in the left sidebar go to <strong className="text-ink">Settings → Install App</strong> → <strong className="text-ink">Install to Workspace</strong> → <strong className="text-ink">Allow</strong>.
           </p>
-          <p style={{ fontSize: 13, color: '#737373', margin: 0, lineHeight: 1.6 }}>
-            Then go to <strong style={{ color: '#262626' }}>Basic Information</strong> → <strong style={{ color: '#262626' }}>App-Level Tokens</strong> → <strong style={{ color: '#262626' }}>Generate Token and Scopes</strong> → name it anything → add scope <code style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, background: '#F2F2F2', padding: '1px 5px', borderRadius: 4 }}>connections:write</code> → <strong style={{ color: '#262626' }}>Generate</strong>. Copy the <code style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#FF4713' }}>xapp-…</code> token.
+          <p className="text-[13px] text-ink-2 m-0 leading-relaxed">
+            Then go to <strong className="text-ink">Basic Information</strong> → <strong className="text-ink">App-Level Tokens</strong> → <strong className="text-ink">Generate Token and Scopes</strong> → name it anything → add scope <Code>connections:write</Code> → <strong className="text-ink">Generate</strong>. Copy the <Code brand>xapp-…</Code> token.
           </p>
         </div>
       </div>
 
       {/* Step 3 */}
-      <div style={{ display: 'flex', gap: 14 }}>
-        <div style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, background: 'linear-gradient(135deg, #FF4713, #AD1164)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff', marginTop: 1 }}>3</div>
-        <div style={{ flex: 1 }}>
-          <p style={{ fontSize: 14, fontWeight: 600, color: '#0A0A0A', margin: '0 0 6px' }}>Copy your three tokens into the fields above</p>
-          <div style={{ display: 'grid', gap: 6, fontSize: 13, color: '#737373', lineHeight: 1.6 }}>
-            <span><strong style={{ color: '#262626', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>Bot Token</strong> — OAuth &amp; Permissions → Bot User OAuth Token (starts with <code style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#FF4713' }}>xoxb-</code>)</span>
-            <span><strong style={{ color: '#262626', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>App-Level Token</strong> — Basic Information → App-Level Tokens → Generate Token → add <code style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#FF4713' }}>connections:write</code> scope (starts with <code style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#FF4713' }}>xapp-</code>)</span>
-            <span><strong style={{ color: '#262626', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>Signing Secret</strong> — Basic Information → App Credentials → Signing Secret</span>
+      <div className="flex gap-3.5">
+        <StepDot n={3} />
+        <div className="flex-1">
+          <p className="text-[14px] font-semibold text-ink m-0 mb-1.5">Copy your three tokens into the fields above</p>
+          <div className="grid gap-1.5 text-[13px] text-ink-2 leading-relaxed">
+            <span><Code>Bot token</Code> — OAuth &amp; Permissions → Bot User OAuth Token (starts with <Code brand>xoxb-</Code>)</span>
+            <span><Code>App-level token</Code> — Basic Information → App-Level Tokens → Generate Token → add <Code brand>connections:write</Code> scope (starts with <Code brand>xapp-</Code>)</span>
+            <span><Code>Signing secret</Code> — Basic Information → App Credentials → Signing Secret</span>
           </div>
         </div>
       </div>
@@ -471,7 +505,6 @@ function CategoriesTab() {
   const [showArchived, setShowArchived] = useState(false)
   const [newName, setNewName] = useState('')
   const [addError, setAddError] = useState<string | null>(null)
-  const [focused, setFocused] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editValue, setEditValue] = useState('')
 
@@ -500,60 +533,84 @@ function CategoriesTab() {
   const shown = showArchived ? categories : active
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div className="flex flex-col gap-4">
       {/* Add form */}
       <Card>
-        <CardHeader><SectionLabel>Add Category</SectionLabel></CardHeader>
-        <div style={{ padding: '16px 20px' }}>
-          <form onSubmit={e => { e.preventDefault(); if (newName.trim()) createMutation.mutate(newName.trim()) }} style={{ display: 'flex', gap: 10 }}>
-            <input value={newName} onChange={e => { setNewName(e.target.value); setAddError(null) }}
+        <CardHeader><SectionLabel>Add category</SectionLabel></CardHeader>
+        <div style={{ padding: '16px 22px' }}>
+          <form onSubmit={e => { e.preventDefault(); if (newName.trim()) createMutation.mutate(newName.trim()) }} className="flex gap-2.5">
+            <input
+              className="input flex-1"
+              value={newName}
+              onChange={e => { setNewName(e.target.value); setAddError(null) }}
               placeholder="e.g. Billing, Infrastructure, HR…"
-              onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
-              style={{ ...inp, flex: 1, border: `1.5px solid ${focused ? '#FF4713' : '#E5E5E5'}`, boxShadow: focused ? '0 0 0 3px rgba(255,71,19,0.07)' : 'none' }} />
-            <button type="submit" disabled={!newName.trim() || createMutation.isPending}
-              style={{ padding: '7px 18px', borderRadius: 8, border: 'none', flexShrink: 0, background: newName.trim() ? 'linear-gradient(135deg, #FF4713, #AD1164)' : '#E5E5E5', color: newName.trim() ? '#fff' : '#A3A3A3', fontSize: 13, fontWeight: 600, cursor: newName.trim() ? 'pointer' : 'not-allowed' }}>
-              {createMutation.isPending ? 'Adding…' : 'Add'}
+            />
+            <button
+              type="submit"
+              className="btn"
+              disabled={!newName.trim() || createMutation.isPending}
+              style={!newName.trim() ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+            >
+              {createMutation.isPending ? 'Adding…' : 'Add category'}
             </button>
           </form>
-          {addError && <p style={{ fontSize: 12, color: '#EF4444', margin: '6px 0 0' }}>{addError}</p>}
+          {addError && <p className="text-[12px] text-danger-ink mt-1.5 mb-0">{addError}</p>}
         </div>
       </Card>
 
       {/* List */}
       <Card>
         <CardHeader>
-          <SectionLabel>{shown.length} {showArchived ? 'total' : 'active'} — {active.length} active{archived.length > 0 ? `, ${archived.length} archived` : ''}</SectionLabel>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: '#737373' }}>
-            <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} style={{ accentColor: '#FF4713' }} />
+          <SectionLabel>{active.length} active{archived.length > 0 ? `, ${archived.length} archived` : ''}</SectionLabel>
+          <label className="flex items-center gap-1.5 cursor-pointer text-[12px] text-ink-2 ml-auto">
+            <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} style={{ accentColor: 'var(--b1)' }} />
             Show archived
           </label>
         </CardHeader>
         {isLoading ? (
-          <div style={{ padding: '24px' }}>{[1, 2, 3].map(i => <div key={i} style={{ height: 50, borderRadius: 8, background: '#F2F2F2', marginBottom: 8, animation: 'shimmer 1.5s ease-in-out infinite' }} />)}</div>
+          <div className="p-5">{[1, 2, 3].map(i => <div key={i} style={{ height: 50, borderRadius: 12, background: 'var(--track)', marginBottom: 8, animation: 'shimmer 1.5s ease-in-out infinite' }} />)}</div>
         ) : shown.length === 0 ? (
-          <div style={{ padding: '40px', textAlign: 'center', color: '#A3A3A3', fontSize: 13 }}>{showArchived ? 'No categories yet.' : 'No active categories.'}</div>
+          <p className="px-6 py-10 text-center text-ink-3 text-[13px] m-0">
+            {showArchived ? 'No categories yet — add one above.' : 'No active categories — add one above.'}
+          </p>
         ) : (
           shown.map((cat, i) => (
-            <div key={cat.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderBottom: i < shown.length - 1 ? '1px solid #F9F9F9' : 'none', opacity: cat.is_archived ? 0.65 : 1 }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: cat.is_archived ? '#D4D4D4' : 'linear-gradient(135deg, #FF4713, #AD1164)', flexShrink: 0 }} />
-              <div style={{ flex: 1 }}>
+            <div
+              key={cat.id}
+              className={`flex items-center gap-3 ${i < shown.length - 1 ? 'border-b border-track' : ''}`}
+              style={{ padding: '12px 22px', opacity: cat.is_archived ? 0.6 : 1 }}
+            >
+              <div
+                className="flex-shrink-0"
+                style={{ width: 8, height: 8, borderRadius: '50%', background: cat.is_archived ? 'var(--ink-3)' : 'var(--brand-grad)' }}
+              />
+              <div className="flex-1">
                 {editingId === cat.id ? (
-                  <input autoFocus value={editValue} onChange={e => setEditValue(e.target.value)}
+                  <input
+                    autoFocus
+                    className="input"
+                    style={{ width: 'auto', maxWidth: 260, padding: '6px 11px' }}
+                    value={editValue}
+                    onChange={e => setEditValue(e.target.value)}
                     onBlur={() => { if (editValue.trim() && editValue !== cat.name) patchMutation.mutate({ id: cat.id, name: editValue.trim() }); else setEditingId(null) }}
                     onKeyDown={e => { if (e.key === 'Enter') { if (editValue.trim() && editValue !== cat.name) patchMutation.mutate({ id: cat.id, name: editValue.trim() }); else setEditingId(null) } if (e.key === 'Escape') setEditingId(null) }}
-                    style={{ ...inp, width: 'auto', maxWidth: 260, border: '1.5px solid #FF4713', boxShadow: '0 0 0 3px rgba(255,71,19,0.08)' }} />
+                  />
                 ) : (
-                  <span onClick={() => { setEditingId(cat.id); setEditValue(cat.name) }} title="Click to rename"
-                    style={{ fontSize: 13, fontWeight: 500, color: cat.is_archived ? '#A3A3A3' : '#0A0A0A', cursor: 'pointer', textDecoration: cat.is_archived ? 'line-through' : 'none', borderBottom: '1px dashed transparent' }}
-                    onMouseEnter={e => (e.currentTarget.style.borderBottomColor = '#D4D4D4')}
-                    onMouseLeave={e => (e.currentTarget.style.borderBottomColor = 'transparent')}>
+                  <span
+                    onClick={() => { setEditingId(cat.id); setEditValue(cat.name) }}
+                    title="Click to rename"
+                    className={`text-[13px] font-medium cursor-pointer ${cat.is_archived ? 'text-ink-3 line-through' : 'text-ink'} hover:text-brand-ink`}
+                  >
                     {cat.name}
                   </span>
                 )}
               </div>
-              <span style={{ fontSize: 11, color: '#C0C0C0', whiteSpace: 'nowrap' }}>{timeAgo(cat.created_at)}</span>
-              <button onClick={() => patchMutation.mutate({ id: cat.id, is_archived: !cat.is_archived })}
-                style={{ padding: '3px 9px', borderRadius: 6, border: '1px solid #E5E5E5', background: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer', color: cat.is_archived ? '#10B981' : '#EF4444', whiteSpace: 'nowrap' }}>
+              <span className="font-mono text-[10.5px] text-ink-3 whitespace-nowrap">{timeAgo(cat.created_at)}</span>
+              <button
+                onClick={() => patchMutation.mutate({ id: cat.id, is_archived: !cat.is_archived })}
+                className={`btn ghost sm${cat.is_archived ? '' : ' danger'}`}
+                style={{ padding: '3px 10px', fontSize: 11.5 }}
+              >
                 {cat.is_archived ? 'Restore' : 'Archive'}
               </button>
             </div>
@@ -566,9 +623,10 @@ function CategoriesTab() {
 
 // ── SLA Policies tab ──────────────────────────────────────────────────────────
 
-const PRIORITY_COLORS: Record<Priority, string> = { critical: '#AD1164', high: '#FF4713', medium: '#F59E0B', low: '#3B82F6' }
 const PRIORITY_LABELS: Record<Priority, string> = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low' }
 const PRIORITY_ORDER: Priority[] = ['critical', 'high', 'medium', 'low']
+// Urgency wears the reserved semantic tokens (matches PriorityBadge)
+const PRIORITY_PILL: Record<Priority, string> = { critical: 'danger', high: 'warn', medium: 'avail', low: 'retired' }
 
 function formatMinutes(m: number): string {
   const days = Math.floor(m / 1440); const hours = Math.floor((m % 1440) / 60); const mins = m % 60
@@ -595,46 +653,45 @@ function SLARow({ policy, onDelete }: { policy: SLAPolicyRead; onDelete: () => v
     onError: (err: any) => { alert(err?.response?.data?.detail ?? 'Cannot delete'); setConfirm(false) },
   })
 
-  const color = PRIORITY_COLORS[policy.priority]
-  const badge = <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color, background: `${color}15`, border: `1px solid ${color}25` }}>{PRIORITY_LABELS[policy.priority]}</span>
+  const badge = <span className={`pill ${PRIORITY_PILL[policy.priority]}`}>{PRIORITY_LABELS[policy.priority]}</span>
 
   if (confirm) return (
-    <tr style={{ background: '#FEF2F2' }}>
-      <td colSpan={4} style={{ padding: '10px 16px', fontSize: 13, color: '#DC2626', fontWeight: 500 }}>Delete "{policy.name}"?</td>
-      <td style={{ padding: '10px 16px' }}>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button onClick={() => del.mutate()} disabled={del.isPending} style={{ padding: '4px 10px', borderRadius: 6, border: 'none', background: '#EF4444', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>{del.isPending ? '…' : 'Delete'}</button>
-          <button onClick={() => setConfirm(false)} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #E5E5E5', background: '#fff', color: '#737373', fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+    <tr style={{ background: 'var(--danger-bg)' }}>
+      <td colSpan={4} className="text-[13px] font-medium text-danger-ink">Delete "{policy.name}"?</td>
+      <td>
+        <div className="flex gap-1.5">
+          <button onClick={() => del.mutate()} disabled={del.isPending} className="btn ghost sm danger">{del.isPending ? '…' : 'Delete'}</button>
+          <button onClick={() => setConfirm(false)} className="btn ghost sm">Cancel</button>
         </div>
       </td>
     </tr>
   )
 
   if (editing) return (
-    <tr style={{ background: '#FFFBF0' }}>
-      <td style={{ padding: '10px 16px' }}>{badge}</td>
-      <td style={{ padding: '10px 16px' }}><input value={name} onChange={e => setName(e.target.value)} style={{ ...inp, minWidth: 140 }} /></td>
-      <td style={{ padding: '10px 16px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><input type="number" min="1" value={resp} onChange={e => setResp(e.target.value)} style={{ ...inp, width: 70 }} /><span style={{ fontSize: 12, color: '#737373' }}>min</span></div></td>
-      <td style={{ padding: '10px 16px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><input type="number" min="1" value={res} onChange={e => setRes(e.target.value)} style={{ ...inp, width: 70 }} /><span style={{ fontSize: 12, color: '#737373' }}>min</span></div></td>
-      <td style={{ padding: '10px 16px' }}>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button onClick={() => patch.mutate()} disabled={patch.isPending} style={{ padding: '4px 10px', borderRadius: 6, border: 'none', background: '#10B981', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>{patch.isPending ? '…' : 'Save'}</button>
-          <button onClick={() => setEditing(false)} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #E5E5E5', background: '#fff', color: '#737373', fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+    <tr style={{ background: 'var(--row-active)' }}>
+      <td>{badge}</td>
+      <td><input className="input" value={name} onChange={e => setName(e.target.value)} style={{ minWidth: 140, padding: '6px 11px' }} /></td>
+      <td><div className="flex items-center gap-1.5"><input type="number" min="1" className="input" value={resp} onChange={e => setResp(e.target.value)} style={{ width: 80, padding: '6px 11px' }} /><span className="text-[12px] text-ink-3">min</span></div></td>
+      <td><div className="flex items-center gap-1.5"><input type="number" min="1" className="input" value={res} onChange={e => setRes(e.target.value)} style={{ width: 80, padding: '6px 11px' }} /><span className="text-[12px] text-ink-3">min</span></div></td>
+      <td>
+        <div className="flex gap-1.5">
+          <button onClick={() => patch.mutate()} disabled={patch.isPending} className="btn sm">{patch.isPending ? '…' : 'Save'}</button>
+          <button onClick={() => setEditing(false)} className="btn ghost sm">Cancel</button>
         </div>
       </td>
     </tr>
   )
 
   return (
-    <tr onMouseEnter={e => (e.currentTarget.style.background = '#FAFAFA')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-      <td style={{ padding: '12px 16px' }}>{badge}</td>
-      <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 500, color: '#0A0A0A' }}>{policy.name}</td>
-      <td style={{ padding: '12px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>{formatMinutes(policy.first_response_minutes)}</td>
-      <td style={{ padding: '12px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>{formatMinutes(policy.resolution_minutes)}</td>
-      <td style={{ padding: '12px 16px' }}>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button onClick={() => setEditing(true)} style={{ padding: '3px 9px', borderRadius: 6, border: '1px solid #E5E5E5', background: '#fff', fontSize: 11, fontWeight: 600, color: '#262626', cursor: 'pointer' }}>Edit</button>
-          <button onClick={() => setConfirm(true)} style={{ padding: '3px 9px', borderRadius: 6, border: '1px solid #E5E5E5', background: '#fff', fontSize: 11, color: '#EF4444', cursor: 'pointer' }}>Delete</button>
+    <tr>
+      <td>{badge}</td>
+      <td className="name">{policy.name}</td>
+      <td><span className="sn">{formatMinutes(policy.first_response_minutes)}</span></td>
+      <td><span className="sn">{formatMinutes(policy.resolution_minutes)}</span></td>
+      <td>
+        <div className="flex gap-1.5">
+          <button onClick={() => setEditing(true)} className="btn ghost sm" style={{ padding: '3px 10px', fontSize: 11.5 }}>Edit</button>
+          <button onClick={() => setConfirm(true)} className="btn ghost sm danger" style={{ padding: '3px 10px', fontSize: 11.5 }}>Delete</button>
         </div>
       </td>
     </tr>
@@ -674,37 +731,49 @@ function SLATab() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <p style={{ fontSize: 13, color: '#737373', margin: 0 }}>One policy per priority. Times in minutes.</p>
+    <div className="flex flex-col gap-4">
+      <div className="flex justify-between items-center">
+        <p className="text-[13px] text-ink-2 m-0">One policy per priority. Times in minutes.</p>
         {available.length > 0 && (
-          <button onClick={() => { setShowAdd(v => !v); if (available.length) setNewPriority(available[0]) }}
-            style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: showAdd ? '#F2F2F2' : 'linear-gradient(135deg, #FF4713, #AD1164)', color: showAdd ? '#737373' : '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-            {showAdd ? 'Cancel' : '+ Add Policy'}
-          </button>
+          showAdd ? (
+            <button className="btn ghost sm" onClick={() => setShowAdd(false)}>Cancel</button>
+          ) : (
+            <button className="btn sm" onClick={() => { setShowAdd(true); if (available.length) setNewPriority(available[0]) }}>
+              Add policy
+            </button>
+          )
         )}
       </div>
 
       {showAdd && (
-        <Card style={{ borderTop: '3px solid #FF4713' }}>
-          <div style={{ padding: '18px 20px' }}>
+        <Card>
+          <div style={{ padding: '18px 22px' }}>
             <form onSubmit={handleCreate}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr 1fr', gap: 12, alignItems: 'end' }}>
-                {[
-                  { lbl: 'Priority', node: <select value={newPriority} onChange={e => setNewPriority(e.target.value as Priority)} style={{ ...inp, cursor: 'pointer', fontWeight: 700, color: PRIORITY_COLORS[newPriority] }}>{available.map(p => <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>)}</select> },
-                  { lbl: 'Name', node: <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. High Priority SLA" style={inp} /> },
-                  { lbl: 'First Response (min)', node: <input type="number" min="1" value={newResp} onChange={e => setNewResp(e.target.value)} placeholder="60" style={inp} /> },
-                  { lbl: 'Resolution (min)', node: <input type="number" min="1" value={newRes} onChange={e => setNewRes(e.target.value)} placeholder="480" style={inp} /> },
-                ].map(({ lbl, node }) => (
-                  <div key={lbl}>
-                    <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#737373', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{lbl}</label>
-                    {node}
+                <div className="fieldrow" style={{ marginBottom: 0 }}>
+                  <label>Priority</label>
+                  <div className="selectwrap">
+                    <select className="select" value={newPriority} onChange={e => setNewPriority(e.target.value as Priority)}>
+                      {available.map(p => <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>)}
+                    </select>
                   </div>
-                ))}
+                </div>
+                <div className="fieldrow" style={{ marginBottom: 0 }}>
+                  <label>Name</label>
+                  <input className="input" value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. High priority SLA" />
+                </div>
+                <div className="fieldrow" style={{ marginBottom: 0 }}>
+                  <label>First response (min)</label>
+                  <input type="number" min="1" className="input" value={newResp} onChange={e => setNewResp(e.target.value)} placeholder="60" />
+                </div>
+                <div className="fieldrow" style={{ marginBottom: 0 }}>
+                  <label>Resolution (min)</label>
+                  <input type="number" min="1" className="input" value={newRes} onChange={e => setNewRes(e.target.value)} placeholder="480" />
+                </div>
               </div>
-              {addError && <p style={{ fontSize: 12, color: '#EF4444', marginTop: 8 }}>{addError}</p>}
-              <button type="submit" disabled={createMutation.isPending} style={{ marginTop: 14, padding: '7px 18px', borderRadius: 7, border: 'none', background: 'linear-gradient(135deg, #FF4713, #AD1164)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                {createMutation.isPending ? 'Creating…' : 'Create Policy'}
+              {addError && <p className="text-[12px] text-danger-ink mt-2 mb-0">{addError}</p>}
+              <button type="submit" className="btn mt-3.5" disabled={createMutation.isPending}>
+                {createMutation.isPending ? 'Creating…' : 'Create policy'}
               </button>
             </form>
           </div>
@@ -713,24 +782,26 @@ function SLATab() {
 
       <Card>
         {isLoading ? (
-          <div style={{ padding: '24px' }}>{[1, 2, 3, 4].map(i => <div key={i} style={{ height: 42, borderRadius: 7, background: '#F2F2F2', marginBottom: 8, animation: 'shimmer 1.5s ease-in-out infinite' }} />)}</div>
+          <div className="p-5">{[1, 2, 3, 4].map(i => <div key={i} style={{ height: 42, borderRadius: 12, background: 'var(--track)', marginBottom: 8, animation: 'shimmer 1.5s ease-in-out infinite' }} />)}</div>
         ) : sorted.length === 0 ? (
-          <div style={{ padding: '48px', textAlign: 'center', color: '#A3A3A3', fontSize: 13 }}>No SLA policies configured.</div>
+          <p className="px-6 py-12 text-center text-ink-3 text-[13px] m-0">No SLA policies yet — add one to start the clocks.</p>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: '#FAFAFA', borderBottom: '1px solid #F2F2F2' }}>
-                {['Priority', 'Name', 'First Response', 'Resolution', ''].map(h => (
-                  <th key={h} style={{ padding: '8px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#A3A3A3', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map(p => <SLARow key={p.id} policy={p} onDelete={() => qc.invalidateQueries({ queryKey: ['sla-policies'] })} />)}
-            </tbody>
-          </table>
+          <div className="tablewrap">
+            <table>
+              <thead>
+                <tr>
+                  {['Priority', 'Name', 'First response', 'Resolution', ''].map(h => (
+                    <th key={h}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map(p => <SLARow key={p.id} policy={p} onDelete={() => qc.invalidateQueries({ queryKey: ['sla-policies'] })} />)}
+              </tbody>
+            </table>
+          </div>
         )}
-        {existing.size === 4 && <p style={{ fontSize: 12, color: '#A3A3A3', textAlign: 'center', padding: '8px 0 12px' }}>All four priority levels configured.</p>}
+        {existing.size === 4 && <p className="text-[12px] text-ink-3 text-center pt-2 pb-3 m-0">All four priority levels configured.</p>}
       </Card>
     </div>
   )
@@ -739,11 +810,17 @@ function SLATab() {
 // ── Statuses tab ──────────────────────────────────────────────────────────────
 
 const BLANK_STATUS: StatusForm = { name: '', label: '', color: '#737373', pauses_sla: false, is_default: false, is_resolved_state: false, sort_order: 0 }
+// Preset swatches offered when creating a status — stored as data in the DB
 const PRESET_COLORS = ['#3B82F6', '#FF4713', '#F59E0B', '#10B981', '#737373', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316', '#6366F1']
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
-    <button onClick={() => onChange(!checked)} style={{ width: 32, height: 18, borderRadius: 9, border: 'none', cursor: 'pointer', background: checked ? '#10B981' : '#E5E5E5', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
+    <button
+      onClick={() => onChange(!checked)}
+      role="switch"
+      aria-checked={checked}
+      style={{ width: 32, height: 18, borderRadius: 9, border: 'none', cursor: 'pointer', background: checked ? 'var(--brand-grad)' : 'var(--track)', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}
+    >
       <span style={{ position: 'absolute', top: 2, left: checked ? 16 : 2, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 2px rgba(0,0,0,0.15)' }} />
     </button>
   )
@@ -786,98 +863,139 @@ function StatusesTab() {
   const archived = statuses.filter(s => s.is_archived)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div className="flex flex-col gap-4">
       {/* Table */}
       <Card>
-        <CardHeader><SectionLabel>Active Statuses</SectionLabel></CardHeader>
+        <CardHeader><SectionLabel>Active statuses</SectionLabel></CardHeader>
         {isLoading ? (
-          <div style={{ padding: '24px' }}>{[1,2,3].map(i => <div key={i} style={{ height: 42, borderRadius: 7, background: '#F2F2F2', marginBottom: 8, animation: 'shimmer 1.5s ease-in-out infinite' }} />)}</div>
+          <div className="p-5">{[1, 2, 3].map(i => <div key={i} style={{ height: 42, borderRadius: 12, background: 'var(--track)', marginBottom: 8, animation: 'shimmer 1.5s ease-in-out infinite' }} />)}</div>
         ) : active.length === 0 ? (
-          <div style={{ padding: '40px', textAlign: 'center', color: '#A3A3A3', fontSize: 13 }}>No statuses yet.</div>
+          <p className="px-6 py-10 text-center text-ink-3 text-[13px] m-0">No statuses yet — create one below.</p>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: '#FAFAFA', borderBottom: '1px solid #F2F2F2' }}>
-                {['Colour', 'Slug', 'Label', 'Pauses SLA', 'Default', 'Resolved', 'Order', ''].map(h => (
-                  <th key={h} style={{ padding: '8px 14px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#A3A3A3', letterSpacing: '0.06em', textTransform: 'uppercase' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {active.map(s => (
-                <tr key={s.id} onMouseOver={e => (e.currentTarget.style.background = '#FAFAFA')} onMouseOut={e => (e.currentTarget.style.background = 'transparent')} style={{ borderBottom: '1px solid #F9F9F9' }}>
-                  <td style={{ padding: '10px 14px' }}><span style={{ display: 'inline-block', width: 22, height: 22, borderRadius: 5, background: s.color, border: '1px solid rgba(0,0,0,0.08)' }} /></td>
-                  <td style={{ padding: '10px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: '#737373' }}>{s.name}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 600, color: s.color }}>{s.label}</td>
-                  <td style={{ padding: '10px 14px' }}><Toggle checked={s.pauses_sla} onChange={v => patchMutation.mutate({ id: s.id, patch: { pauses_sla: v } })} /></td>
-                  <td style={{ padding: '10px 14px' }}><Toggle checked={s.is_default} onChange={v => patchMutation.mutate({ id: s.id, patch: { is_default: v } })} /></td>
-                  <td style={{ padding: '10px 14px' }}><Toggle checked={s.is_resolved_state} onChange={v => patchMutation.mutate({ id: s.id, patch: { is_resolved_state: v } })} /></td>
-                  <td style={{ padding: '10px 14px', fontSize: 12, color: '#737373' }}>{s.sort_order}</td>
-                  <td style={{ padding: '10px 14px' }}>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button onClick={() => { setEditId(s.id); setForm({ name: s.name, label: s.label, color: s.color, pauses_sla: s.pauses_sla, is_default: s.is_default, is_resolved_state: s.is_resolved_state, sort_order: s.sort_order }); setError(null) }}
-                        style={{ padding: '3px 9px', borderRadius: 5, border: '1px solid rgba(0,0,0,0.12)', background: 'none', fontSize: 11, fontWeight: 600, color: '#0A0A0A', cursor: 'pointer' }}>Edit</button>
-                      {!s.is_default && (
-                        <button onClick={() => archiveMutation.mutate(s.id)}
-                          style={{ padding: '3px 9px', borderRadius: 5, border: '1px solid rgba(239,68,68,0.3)', background: 'none', fontSize: 11, fontWeight: 600, color: '#EF4444', cursor: 'pointer' }}>Archive</button>
-                      )}
-                    </div>
-                  </td>
+          <div className="tablewrap">
+            <table>
+              <thead>
+                <tr>
+                  {['Colour', 'Slug', 'Label', 'Pauses SLA', 'Default', 'Resolved', 'Order', ''].map(h => (
+                    <th key={h}>{h}</th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {active.map(s => (
+                  <tr key={s.id}>
+                    {/* Status colors are admin-configured data — inline stays */}
+                    <td><span style={{ display: 'inline-block', width: 22, height: 22, borderRadius: 7, background: s.color, border: '1px solid var(--edge)' }} /></td>
+                    <td><span className="sn">{s.name}</span></td>
+                    <td><span className="text-[13px] font-semibold" style={{ color: s.color }}>{s.label}</span></td>
+                    <td><Toggle checked={s.pauses_sla} onChange={v => patchMutation.mutate({ id: s.id, patch: { pauses_sla: v } })} /></td>
+                    <td><Toggle checked={s.is_default} onChange={v => patchMutation.mutate({ id: s.id, patch: { is_default: v } })} /></td>
+                    <td><Toggle checked={s.is_resolved_state} onChange={v => patchMutation.mutate({ id: s.id, patch: { is_resolved_state: v } })} /></td>
+                    <td><span className="sn">{s.sort_order}</span></td>
+                    <td>
+                      <div className="flex gap-1.5">
+                        <button
+                          onClick={() => { setEditId(s.id); setForm({ name: s.name, label: s.label, color: s.color, pauses_sla: s.pauses_sla, is_default: s.is_default, is_resolved_state: s.is_resolved_state, sort_order: s.sort_order }); setError(null) }}
+                          className="btn ghost sm"
+                          style={{ padding: '3px 10px', fontSize: 11.5 }}
+                        >
+                          Edit
+                        </button>
+                        {!s.is_default && (
+                          <button
+                            onClick={() => archiveMutation.mutate(s.id)}
+                            className="btn ghost sm danger"
+                            style={{ padding: '3px 10px', fontSize: 11.5 }}
+                          >
+                            Archive
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
 
       {/* Create / edit form */}
       <Card>
-        <CardHeader><SectionLabel>{editId !== null ? 'Edit Status' : 'New Status'}</SectionLabel></CardHeader>
-        <div style={{ padding: '20px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-            {[
-              { lbl: 'Slug', hint: 'Lowercase + underscores. Cannot change after creation.', node: <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_') }))} disabled={editId !== null} placeholder="e.g. waiting_vendor" style={{ ...inp, opacity: editId !== null ? 0.5 : 1 }} /> },
-              { lbl: 'Display Label', node: <input value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} placeholder="e.g. Waiting on Vendor" style={inp} /> },
-              { lbl: 'Colour', node: (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input type="color" value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))} style={{ width: 36, height: 32, padding: 2, border: '1px solid #E5E5E5', borderRadius: 6, cursor: 'pointer' }} />
-                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                    {PRESET_COLORS.map(c => <button key={c} onClick={() => setForm(f => ({ ...f, color: c }))} style={{ width: 20, height: 20, borderRadius: 4, background: c, border: 'none', cursor: 'pointer', outline: form.color === c ? `2px solid ${c}` : 'none', outlineOffset: 2 }} />)}
-                  </div>
+        <CardHeader><SectionLabel>{editId !== null ? 'Edit status' : 'New status'}</SectionLabel></CardHeader>
+        <div style={{ padding: '18px 22px' }}>
+          <div className="formgrid" style={{ marginBottom: 16 }}>
+            <div className="fieldrow" style={{ marginBottom: 0 }}>
+              <label>Slug</label>
+              <input
+                className="input"
+                value={form.name}
+                onChange={e => setForm(f => ({ ...f, name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_') }))}
+                disabled={editId !== null}
+                placeholder="e.g. waiting_vendor"
+                style={editId !== null ? { opacity: 0.5 } : undefined}
+              />
+              <p className="m-0 text-[11px] text-ink-3">Lowercase + underscores. Cannot change after creation.</p>
+            </div>
+            <div className="fieldrow" style={{ marginBottom: 0 }}>
+              <label>Display label</label>
+              <input className="input" value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} placeholder="e.g. Waiting on vendor" />
+            </div>
+            <div className="fieldrow" style={{ marginBottom: 0 }}>
+              <label>Colour</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={form.color}
+                  onChange={e => setForm(f => ({ ...f, color: e.target.value }))}
+                  style={{ width: 36, height: 32, padding: 2, border: '1px solid var(--edge)', borderRadius: 8, cursor: 'pointer', background: 'var(--field)' }}
+                />
+                <div className="flex gap-1 flex-wrap">
+                  {PRESET_COLORS.map(c => (
+                    <button
+                      key={c}
+                      onClick={() => setForm(f => ({ ...f, color: c }))}
+                      aria-label={`Use colour ${c}`}
+                      style={{ width: 20, height: 20, borderRadius: 6, background: c, border: 'none', cursor: 'pointer', outline: form.color === c ? `2px solid ${c}` : 'none', outlineOffset: 2 }}
+                    />
+                  ))}
                 </div>
-              )},
-              { lbl: 'Sort Order', node: <input type="number" value={form.sort_order} onChange={e => setForm(f => ({ ...f, sort_order: parseInt(e.target.value) || 0 }))} style={{ ...inp, width: 80 }} /> },
-            ].map(({ lbl, hint, node }: any) => (
-              <div key={lbl}>
-                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#737373', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{lbl}</label>
-                {node}
-                {hint && <p style={{ margin: '4px 0 0', fontSize: 11, color: '#A3A3A3' }}>{hint}</p>}
               </div>
-            ))}
+            </div>
+            <div className="fieldrow" style={{ marginBottom: 0 }}>
+              <label>Sort order</label>
+              <input type="number" className="input" value={form.sort_order} onChange={e => setForm(f => ({ ...f, sort_order: parseInt(e.target.value) || 0 }))} style={{ width: 90 }} />
+            </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 24, marginBottom: 16 }}>
+          <div className="flex gap-6 mb-4 flex-wrap">
             {[
               { key: 'pauses_sla', title: 'Pauses SLA', hint: 'SLA clock stops while in this status' },
               { key: 'is_default', title: 'Default status', hint: 'Applied to newly created tickets' },
               { key: 'is_resolved_state', title: 'Resolved state', hint: 'Tickets re-open on new Slack reply' },
             ].map(({ key, title, hint }) => (
-              <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
-                <input type="checkbox" checked={(form as any)[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.checked }))} style={{ accentColor: '#FF4713' }} />
-                <div><div style={{ fontWeight: 600 }}>{title}</div><div style={{ fontSize: 11, color: '#737373' }}>{hint}</div></div>
+              <label key={key} className="flex items-center gap-2 cursor-pointer text-[13px]">
+                <input type="checkbox" checked={(form as any)[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.checked }))} style={{ accentColor: 'var(--b1)' }} />
+                <div>
+                  <div className="font-semibold text-ink">{title}</div>
+                  <div className="text-[11px] text-ink-3">{hint}</div>
+                </div>
               </label>
             ))}
           </div>
 
-          {error && <div style={{ marginBottom: 12, fontSize: 13, color: '#EF4444' }}>{error}</div>}
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => saveMutation.mutate()} disabled={!form.label || (!editId && !form.name) || saveMutation.isPending}
-              style={{ background: saveMutation.isPending ? '#F2F2F2' : '#0A0A0A', color: saveMutation.isPending ? '#A3A3A3' : '#fff', border: 'none', borderRadius: 7, padding: '8px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          {error && <div className="mb-3 text-[13px] text-danger-ink">{error}</div>}
+          <div className="flex gap-2">
+            <button
+              onClick={() => saveMutation.mutate()}
+              disabled={!form.label || (!editId && !form.name) || saveMutation.isPending}
+              className="btn"
+              style={(!form.label || (!editId && !form.name)) ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+            >
               {saveMutation.isPending ? 'Saving…' : editId !== null ? 'Save changes' : 'Create status'}
             </button>
             {editId !== null && (
-              <button onClick={() => { setEditId(null); setForm(BLANK_STATUS); setError(null) }}
-                style={{ background: 'none', border: '1px solid #E5E5E5', borderRadius: 7, padding: '8px 14px', fontSize: 13, cursor: 'pointer', color: '#737373' }}>
+              <button onClick={() => { setEditId(null); setForm(BLANK_STATUS); setError(null) }} className="btn ghost">
                 Cancel
               </button>
             )}
@@ -888,14 +1006,16 @@ function StatusesTab() {
       {/* Archived */}
       {archived.length > 0 && (
         <Card>
-          <CardHeader><SectionLabel>Archived Statuses</SectionLabel></CardHeader>
-          <div style={{ padding: '12px 20px', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <CardHeader><SectionLabel>Archived statuses</SectionLabel></CardHeader>
+          <div className="flex flex-wrap gap-2" style={{ padding: '12px 22px 16px' }}>
             {archived.map(s => (
-              <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#F9F9F9', border: '1px solid #E5E5E5', borderRadius: 6, padding: '4px 10px', fontSize: 12 }}>
-                <span style={{ width: 10, height: 10, borderRadius: 2, background: s.color, display: 'inline-block' }} />
-                <span style={{ color: '#737373' }}>{s.label}</span>
-                <button onClick={() => patchMutation.mutate({ id: s.id, patch: { is_archived: false } })}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#3B82F6', padding: 0, marginLeft: 4 }}>
+              <div key={s.id} className="flex items-center gap-1.5 bg-field border border-edge rounded-full px-2.5 py-1 text-[12px]">
+                <span style={{ width: 10, height: 10, borderRadius: 3, background: s.color, display: 'inline-block' }} />
+                <span className="text-ink-2">{s.label}</span>
+                <button
+                  onClick={() => patchMutation.mutate({ id: s.id, patch: { is_archived: false } })}
+                  className="bg-transparent border-0 cursor-pointer text-[11px] text-brand-ink p-0 ml-1"
+                >
                   Restore
                 </button>
               </div>
@@ -950,64 +1070,82 @@ function BackupTab() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 680 }}>
+    <div className="flex flex-col gap-4" style={{ maxWidth: 680 }}>
       {/* Export */}
       <Card>
-        <CardHeader><SectionLabel>Export Backup</SectionLabel></CardHeader>
-        <div style={{ padding: '20px' }}>
-          <p style={{ fontSize: 13, color: '#737373', margin: '0 0 16px', lineHeight: 1.6 }}>
-            Downloads a <code style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, background: '#F2F2F2', padding: '1px 5px', borderRadius: 4 }}>.zip</code> with all tickets, replies, users, categories, SLA policies, settings, and attachments. Slack credentials and JWT secret are excluded.
+        <CardHeader><SectionLabel>Export backup</SectionLabel></CardHeader>
+        <div style={{ padding: '18px 22px' }}>
+          <p className="text-[13px] text-ink-2 m-0 mb-4 leading-relaxed">
+            Downloads a <span className="font-mono text-[12px] px-1 py-px rounded bg-field text-ink">.zip</span> with all tickets, replies, users, categories, SLA policies, settings, and attachments. Slack credentials and JWT secret are excluded.
           </p>
-          <button onClick={handleDownload} disabled={downloading}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 8, border: 'none', background: downloading ? '#F2F2F2' : '#0A0A0A', color: downloading ? '#A3A3A3' : '#fff', fontSize: 13, fontWeight: 600, cursor: downloading ? 'not-allowed' : 'pointer' }}
-            onMouseOver={e => { if (!downloading) e.currentTarget.style.background = '#1F1F1F' }}
-            onMouseOut={e => { if (!downloading) e.currentTarget.style.background = '#0A0A0A' }}>
-            {downloading ? <><Spin />&nbsp;Preparing…</> : <>↓ Download backup</>}
+          <button className="btn" onClick={handleDownload} disabled={downloading} style={downloading ? { opacity: 0.7, cursor: 'wait' } : undefined}>
+            {downloading ? <><Spin />&nbsp;Preparing…</> : 'Download backup'}
           </button>
-          {downloadError && <p style={{ margin: '8px 0 0', fontSize: 13, color: '#EF4444' }}>{downloadError}</p>}
+          {downloadError && <p className="mt-2 mb-0 text-[13px] text-danger-ink">{downloadError}</p>}
         </div>
       </Card>
 
       {/* Restore */}
       <Card>
-        <CardHeader><SectionLabel>Restore from Backup</SectionLabel></CardHeader>
-        <div style={{ padding: '20px' }}>
-          <div style={{ background: '#FEF2F2', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '10px 14px', marginBottom: 18, fontSize: 13, color: '#991B1B', lineHeight: 1.6 }}>
-            ⚠ <strong>This permanently overwrites all data.</strong> Slack credentials and the JWT secret are not affected — re-enter them after restore.
+        <CardHeader><SectionLabel>Restore from backup</SectionLabel></CardHeader>
+        <div style={{ padding: '18px 22px' }}>
+          <div
+            className="rounded-block px-3.5 py-2.5 mb-4 text-[13px] leading-relaxed text-danger-ink"
+            style={{ background: 'var(--danger-bg)' }}
+          >
+            <strong>This permanently overwrites all data.</strong> Slack credentials and the JWT secret are not affected — re-enter them after restore.
           </div>
           <div
             onDragOver={e => { e.preventDefault(); setDragOver(true) }}
             onDragLeave={() => setDragOver(false)}
             onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f?.name.endsWith('.zip')) pickFile(f) }}
             onClick={() => fileInputRef.current?.click()}
-            style={{ border: `2px dashed ${dragOver ? '#FF4713' : file ? '#22C55E' : '#E5E5E5'}`, borderRadius: 10, padding: '28px 20px', textAlign: 'center', cursor: 'pointer', background: dragOver ? 'rgba(255,71,19,0.02)' : file ? 'rgba(34,197,94,0.02)' : '#FAFAFA', transition: 'all 0.15s', marginBottom: 16 }}>
+            className="rounded-block px-5 py-7 text-center cursor-pointer mb-4 bg-field border border-edge hover:bg-row-hover"
+            style={{
+              boxShadow: 'inset 0 1px 0 var(--specular)',
+              ...(dragOver ? { borderColor: 'color-mix(in oklab, var(--b1) 55%, transparent)', background: 'var(--brand-tint)' } : {}),
+            }}
+          >
             <input ref={fileInputRef} type="file" accept=".zip" style={{ display: 'none' }} onChange={e => pickFile(e.target.files?.[0])} />
             {file ? (
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#0A0A0A' }}>📦 {file.name} <span style={{ fontWeight: 400, color: '#737373' }}>({(file.size / 1024 / 1024).toFixed(2)} MB) — click to change</span></div>
+              <div className="text-[13px] font-semibold text-ink">
+                {file.name} <span className="font-normal text-ink-2 font-mono text-[11.5px]">({(file.size / 1024 / 1024).toFixed(2)} MB)</span>
+                <span className="font-normal text-ink-3"> — click to change</span>
+              </div>
             ) : (
-              <div style={{ fontSize: 13, color: '#737373' }}>Drop a <strong>.zip</strong> backup here or click to browse</div>
+              <div className="text-[13px] text-ink-2">Drop a <strong className="text-ink">.zip</strong> backup here or click to browse</div>
             )}
           </div>
-          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', marginBottom: 16 }}>
-            <input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} style={{ marginTop: 2, accentColor: '#FF4713' }} />
-            <span style={{ fontSize: 13, color: '#0A0A0A', lineHeight: 1.5 }}>I understand all current data will be permanently overwritten and cannot be recovered.</span>
+          <label className="flex items-start gap-2 cursor-pointer mb-4">
+            <input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} style={{ marginTop: 2, accentColor: 'var(--b1)' }} />
+            <span className="text-[13px] text-ink leading-snug">I understand all current data will be permanently overwritten and cannot be recovered.</span>
           </label>
-          <button onClick={handleRestore} disabled={!file || !confirmed || restoring}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 8, border: 'none', background: (!file || !confirmed || restoring) ? '#F2F2F2' : '#DC2626', color: (!file || !confirmed || restoring) ? '#A3A3A3' : '#fff', fontSize: 13, fontWeight: 600, cursor: (!file || !confirmed || restoring) ? 'not-allowed' : 'pointer' }}
-            onMouseOver={e => { if (file && confirmed && !restoring) e.currentTarget.style.background = '#B91C1C' }}
-            onMouseOut={e => { if (file && confirmed && !restoring) e.currentTarget.style.background = '#DC2626' }}>
-            {restoring ? <><Spin color="#A3A3A3" />&nbsp;Restoring…</> : 'Restore from backup'}
+          <button
+            onClick={handleRestore}
+            disabled={!file || !confirmed || restoring}
+            className="btn ghost danger"
+            style={(!file || !confirmed || restoring) ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+          >
+            {restoring ? <><Spin />&nbsp;Restoring…</> : 'Restore from backup'}
           </button>
-          {restoreResult && <div style={{ marginTop: 14, background: '#F0FDF4', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#166534' }}>Restore complete. {restoreResult.restored_files} attachment file{restoreResult.restored_files !== 1 ? 's' : ''} restored. Reload to see updated data.</div>}
-          {restoreError && <div style={{ marginTop: 14, background: '#FEF2F2', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#991B1B' }}>{restoreError}</div>}
+          {restoreResult && (
+            <div className="mt-3.5 rounded-block px-3.5 py-2.5 text-[13px]" style={{ background: 'var(--brand-tint)', color: 'var(--brand-ink)' }}>
+              Restore complete. {restoreResult.restored_files} attachment file{restoreResult.restored_files !== 1 ? 's' : ''} restored. Reload to see updated data.
+            </div>
+          )}
+          {restoreError && (
+            <div className="mt-3.5 rounded-block px-3.5 py-2.5 text-[13px] text-danger-ink" style={{ background: 'var(--danger-bg)' }}>
+              {restoreError}
+            </div>
+          )}
         </div>
       </Card>
     </div>
   )
 }
 
-function Spin({ color = '#fff' }: { color?: string }) {
-  return <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" style={{ animation: 'spin 0.8s linear infinite' }}><path d="M7 1a6 6 0 1 1-4.24 1.76" /></svg>
+function Spin() {
+  return <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="animate-spin"><path d="M7 1a6 6 0 1 1-4.24 1.76" /></svg>
 }
 
 // ── Account tab ────────────────────────────────────────────────────────────────
@@ -1044,8 +1182,8 @@ function AccountTab() {
   const eyeIcon = (visible: boolean) => (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       {visible
-        ? <><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></>
-        : <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>
+        ? <><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" /><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" /><line x1="1" y1="1" x2="23" y2="23" /></>
+        : <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></>
       }
     </svg>
   )
@@ -1053,75 +1191,86 @@ function AccountTab() {
   return (
     <div style={{ maxWidth: 420 }}>
       <Card>
-        <CardHeader><SectionLabel>Change Password</SectionLabel></CardHeader>
+        <CardHeader><SectionLabel>Change password</SectionLabel></CardHeader>
         <form onSubmit={handleSubmit}>
-          <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: '#737373' }}>Current password</label>
-              <div style={{ position: 'relative' }}>
+          <div style={{ padding: '18px 22px' }}>
+            <div className="fieldrow">
+              <label htmlFor="pw-current">Current password</label>
+              <div className="relative">
                 <input
+                  id="pw-current"
+                  className="input"
                   type={showCurrent ? 'text' : 'password'}
                   value={current}
                   onChange={e => setCurrent(e.target.value)}
                   autoComplete="current-password"
-                  style={{ ...inp, paddingRight: 36 }}
+                  style={{ paddingRight: 40 }}
                 />
-                <button type="button" onClick={() => setShowCurrent(v => !v)}
-                  style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#A3A3A3', padding: 2, display: 'flex' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowCurrent(v => !v)}
+                  aria-label={showCurrent ? 'Hide password' : 'Show password'}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 bg-transparent border-0 cursor-pointer text-ink-3 hover:text-ink flex p-0.5"
+                >
                   {eyeIcon(showCurrent)}
                 </button>
               </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: '#737373' }}>New password <span style={{ fontWeight: 400, color: '#A3A3A3' }}>(min 8 characters)</span></label>
-              <div style={{ position: 'relative' }}>
+            <div className="fieldrow">
+              <label htmlFor="pw-next">New password <span className="font-normal text-ink-3">(min 8 characters)</span></label>
+              <div className="relative">
                 <input
+                  id="pw-next"
+                  className="input"
                   type={showNext ? 'text' : 'password'}
                   value={next}
                   onChange={e => setNext(e.target.value)}
                   autoComplete="new-password"
-                  style={{ ...inp, paddingRight: 36 }}
+                  style={{ paddingRight: 40 }}
                 />
-                <button type="button" onClick={() => setShowNext(v => !v)}
-                  style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#A3A3A3', padding: 2, display: 'flex' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowNext(v => !v)}
+                  aria-label={showNext ? 'Hide password' : 'Show password'}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 bg-transparent border-0 cursor-pointer text-ink-3 hover:text-ink flex p-0.5"
+                >
                   {eyeIcon(showNext)}
                 </button>
               </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: '#737373' }}>Confirm new password</label>
+            <div className="fieldrow">
+              <label htmlFor="pw-confirm">Confirm new password</label>
               <input
+                id="pw-confirm"
+                className="input"
                 type="password"
                 value={confirm}
                 onChange={e => setConfirm(e.target.value)}
                 autoComplete="new-password"
-                style={{ ...inp, borderColor: mismatch ? '#EF4444' : undefined }}
+                style={mismatch ? { borderColor: 'var(--danger-ink)' } : undefined}
               />
-              {mismatch && <span style={{ fontSize: 12, color: '#EF4444' }}>Passwords don't match</span>}
+              {mismatch && <span className="text-[12px] text-danger-ink">Passwords don't match</span>}
             </div>
 
             {status === 'error' && (
-              <div style={{ background: '#FEF2F2', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 7, padding: '8px 12px', fontSize: 13, color: '#991B1B' }}>
+              <div className="rounded-control px-3 py-2 mb-3.5 text-[13px] text-danger-ink" style={{ background: 'var(--danger-bg)' }}>
                 {errorMsg}
               </div>
             )}
             {status === 'ok' && (
-              <div style={{ background: '#F0FDF4', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 7, padding: '8px 12px', fontSize: 13, color: '#166534' }}>
+              <div className="rounded-control px-3 py-2 mb-3.5 text-[13px]" style={{ background: 'var(--brand-tint)', color: 'var(--brand-ink)' }}>
                 Password updated successfully.
               </div>
             )}
 
-            <button type="submit" disabled={!canSubmit}
-              style={{
-                padding: '9px 20px', borderRadius: 8, border: 'none', alignSelf: 'flex-start',
-                background: canSubmit ? 'linear-gradient(135deg, #FF4713, #AD1164)' : '#F2F2F2',
-                color: canSubmit ? '#fff' : '#A3A3A3',
-                fontSize: 13, fontWeight: 600, cursor: canSubmit ? 'pointer' : 'not-allowed',
-                display: 'flex', alignItems: 'center', gap: 7,
-              }}>
+            <button
+              type="submit"
+              className="btn"
+              disabled={!canSubmit}
+              style={!canSubmit ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+            >
               {status === 'saving' && <Spin />}
               Update password
             </button>
@@ -1149,20 +1298,11 @@ export default function Settings() {
 
   return (
     <AppShell title="Settings">
-      <div style={{ maxWidth: 1100, padding: '28px 32px' }}>
-
+      <div style={{ maxWidth: 1100 }}>
         {/* Tab bar */}
-        <div style={{ display: 'flex', gap: 2, borderBottom: '1px solid #E5E5E5', marginBottom: 24 }}>
+        <div className="flex gap-1.5 mb-5 flex-wrap">
           {tabs.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)}
-              style={{
-                padding: '11px 20px', borderRadius: '6px 6px 0 0', border: 'none',
-                background: 'none',
-                borderBottom: tab === t.id ? '2px solid #FF4713' : '2px solid transparent',
-                fontSize: 14, fontWeight: tab === t.id ? 600 : 500,
-                color: tab === t.id ? '#FF4713' : '#737373',
-                cursor: 'pointer', transition: 'color 0.15s', marginBottom: -1,
-              }}>
+            <button key={t.id} onClick={() => setTab(t.id)} className={`chip${tab === t.id ? ' on' : ''}`}>
               {t.label}
             </button>
           ))}
@@ -1176,7 +1316,6 @@ export default function Settings() {
         {isAdmin && tab === 'backup'     && <BackupTab />}
         {tab === 'account' && <AccountTab />}
       </div>
-      <style>{`@keyframes shimmer{0%,100%{opacity:1}50%{opacity:.4}} @keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </AppShell>
   )
 }

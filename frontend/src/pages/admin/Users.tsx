@@ -25,19 +25,9 @@ interface UserListResponse { items: UserRead[]; total: number }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-const ROLE_COLORS: Record<UserRole, string> = {
-  admin: '#AD1164',
-  technician: '#FF4713',
-}
-
 const ROLE_LABELS: Record<UserRole, string> = {
   admin: 'Admin',
   technician: 'Technician',
-}
-
-const ROLE_BG: Record<UserRole, string> = {
-  admin: '#AD116415',
-  technician: '#FF471315',
 }
 
 function timeAgo(d: string) {
@@ -47,20 +37,6 @@ function timeAgo(d: string) {
   if (days === 1) return 'Yesterday'
   if (days < 30) return `${days}d ago`
   return parseUTC(d).toLocaleDateString()
-}
-
-const AVATAR_GRADIENTS: [string, string][] = [
-  ['#FF4713', '#AD1164'],
-  ['#3B82F6', '#6366F1'],
-  ['#10B981', '#059669'],
-  ['#F59E0B', '#EF4444'],
-  ['#8B5CF6', '#EC4899'],
-]
-
-function nameGradient(name: string) {
-  const idx = name.charCodeAt(0) % AVATAR_GRADIENTS.length
-  const [a, b] = AVATAR_GRADIENTS[idx]
-  return `linear-gradient(135deg, ${a}, ${b})`
 }
 
 function initials(name: string) {
@@ -77,22 +53,6 @@ function useDebounce<T>(value: T, delay: number): T {
   return debounced
 }
 
-// ── Shared input style ─────────────────────────────────────────────────────────
-
-const inp: React.CSSProperties = {
-  padding: '9px 12px',
-  borderRadius: 8,
-  border: '1.5px solid #E5E5E5',
-  fontSize: 14,
-  color: '#262626',
-  background: '#fff',
-  outline: 'none',
-  fontFamily: 'Inter, system-ui, sans-serif',
-  width: '100%',
-  boxSizing: 'border-box',
-  transition: 'border-color 0.15s',
-}
-
 // ── Create User Modal ──────────────────────────────────────────────────────────
 
 interface CreateModalProps {
@@ -107,7 +67,6 @@ function CreateUserModal({ onClose }: CreateModalProps) {
   const [showPw, setShowPw] = useState(false)
   const [role, setRole] = useState<UserRole>('technician')
   const [error, setError] = useState<string | null>(null)
-  const [focused, setFocused] = useState<string | null>(null)
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -132,85 +91,70 @@ function CreateUserModal({ onClose }: CreateModalProps) {
     mutation.mutate()
   }
 
-  const focusStyle = (f: string): React.CSSProperties => ({
-    ...inp,
-    borderColor: focused === f ? '#FF4713' : '#E5E5E5',
-    boxShadow: focused === f ? '0 0 0 3px rgba(255,71,19,0.07)' : 'none',
-  })
-
   return (
-    <div
-      style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
-        zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}
-    >
-      <div
-        style={{
-          background: '#fff', borderRadius: 14, width: 420, maxWidth: '90vw',
-          boxShadow: '0 20px 60px rgba(0,0,0,0.2)', overflow: 'hidden',
-          animation: 'modalIn 0.18s ease',
-        }}
-      >
-        <div style={{ height: 3, background: 'linear-gradient(135deg, #FF4713, #AD1164)' }} />
-        <div style={{ padding: '24px 28px 28px' }}>
-          <h2 style={{ fontSize: 16, fontWeight: 700, color: '#0A0A0A', margin: '0 0 20px', letterSpacing: '-0.01em' }}>
-            Create Local Account
-          </h2>
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#262626', marginBottom: 5 }}>Full Name</label>
-              <input value={name} onChange={e => setName(e.target.value)} placeholder="Jane Smith"
-                style={focusStyle('name')} onFocus={() => setFocused('name')} onBlur={() => setFocused(null)} />
+    <>
+      <div className="scrim open" style={{ zIndex: 200 }} onClick={onClose} />
+      <div role="dialog" aria-modal="true" aria-label="Create local account" className="modal open" style={{ zIndex: 201, width: 'min(420px, 94vw)' }}>
+        <h2>Create local account</h2>
+        <p className="sub">Local accounts sign in with email and password.</p>
+        <form onSubmit={handleSubmit}>
+          <div className="fieldrow">
+            <label htmlFor="new-user-name">Full name</label>
+            <input id="new-user-name" className="input" value={name} onChange={e => setName(e.target.value)} placeholder="Jane Smith" />
+          </div>
+          <div className="fieldrow">
+            <label htmlFor="new-user-email">Email</label>
+            <input id="new-user-email" className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@example.com" />
+          </div>
+          <div className="fieldrow">
+            <label htmlFor="new-user-password">Password</label>
+            <div className="relative">
+              <input
+                id="new-user-password"
+                className="input"
+                type={showPw ? 'text' : 'password'}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="Min. 8 characters"
+                style={{ paddingRight: 52 }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPw(!showPw)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 bg-transparent border-0 cursor-pointer text-ink-3 hover:text-ink text-[11px] font-semibold"
+              >
+                {showPw ? 'Hide' : 'Show'}
+              </button>
             </div>
-            <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#262626', marginBottom: 5 }}>Email</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@example.com"
-                style={focusStyle('email')} onFocus={() => setFocused('email')} onBlur={() => setFocused(null)} />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#262626', marginBottom: 5 }}>Password</label>
-              <div style={{ position: 'relative' }}>
-                <input type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
-                  placeholder="Min. 8 characters" style={{ ...focusStyle('pw'), paddingRight: 40 }}
-                  onFocus={() => setFocused('pw')} onBlur={() => setFocused(null)} />
-                <button type="button" onClick={() => setShowPw(!showPw)}
-                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#737373', fontSize: 11, fontWeight: 600 }}>
-                  {showPw ? 'Hide' : 'Show'}
-                </button>
-              </div>
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#262626', marginBottom: 5 }}>Role</label>
-              <select value={role} onChange={e => setRole(e.target.value as UserRole)}
-                style={{ ...inp, appearance: 'none', cursor: 'pointer', paddingRight: 28,
-                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M6 9l6 6 6-6' stroke='%23737373' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
-                  backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}>
+          </div>
+          <div className="fieldrow">
+            <label htmlFor="new-user-role">Role</label>
+            <div className="selectwrap">
+              <select id="new-user-role" className="select" value={role} onChange={e => setRole(e.target.value as UserRole)}>
                 <option value="technician">Technician</option>
                 <option value="admin">Admin</option>
               </select>
             </div>
-            {error && (
-              <div style={{ padding: '9px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 7, fontSize: 13, color: '#DC2626' }}>
-                {error}
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
-              <button type="button" onClick={onClose}
-                style={{ padding: '8px 18px', borderRadius: 7, border: '1px solid #E5E5E5', background: '#fff', fontSize: 13, fontWeight: 500, color: '#737373', cursor: 'pointer' }}>
-                Cancel
-              </button>
-              <button type="submit" disabled={mutation.isPending}
-                style={{ padding: '8px 18px', borderRadius: 7, border: 'none', background: 'linear-gradient(135deg, #FF4713, #AD1164)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: mutation.isPending ? 'not-allowed' : 'pointer', opacity: mutation.isPending ? 0.8 : 1 }}>
-                {mutation.isPending ? 'Creating…' : 'Create Account'}
-              </button>
+          </div>
+          {error && (
+            <div className="px-3 py-2 rounded-control mb-3 text-[13px] text-danger-ink" style={{ background: 'var(--danger-bg)' }}>
+              {error}
             </div>
-          </form>
-        </div>
+          )}
+          <div className="modal-actions">
+            <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
+            <button
+              type="submit"
+              className="btn"
+              disabled={mutation.isPending}
+              style={mutation.isPending ? { opacity: 0.7, cursor: 'wait' } : undefined}
+            >
+              {mutation.isPending ? 'Creating…' : 'Create account'}
+            </button>
+          </div>
+        </form>
       </div>
-      <style>{`@keyframes modalIn { from { opacity:0; transform:scale(0.95); } to { opacity:1; transform:scale(1); } }`}</style>
-    </div>
+    </>
   )
 }
 
@@ -239,10 +183,11 @@ function RoleBadge({ user }: RoleBadgeProps) {
     return (
       <select
         autoFocus
+        className="select"
+        style={{ width: 'auto', padding: '4px 8px', fontSize: 12 }}
         defaultValue={user.role}
         onChange={e => mutation.mutate(e.target.value as UserRole)}
         onBlur={() => setEditing(false)}
-        style={{ fontSize: 12, borderRadius: 6, border: '1px solid #E5E5E5', padding: '3px 6px', fontFamily: 'Inter, system-ui, sans-serif', cursor: 'pointer', outline: 'none' }}
       >
         <option value="technician">Technician</option>
         <option value="admin">Admin</option>
@@ -254,15 +199,7 @@ function RoleBadge({ user }: RoleBadgeProps) {
     <span
       onClick={() => setEditing(true)}
       title="Click to change role"
-      style={{
-        display: 'inline-flex', alignItems: 'center', padding: '3px 9px', borderRadius: 999,
-        fontSize: 11, fontWeight: 600, cursor: 'pointer', userSelect: 'none',
-        color: ROLE_COLORS[user.role], background: ROLE_BG[user.role],
-        border: `1px solid ${ROLE_COLORS[user.role]}25`,
-        transition: 'opacity 0.12s',
-      }}
-      onMouseEnter={e => (e.currentTarget.style.opacity = '0.75')}
-      onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+      className={`pill ${user.role === 'admin' ? 'use' : 'avail'} cursor-pointer select-none`}
     >
       {ROLE_LABELS[user.role]}
     </span>
@@ -303,6 +240,8 @@ function SlackIdCell({ user }: { user: UserRead }) {
     return (
       <input
         autoFocus
+        className="input font-mono"
+        style={{ width: 140, padding: '4px 9px', fontSize: 12 }}
         value={value}
         onChange={e => setValue(e.target.value)}
         onBlur={commit}
@@ -311,7 +250,6 @@ function SlackIdCell({ user }: { user: UserRead }) {
           if (e.key === 'Escape') { setValue(user.slack_user_id ?? ''); setEditing(false) }
         }}
         placeholder="U0123ABCDEF"
-        style={{ fontSize: 12, borderRadius: 6, border: '1px solid #FF4713', padding: '3px 8px', outline: 'none', width: 130, fontFamily: 'monospace' }}
       />
     )
   }
@@ -320,9 +258,7 @@ function SlackIdCell({ user }: { user: UserRead }) {
     <span
       onClick={() => setEditing(true)}
       title="Click to set Slack user ID"
-      style={{ fontSize: 11, fontFamily: 'monospace', color: user.slack_user_id ? '#262626' : '#C0C0C0', cursor: 'pointer', padding: '2px 6px', borderRadius: 5, border: '1px dashed transparent', transition: 'all 0.12s' }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor = '#E5E5E5'; e.currentTarget.style.background = '#F9F9F9' }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.background = 'transparent' }}
+      className={`font-mono text-[11px] cursor-pointer px-1.5 py-0.5 rounded-md hover:bg-row-hover ${user.slack_user_id ? 'text-ink-2' : 'text-ink-3 italic'}`}
     >
       {user.slack_user_id ?? 'not linked'}
     </span>
@@ -413,175 +349,168 @@ export default function Users() {
     { id: 'inactive', label: 'Inactive' },
   ] as const
 
-  const tableHeaders = ['User', 'Role', 'Slack ID', 'Status', 'Last Login', 'Created', 'Actions']
+  const tableHeaders = ['User', 'Role', 'Slack ID', 'Status', 'Last login', 'Created', 'Actions']
 
   return (
-    <AdminPageShell title="User Management">
-      {/* Header row — action button only, page title lives in the topbar */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 20 }}>
-        <button
-          onClick={() => setShowCreate(true)}
-          style={{ padding: '8px 16px', height: 36, borderRadius: 8, border: 'none', background: 'linear-gradient(135deg, #FF4713, #AD1164)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
-        >
-          <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> Create User
-        </button>
-      </div>
-
+    <AdminPageShell title="Users">
       {/* Filter bar */}
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative', flex: '0 0 220px' }}>
-          <svg style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} width="14" height="14" viewBox="0 0 24 24" fill="none">
-            <circle cx="11" cy="11" r="8" stroke="#A3A3A3" strokeWidth="2"/>
-            <path d="m21 21-4.35-4.35" stroke="#A3A3A3" strokeWidth="2" strokeLinecap="round"/>
+      <div className="flex gap-3 items-center mb-4 flex-wrap">
+        <div className="relative" style={{ flex: '0 0 230px' }}>
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-ink-3" width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <circle cx="8" cy="8" r="5.5" />
+            <path d="M12.5 12.5L16 16" />
           </svg>
           <input
-            value={search} onChange={e => { setSearch(e.target.value); setPage(0) }}
+            className="input"
+            style={{ paddingLeft: 34 }}
+            value={search}
+            onChange={e => { setSearch(e.target.value); setPage(0) }}
             placeholder="Search name or email…"
-            style={{ ...inp, paddingLeft: 32, width: '100%' }}
           />
         </div>
 
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+        <div className="flex gap-1.5 flex-wrap">
           {FILTER_PILLS.map(p => (
-            <button key={p.id} onClick={() => { setRoleFilter(p.id as UserRole | 'all'); setPage(0) }}
-              style={{ padding: '5px 12px', borderRadius: 999, fontSize: 12, fontWeight: roleFilter === p.id ? 600 : 500, border: roleFilter === p.id ? '1.5px solid #FF4713' : '1.5px solid #E5E5E5', background: roleFilter === p.id ? 'rgba(255,71,19,0.07)' : '#fff', color: roleFilter === p.id ? '#FF4713' : '#737373', cursor: 'pointer', transition: 'all 0.12s' }}>
+            <button
+              key={p.id}
+              onClick={() => { setRoleFilter(p.id as UserRole | 'all'); setPage(0) }}
+              className={`chip${roleFilter === p.id ? ' on' : ''}`}
+            >
               {p.label}
             </button>
           ))}
         </div>
 
-        <div style={{ display: 'flex', gap: 4 }}>
+        <div className="flex gap-1.5">
           {ACTIVE_PILLS.map(p => (
-            <button key={p.id} onClick={() => { setActiveFilter(p.id); setPage(0) }}
-              style={{ padding: '5px 12px', borderRadius: 999, fontSize: 12, fontWeight: activeFilter === p.id ? 600 : 500, border: activeFilter === p.id ? '1.5px solid #262626' : '1.5px solid #E5E5E5', background: activeFilter === p.id ? '#262626' : '#fff', color: activeFilter === p.id ? '#fff' : '#737373', cursor: 'pointer', transition: 'all 0.12s' }}>
+            <button
+              key={p.id}
+              onClick={() => { setActiveFilter(p.id); setPage(0) }}
+              className={`chip${activeFilter === p.id ? ' on' : ''}`}
+            >
               {p.label}
             </button>
           ))}
         </div>
+
+        <button className="btn sm ml-auto" onClick={() => setShowCreate(true)}>
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M7 2v10M2 7h10" />
+          </svg>
+          Create user
+        </button>
       </div>
 
       {/* Table */}
-      <div style={{ background: '#fff', border: '1px solid #E5E5E5', borderRadius: 14, overflow: 'hidden' }}>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <section className="panel">
+        <div className="tablewrap">
+          <table>
             <thead>
-              <tr style={{ background: '#F9F9F9', borderBottom: '1px solid #F2F2F2' }}>
+              <tr>
                 {tableHeaders.map(h => (
-                  <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#737373', textTransform: 'uppercase', letterSpacing: '0.07em', whiteSpace: 'nowrap' }}>
-                    {h}
-                  </th>
+                  <th key={h}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 Array.from({ length: 8 }).map((_, i) => (
-                  <tr key={i} style={{ borderBottom: '1px solid #F9F9F9' }}>
-                    <td style={{ padding: '12px 16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#F2F2F2', animation: 'shimmer 1.5s ease-in-out infinite' }} />
+                  <tr key={i}>
+                    <td>
+                      <div className="flex items-center gap-2.5">
+                        <div style={{ width: 30, height: 30, borderRadius: 10, background: 'var(--track)', animation: 'shimmer 1.5s ease-in-out infinite' }} />
                         <div>
-                          <div style={{ width: 100, height: 12, borderRadius: 4, background: '#F2F2F2', marginBottom: 5, animation: 'shimmer 1.5s ease-in-out infinite' }} />
-                          <div style={{ width: 140, height: 10, borderRadius: 4, background: '#F2F2F2', animation: 'shimmer 1.5s ease-in-out infinite' }} />
+                          <div style={{ width: 100, height: 12, borderRadius: 6, background: 'var(--track)', marginBottom: 5, animation: 'shimmer 1.5s ease-in-out infinite' }} />
+                          <div style={{ width: 140, height: 10, borderRadius: 6, background: 'var(--track)', animation: 'shimmer 1.5s ease-in-out infinite' }} />
                         </div>
                       </div>
                     </td>
                     {[1, 2, 3, 4, 5, 6].map(j => (
-                      <td key={j} style={{ padding: '12px 16px' }}>
-                        <div style={{ height: 12, width: '70%', borderRadius: 4, background: '#F2F2F2', animation: 'shimmer 1.5s ease-in-out infinite' }} />
+                      <td key={j}>
+                        <div style={{ height: 12, width: '70%', borderRadius: 6, background: 'var(--track)', animation: 'shimmer 1.5s ease-in-out infinite' }} />
                       </td>
                     ))}
                   </tr>
                 ))
               ) : data?.items.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ padding: '48px 24px', textAlign: 'center', color: '#A3A3A3', fontSize: 14 }}>
+                  <td colSpan={7} style={{ padding: '48px 24px', textAlign: 'center', whiteSpace: 'normal' }} className="text-ink-3">
                     No users found
                   </td>
                 </tr>
               ) : (
                 data?.items.map(user => (
-                  <tr
-                    key={user.id}
-                    style={{ borderBottom: '1px solid #F9F9F9', transition: 'background 0.1s' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = '#FAFAFA')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                  >
+                  <tr key={user.id}>
                     {/* User */}
-                    <td style={{ padding: '12px 16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div style={{ width: 32, height: 32, borderRadius: '50%', background: nameGradient(user.name), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+                    <td>
+                      <div className="who">
+                        <div className="avatar" style={{ width: 30, height: 30, fontSize: 11 }}>
                           {initials(user.name)}
                         </div>
                         <div>
-                          <div style={{ fontSize: 13, fontWeight: 500, color: '#0A0A0A' }}>{user.name}</div>
-                          <div style={{ fontSize: 11, color: '#A3A3A3', marginTop: 1 }}>{user.email}</div>
+                          <div className="name" style={{ fontSize: 13 }}>{user.name}</div>
+                          <div className="model">{user.email}</div>
                         </div>
                       </div>
                     </td>
                     {/* Role */}
-                    <td style={{ padding: '12px 16px' }}>
-                      <RoleBadge user={user} />
-                    </td>
+                    <td><RoleBadge user={user} /></td>
                     {/* Slack ID */}
-                    <td style={{ padding: '12px 16px' }}>
-                      <SlackIdCell user={user} />
-                    </td>
+                    <td><SlackIdCell user={user} /></td>
                     {/* Status */}
-                    <td style={{ padding: '12px 16px' }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 999, fontSize: 11, fontWeight: 600, color: user.is_active ? '#059669' : '#737373', background: user.is_active ? '#D1FAE5' : '#F3F4F6', border: `1px solid ${user.is_active ? '#6EE7B7' : '#E5E5E5'}` }}>
-                        <span style={{ width: 5, height: 5, borderRadius: '50%', background: user.is_active ? '#10B981' : '#9CA3AF' }} />
+                    <td>
+                      <span className={`pill ${user.is_active ? 'use' : 'retired'}`}>
                         {user.is_active ? 'Active' : 'Inactive'}
                       </span>
                     </td>
                     {/* Last login */}
-                    <td style={{ padding: '12px 16px' }}>
-                      <span style={{ fontSize: 12, color: '#737373' }}>
-                        {user.last_login_at ? timeAgo(user.last_login_at) : <span style={{ color: '#C0C0C0', fontStyle: 'italic' }}>Never</span>}
+                    <td>
+                      <span className="font-mono text-[11px] text-ink-2">
+                        {user.last_login_at ? timeAgo(user.last_login_at) : <span className="text-ink-3 italic">Never</span>}
                       </span>
                     </td>
                     {/* Created */}
-                    <td style={{ padding: '12px 16px' }}>
-                      <span style={{ fontSize: 12, color: '#A3A3A3' }}>{timeAgo(user.created_at)}</span>
+                    <td>
+                      <span className="font-mono text-[11px] text-ink-3">{timeAgo(user.created_at)}</span>
                     </td>
                     {/* Actions */}
-                    <td style={{ padding: '12px 16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <td>
+                      <div className="flex items-center gap-1.5">
                         <button
                           onClick={() => toggleActive.mutate({ id: user.id, is_active: !user.is_active })}
-                          style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #E5E5E5', background: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer', color: user.is_active ? '#EF4444' : '#10B981', transition: 'all 0.12s', whiteSpace: 'nowrap' }}
-                          onMouseEnter={e => { e.currentTarget.style.borderColor = user.is_active ? '#FECACA' : '#6EE7B7'; e.currentTarget.style.background = user.is_active ? '#FEF2F2' : '#F0FDF4' }}
-                          onMouseLeave={e => { e.currentTarget.style.borderColor = '#E5E5E5'; e.currentTarget.style.background = '#fff' }}
+                          className={`btn ghost sm${user.is_active ? ' danger' : ''}`}
+                          style={{ padding: '4px 11px', fontSize: 11.5 }}
                         >
                           {user.is_active ? 'Deactivate' : 'Reactivate'}
                         </button>
                         <button
                           onClick={() => setPasswordFor === user.id ? (setSetPasswordFor(null), setNewPassword(''), setSetPasswordState('idle')) : openSetPassword(user.id)}
-                          style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #E5E5E5', background: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer', color: '#737373', transition: 'all 0.12s', whiteSpace: 'nowrap' }}
-                          onMouseEnter={e => { e.currentTarget.style.borderColor = '#C0C0C0'; e.currentTarget.style.background = '#F9F9F9' }}
-                          onMouseLeave={e => { e.currentTarget.style.borderColor = '#E5E5E5'; e.currentTarget.style.background = '#fff' }}
+                          className="btn ghost sm"
+                          style={{ padding: '4px 11px', fontSize: 11.5 }}
                         >
                           Set password
                         </button>
                       </div>
                       {setPasswordFor === user.id && (
-                        <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <div className="mt-2 flex items-center gap-1.5">
                           <input
                             type="password"
+                            className="input"
                             value={newPassword}
                             onChange={e => { setNewPassword(e.target.value); setSetPasswordState('idle') }}
                             placeholder="New password (min 8)"
                             autoFocus
-                            style={{ ...inp, width: 180, padding: '5px 8px', fontSize: 12 }}
+                            style={{ width: 180, padding: '5px 10px', fontSize: 12 }}
                           />
                           <button
                             onClick={() => handleSetPassword(user.id)}
                             disabled={newPassword.length < 8 || setPasswordState === 'saving'}
-                            style={{ padding: '5px 10px', borderRadius: 6, border: 'none', fontSize: 11, fontWeight: 600, cursor: newPassword.length >= 8 ? 'pointer' : 'not-allowed', background: newPassword.length >= 8 ? '#0A0A0A' : '#F2F2F2', color: newPassword.length >= 8 ? '#fff' : '#A3A3A3', whiteSpace: 'nowrap' }}
+                            className="btn sm"
+                            style={newPassword.length < 8 ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
                           >
                             {setPasswordState === 'saving' ? '…' : setPasswordState === 'ok' ? '✓ Saved' : 'Save'}
                           </button>
-                          {setPasswordState === 'error' && <span style={{ fontSize: 11, color: '#EF4444' }}>Failed</span>}
+                          {setPasswordState === 'error' && <span className="text-[11px] text-danger-ink">Failed</span>}
                         </div>
                       )}
                     </td>
@@ -594,28 +523,30 @@ export default function Users() {
 
         {/* Pagination */}
         {data && data.total > PAGE_SIZE && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px', borderTop: '1px solid #F2F2F2', background: '#FAFAFA' }}>
-            <span style={{ fontSize: 12, color: '#737373' }}>
+          <div className="flex items-center justify-between px-6 py-3 border-t border-track">
+            <span className="font-mono text-[11px] text-ink-3">
               {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, data.total)} of {data.total}
             </span>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {[{ label: '← Prev', disabled: page === 0, onClick: () => setPage(p => p - 1) },
-                { label: 'Next →', disabled: (page + 1) * PAGE_SIZE >= data.total, onClick: () => setPage(p => p + 1) }]
+            <div className="flex gap-2">
+              {[{ label: 'Previous', disabled: page === 0, onClick: () => setPage(p => p - 1) },
+                { label: 'Next', disabled: (page + 1) * PAGE_SIZE >= data.total, onClick: () => setPage(p => p + 1) }]
                 .map(btn => (
-                  <button key={btn.label} onClick={btn.onClick} disabled={btn.disabled}
-                    style={{ padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 500, border: '1px solid #E5E5E5', background: btn.disabled ? '#F9F9F9' : '#fff', color: btn.disabled ? '#C0C0C0' : '#262626', cursor: btn.disabled ? 'not-allowed' : 'pointer' }}>
+                  <button
+                    key={btn.label}
+                    onClick={btn.onClick}
+                    disabled={btn.disabled}
+                    className="btn ghost sm"
+                    style={btn.disabled ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}
+                  >
                     {btn.label}
                   </button>
                 ))}
             </div>
           </div>
         )}
-      </div>
+      </section>
 
       {showCreate && <CreateUserModal onClose={() => setShowCreate(false)} />}
-      <style>{`
-        @keyframes shimmer { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
-      `}</style>
     </AdminPageShell>
   )
 }

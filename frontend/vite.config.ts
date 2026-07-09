@@ -8,7 +8,7 @@ export default defineConfig({
     proxy: {
       '/api': {
         // Point at the docker stack's nginx during dev: VITE_PROXY_TARGET=http://localhost:3000
-        target: process.env.VITE_PROXY_TARGET ?? 'http://localhost:8000',
+        target: (globalThis as { process?: { env?: Record<string, string> } }).process?.env?.VITE_PROXY_TARGET ?? 'http://localhost:8000',
         changeOrigin: true,
       },
     },
