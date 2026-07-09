@@ -14,7 +14,6 @@ export default function SetupGuard({ children }: { children: React.ReactNode }) 
     return (
       <div style={{
         minHeight: '100vh',
-        background: '#F9F9F9',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -23,11 +22,10 @@ export default function SetupGuard({ children }: { children: React.ReactNode }) 
           width: 32,
           height: 32,
           borderRadius: '50%',
-          border: '3px solid #F2F2F2',
-          borderTopColor: '#FF4713',
+          border: '3px solid var(--track)',
+          borderTopColor: 'var(--b1)',
           animation: 'spin 0.7s linear infinite',
         }} />
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     )
   }
