@@ -123,116 +123,65 @@ export default function CreateTicketModal({ open, onClose }: Props) {
 
   return (
     <>
-      {/* Backdrop */}
-      <div
-        onClick={onClose}
-        style={{
-          position: 'fixed', inset: 0,
-          background: 'rgba(0,0,0,0.5)',
-          zIndex: 200,
-          backdropFilter: 'blur(2px)',
-        }}
-      />
+      <div className="scrim open" style={{ zIndex: 200 }} onClick={onClose} />
 
-      {/* Modal */}
       <div
         role="dialog"
         aria-modal="true"
-        style={{
-          position: 'fixed',
-          top: '50%', left: '50%',
-          transform: 'translate(-50%, -50%)',
-          width: 540,
-          maxWidth: 'calc(100vw - 32px)',
-          maxHeight: 'calc(100vh - 48px)',
-          background: '#fff',
-          borderRadius: 16,
-          boxShadow: '0 24px 64px rgba(0,0,0,0.18)',
-          zIndex: 201,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-        }}
+        aria-label="New ticket"
+        className="modal open"
+        style={{ zIndex: 201, width: 'min(540px, 94vw)', maxHeight: 'calc(100vh - 48px)', display: 'flex', flexDirection: 'column', padding: 0 }}
       >
         {/* Header */}
-        <div style={{
-          padding: '20px 24px 16px',
-          borderBottom: '1px solid #F2F2F2',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          flexShrink: 0,
-        }}>
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 flex-shrink-0">
           <div>
-            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0A0A0A', letterSpacing: '-0.02em' }}>
-              New Ticket
-            </h2>
-            <p style={{ margin: '2px 0 0', fontSize: 12, color: '#A3A3A3' }}>
-              Create a ticket on behalf of a colleague
-            </p>
+            <h2>New ticket</h2>
+            <p className="sub" style={{ margin: '2px 0 0' }}>Create a ticket on behalf of a colleague</p>
           </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: '#A3A3A3', padding: 6, borderRadius: 6,
-              display: 'flex', alignItems: 'center',
-              transition: 'color 0.12s',
-            }}
-            onMouseOver={e => (e.currentTarget.style.color = '#0A0A0A')}
-            onMouseOut={e => (e.currentTarget.style.color = '#A3A3A3')}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+          <button className="so-close" onClick={onClose} aria-label="Close">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
               <path d="M3 3l10 10M13 3L3 13" />
             </svg>
           </button>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} style={{ padding: '20px 24px 24px', overflowY: 'auto', flex: 1 }}>
+        <form onSubmit={handleSubmit} className="px-6 pb-6 overflow-y-auto flex-1">
           {/* Reporter picker */}
-          <div style={{ marginBottom: 16 }}>
-            <label style={labelStyle}>Reporter <span style={{ fontWeight: 400, color: '#A3A3A3' }}>(optional — defaults to you)</span></label>
-            <div ref={reporterRef} style={{ position: 'relative' }}>
+          <div className="fieldrow">
+            <label>Reporter <span className="font-normal text-ink-3">(optional — defaults to you)</span></label>
+            <div ref={reporterRef} className="relative">
               <div
                 onClick={() => setReporterOpen(o => !o)}
-                style={{
-                  ...inputStyle,
-                  cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  color: selectedReporter ? '#0A0A0A' : '#A3A3A3',
-                  userSelect: 'none',
-                }}
+                className="input flex items-center justify-between cursor-pointer select-none"
+                style={{ color: selectedReporter ? 'var(--ink)' : 'var(--ink-3)' }}
               >
-                <span style={{ fontSize: 13 }}>
+                <span className="text-[13px]">
                   {selectedReporter ? selectedReporter.name : 'Search Slack users…'}
                 </span>
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#A3A3A3" strokeWidth="1.5" strokeLinecap="round">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-ink-3">
                   <path d="M3 5l4 4 4-4" />
                 </svg>
               </div>
 
               {reporterOpen && (
-                <div style={{
-                  position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0,
-                  background: '#fff', border: '1px solid #E5E5E5', borderRadius: 8,
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.10)',
-                  zIndex: 10, maxHeight: 240, display: 'flex', flexDirection: 'column',
-                }}>
-                  <div style={{ padding: '8px 10px', borderBottom: '1px solid #F2F2F2' }}>
+                <div
+                  className="overlay-surface absolute left-0 right-0 z-10 flex flex-col"
+                  style={{ top: 'calc(100% + 6px)', maxHeight: 240, borderRadius: 16 }}
+                >
+                  <div className="px-3 py-2 border-b border-track">
                     <input
                       autoFocus
                       value={reporterSearch}
                       onChange={e => setReporterSearch(e.target.value)}
                       placeholder="Type to filter…"
-                      style={{
-                        width: '100%', border: 'none', outline: 'none',
-                        fontSize: 13, color: '#0A0A0A', background: 'transparent',
-                        padding: 0,
-                      }}
+                      className="w-full border-0 outline-none text-[13px] text-ink bg-transparent p-0 placeholder:text-ink-3"
+                      style={{ font: 'inherit' }}
                     />
                   </div>
-                  <div style={{ overflowY: 'auto', flex: 1 }}>
+                  <div className="overflow-y-auto flex-1">
                     {filteredUsers.length === 0 ? (
-                      <div style={{ padding: '12px 12px', fontSize: 12, color: '#A3A3A3', textAlign: 'center' }}>
+                      <div className="px-3 py-3 text-[12px] text-ink-3 text-center">
                         {slackUsers.length === 0 ? 'Slack not configured' : 'No users found'}
                       </div>
                     ) : filteredUsers.map(u => (
@@ -244,14 +193,7 @@ export default function CreateTicketModal({ open, onClose }: Props) {
                           setReporterSearch('')
                           setReporterOpen(false)
                         }}
-                        style={{
-                          display: 'block', width: '100%', textAlign: 'left',
-                          padding: '8px 12px', border: 'none', background: 'none',
-                          fontSize: 13, color: '#0A0A0A', cursor: 'pointer',
-                          transition: 'background 0.1s',
-                        }}
-                        onMouseOver={e => (e.currentTarget.style.background = '#F9F9F9')}
-                        onMouseOut={e => (e.currentTarget.style.background = 'none')}
+                        className="block w-full text-left px-3 py-2 border-0 bg-transparent text-[13px] text-ink cursor-pointer hover:bg-row-hover"
                       >
                         {u.name}
                       </button>
@@ -261,73 +203,78 @@ export default function CreateTicketModal({ open, onClose }: Props) {
               )}
             </div>
             {slackUsers.length === 0 && (
-              <p style={{ margin: '4px 0 0', fontSize: 11, color: '#F59E0B' }}>
+              <p className="m-0 text-[11px] text-warn-ink">
                 Slack is not configured — reporter DM will be skipped
               </p>
             )}
           </div>
 
           {/* Title */}
-          <div style={{ marginBottom: 16 }}>
-            <label style={labelStyle}>Title</label>
+          <div className="fieldrow">
+            <label htmlFor="ticket-title">Title</label>
             <input
+              id="ticket-title"
               ref={titleRef}
+              className="input"
               value={title}
               onChange={e => setTitle(e.target.value)}
               placeholder="Brief description of the issue"
               maxLength={255}
-              style={inputStyle}
-              onFocus={e => { e.target.style.borderColor = '#FF4713'; e.target.style.boxShadow = '0 0 0 3px rgba(255,71,19,0.08)' }}
-              onBlur={e => { e.target.style.borderColor = '#E5E5E5'; e.target.style.boxShadow = 'none' }}
             />
           </div>
 
           {/* Description */}
-          <div style={{ marginBottom: 16 }}>
-            <label style={labelStyle}>Description</label>
+          <div className="fieldrow">
+            <label htmlFor="ticket-description">Description</label>
             <textarea
+              id="ticket-description"
+              className="input"
               value={description}
               onChange={e => setDescription(e.target.value)}
               placeholder="Provide full details…"
               rows={4}
-              style={{ ...inputStyle, resize: 'vertical', minHeight: 90 }}
-              onFocus={e => { e.currentTarget.style.borderColor = '#FF4713'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(255,71,19,0.08)' }}
-              onBlur={e => { e.currentTarget.style.borderColor = '#E5E5E5'; e.currentTarget.style.boxShadow = 'none' }}
+              style={{ resize: 'vertical', minHeight: 90 }}
             />
           </div>
 
           {/* Priority + Category row */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
-            <div>
-              <label style={labelStyle}>Priority</label>
-              <select
-                value={priority}
-                onChange={e => setPriority(e.target.value as Priority)}
-                style={{ ...inputStyle, cursor: 'pointer' }}
-              >
-                {PRIORITIES.map(p => (
-                  <option key={p.value} value={p.value}>{p.label}</option>
-                ))}
-              </select>
+          <div className="formgrid" style={{ marginBottom: 16 }}>
+            <div className="fieldrow">
+              <label htmlFor="ticket-priority">Priority</label>
+              <div className="selectwrap">
+                <select
+                  id="ticket-priority"
+                  className="select"
+                  value={priority}
+                  onChange={e => setPriority(e.target.value as Priority)}
+                >
+                  {PRIORITIES.map(p => (
+                    <option key={p.value} value={p.value}>{p.label}</option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <div>
-              <label style={labelStyle}>Category</label>
-              <select
-                value={categoryId ?? ''}
-                onChange={e => setCategoryId(e.target.value ? Number(e.target.value) : null)}
-                style={{ ...inputStyle, cursor: 'pointer' }}
-              >
-                <option value="">No category</option>
-                {categories.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+            <div className="fieldrow">
+              <label htmlFor="ticket-category">Category</label>
+              <div className="selectwrap">
+                <select
+                  id="ticket-category"
+                  className="select"
+                  value={categoryId ?? ''}
+                  onChange={e => setCategoryId(e.target.value ? Number(e.target.value) : null)}
+                >
+                  <option value="">No category</option>
+                  {categories.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
-          {/* Attachments */}
-          <div style={{ marginBottom: 20 }}>
-            <label style={labelStyle}>Attachments (optional)</label>
+          {/* Attachments — dashed drop affordance */}
+          <div className="fieldrow" style={{ marginBottom: 20 }}>
+            <label>Attachments <span className="font-normal text-ink-3">(optional)</span></label>
             <input
               ref={fileInputRef}
               type="file"
@@ -344,46 +291,31 @@ export default function CreateTicketModal({ open, onClose }: Props) {
               }}
             />
             <div
+              className="rounded-block px-4 py-3 cursor-pointer bg-field border border-edge hover:bg-row-hover text-[12.5px] text-ink-2"
+              style={{ boxShadow: 'inset 0 1px 0 var(--specular)' }}
               onClick={() => fileInputRef.current?.click()}
-              style={{
-                border: '1.5px dashed #E5E5E5',
-                borderRadius: 8,
-                padding: '12px 14px',
-                cursor: 'pointer',
-                transition: 'border-color 0.15s, background 0.15s',
-                background: '#FAFAFA',
-              }}
-              onMouseOver={e => {
-                (e.currentTarget as HTMLDivElement).style.borderColor = '#FF4713'
-                ;(e.currentTarget as HTMLDivElement).style.background = 'rgba(255,71,19,0.03)'
-              }}
-              onMouseOut={e => {
-                (e.currentTarget as HTMLDivElement).style.borderColor = '#E5E5E5'
-                ;(e.currentTarget as HTMLDivElement).style.background = '#FAFAFA'
-              }}
             >
               {files.length === 0 ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#A3A3A3" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <div className="flex items-center gap-2">
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-ink-3">
                     <path d="M8 2v8M5 5l3-3 3 3" />
                     <path d="M2 12h12" />
                     <path d="M2 14h12" />
                   </svg>
-                  <span style={{ fontSize: 12, color: '#A3A3A3' }}>Click to attach files — images, PDF, Word, Excel, CSV</span>
+                  <span>Click to attach files — images, PDF, Word, Excel, CSV</span>
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div className="flex flex-col gap-1 w-full">
                   {files.map((f, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: 12, color: '#525252', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 360 }}>
-                        {f.name} <span style={{ color: '#A3A3A3' }}>({(f.size / 1024).toFixed(0)} KB)</span>
+                    <div key={i} className="flex items-center justify-between">
+                      <span className="text-[12px] text-ink truncate" style={{ maxWidth: 360 }}>
+                        {f.name} <span className="text-ink-3 font-mono text-[10.5px]">({(f.size / 1024).toFixed(0)} KB)</span>
                       </span>
                       <button
                         type="button"
+                        aria-label={`Remove ${f.name}`}
                         onClick={e => { e.stopPropagation(); setFiles(prev => prev.filter((_, j) => j !== i)) }}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#A3A3A3', padding: '0 2px', flexShrink: 0 }}
-                        onMouseOver={ev => (ev.currentTarget.style.color = '#EF4444')}
-                        onMouseOut={ev => (ev.currentTarget.style.color = '#A3A3A3')}
+                        className="bg-transparent border-0 cursor-pointer text-ink-3 hover:text-danger-ink px-0.5 flex-shrink-0"
                       >
                         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
                           <path d="M2 2l8 8M10 2l-8 8" />
@@ -391,7 +323,7 @@ export default function CreateTicketModal({ open, onClose }: Props) {
                       </button>
                     </div>
                   ))}
-                  <span style={{ fontSize: 11, color: '#A3A3A3', marginTop: 2 }}>Click to add more</span>
+                  <span className="text-[11px] text-ink-3 mt-0.5">Click to add more</span>
                 </div>
               )}
             </div>
@@ -399,71 +331,30 @@ export default function CreateTicketModal({ open, onClose }: Props) {
 
           {/* Error */}
           {error && (
-            <div style={{
-              padding: '10px 12px', borderRadius: 8, marginBottom: 16,
-              background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
-              fontSize: 13, color: '#DC2626',
-            }}>
+            <div
+              className="px-3 py-2.5 rounded-control mb-4 text-[13px] text-danger-ink"
+              style={{ background: 'var(--danger-bg)' }}
+            >
               {error}
             </div>
           )}
 
           {/* Actions */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              style={{
-                padding: '8px 18px', borderRadius: 8, fontSize: 13, fontWeight: 500,
-                border: '1px solid #E5E5E5', background: '#fff', color: '#737373',
-                cursor: 'pointer', transition: 'background 0.12s',
-              }}
-              onMouseOver={e => (e.currentTarget.style.background = '#F9F9F9')}
-              onMouseOut={e => (e.currentTarget.style.background = '#fff')}
-            >
+          <div className="modal-actions" style={{ marginTop: 0 }}>
+            <button type="button" className="btn ghost" onClick={onClose} disabled={submitting}>
               Cancel
             </button>
             <button
               type="submit"
+              className="btn"
               disabled={submitting}
-              style={{
-                padding: '8px 22px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-                border: 'none',
-                background: submitting ? '#FFA07A' : 'linear-gradient(135deg, #FF4713, #AD1164)',
-                color: '#fff',
-                cursor: submitting ? 'not-allowed' : 'pointer',
-                transition: 'opacity 0.12s',
-              }}
+              style={submitting ? { opacity: 0.6, cursor: 'wait' } : undefined}
             >
-              {submitting ? 'Creating…' : 'Create Ticket'}
+              {submitting ? 'Creating…' : 'Create ticket'}
             </button>
           </div>
         </form>
       </div>
     </>
   )
-}
-
-const labelStyle: React.CSSProperties = {
-  display: 'block',
-  fontSize: 13,
-  fontWeight: 500,
-  color: '#262626',
-  marginBottom: 6,
-  letterSpacing: '0.01em',
-}
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '10px 14px',
-  fontSize: 14,
-  border: '1px solid #E5E5E5',
-  borderRadius: 10,
-  color: '#0A0A0A',
-  background: '#fff',
-  outline: 'none',
-  boxSizing: 'border-box',
-  transition: 'border-color 0.15s, box-shadow 0.15s',
-  fontFamily: 'inherit',
 }
