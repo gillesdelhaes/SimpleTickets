@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import AppShell from '../../components/layout/AppShell'
 import { useAuth } from '../../contexts/AuthContext'
-import api from '../../lib/api'
+import api, { apiErrorMessage } from '../../lib/api'
 import { parseUTC } from '../../types/ticket'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -519,7 +519,7 @@ function CategoriesTab() {
   const createMutation = useMutation({
     mutationFn: (name: string) => api.post<CategoryRead>('/categories', { name }).then(r => r.data),
     onSuccess: () => { invalidate(); setNewName(''); setAddError(null) },
-    onError: (err: any) => setAddError(err?.response?.data?.detail ?? 'Failed to create category.'),
+    onError: (err: any) => setAddError(apiErrorMessage(err, 'Failed to create category.')),
   })
 
   const patchMutation = useMutation({
@@ -650,7 +650,7 @@ function SLARow({ policy, onDelete }: { policy: SLAPolicyRead; onDelete: () => v
   const del = useMutation({
     mutationFn: () => api.delete(`/sla-policies/${policy.id}`),
     onSuccess: onDelete,
-    onError: (err: any) => { alert(err?.response?.data?.detail ?? 'Cannot delete'); setConfirm(false) },
+    onError: (err: any) => { alert(apiErrorMessage(err, 'Cannot delete')); setConfirm(false) },
   })
 
   const badge = <span className={`pill ${PRIORITY_PILL[policy.priority]}`}>{PRIORITY_LABELS[policy.priority]}</span>
@@ -720,7 +720,7 @@ function SLATab() {
   const createMutation = useMutation({
     mutationFn: () => api.post('/sla-policies', { name: newName.trim(), priority: newPriority, first_response_minutes: Number(newResp), resolution_minutes: Number(newRes) }).then(r => r.data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['sla-policies'] }); setNewName(''); setNewResp(''); setNewRes(''); setAddError(null); setShowAdd(false) },
-    onError: (err: any) => setAddError(err?.response?.data?.detail ?? 'Failed.'),
+    onError: (err: any) => setAddError(apiErrorMessage(err, 'Failed.')),
   })
 
   function handleCreate(e: React.FormEvent) {
@@ -845,13 +845,13 @@ function StatusesTab() {
       else await api.post('/admin/ticket-statuses', form)
     },
     onSuccess: () => { invalidate(); setForm(BLANK_STATUS); setEditId(null); setError(null) },
-    onError: (err: any) => setError(err?.response?.data?.detail ?? 'Save failed'),
+    onError: (err: any) => setError(apiErrorMessage(err, 'Save failed')),
   })
 
   const archiveMutation = useMutation({
     mutationFn: (id: number) => api.delete(`/admin/ticket-statuses/${id}`),
     onSuccess: invalidate,
-    onError: (err: any) => setError(err?.response?.data?.detail ?? 'Failed'),
+    onError: (err: any) => setError(apiErrorMessage(err, 'Failed')),
   })
 
   const patchMutation = useMutation({
@@ -1061,7 +1061,7 @@ function BackupTab() {
       setRestoreResult(res.data); setFile(null); setConfirmed(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
     } catch (err: any) {
-      setRestoreError(err?.response?.data?.detail ?? 'Restore failed.')
+      setRestoreError(apiErrorMessage(err, 'Restore failed.'))
     } finally { setRestoring(false) }
   }
 
@@ -1173,8 +1173,7 @@ function AccountTab() {
       setCurrent(''); setNext(''); setConfirm('')
       setTimeout(() => setStatus('idle'), 3000)
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Something went wrong'
-      setErrorMsg(msg)
+      setErrorMsg(apiErrorMessage(err, 'Something went wrong'))
       setStatus('error')
     }
   }

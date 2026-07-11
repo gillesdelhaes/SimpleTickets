@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import api from '../../lib/api'
+import api, { apiErrorMessage } from '../../lib/api'
 import { useCategories } from '../../hooks/useCategories'
 import { useSlackUsers } from '../../hooks/useSlackUsers'
 import type { Priority } from '../../types/ticket'
@@ -114,7 +114,7 @@ export default function CreateTicketModal({ open, onClose }: Props) {
       onClose()
       navigate(`/tickets/${data.id}`)
     } catch (err: any) {
-      setError(err?.response?.data?.detail ?? 'Failed to create ticket')
+      setError(apiErrorMessage(err, 'Failed to create ticket'))
       setSubmitting(false)
     }
   }

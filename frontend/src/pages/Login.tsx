@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import api from '../lib/api'
+import api, { apiErrorMessage } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function Login() {
@@ -29,10 +29,7 @@ export default function Login() {
       login(res.data.access_token)
       // AuthContext will update user; the useEffect above handles redirect
     } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-        'Something went wrong — please try again'
-      setError(msg)
+      setError(apiErrorMessage(err, 'Something went wrong — please try again'))
     } finally {
       setLoading(false)
     }

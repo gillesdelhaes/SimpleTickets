@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import api from '../../lib/api'
+import api, { apiErrorMessage } from '../../lib/api'
 
 interface Props {
   onNext: (name: string, email: string) => void
@@ -24,8 +24,7 @@ export default function SetupStepAdmin({ onNext }: Props) {
       await api.post('/setup/admin', { name, email, password })
       onNext(name, email)
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(msg || 'Something went wrong')
+      setError(apiErrorMessage(err, 'Something went wrong'))
     } finally {
       setLoading(false)
     }

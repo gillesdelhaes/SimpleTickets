@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import api from '../../lib/api'
+import api, { apiErrorMessage } from '../../lib/api'
 import type { WizardData } from './SetupWizard'
 
 export default function SetupStepReview({ data }: { data: WizardData }) {
@@ -19,8 +19,7 @@ export default function SetupStepReview({ data }: { data: WizardData }) {
       queryClient.invalidateQueries({ queryKey: ['setup-status'] })
       navigate('/login', { replace: true })
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(msg || 'Something went wrong')
+      setError(apiErrorMessage(err, 'Something went wrong'))
       setLoading(false)
     }
   }

@@ -14,7 +14,7 @@ import { useCategories } from '../hooks/useCategories'
 import { useAgents } from '../hooks/useAgents'
 import { useAuth } from '../contexts/AuthContext'
 import { useMarkTicketRead } from '../hooks/useUnreadReplies'
-import api from '../lib/api'
+import api, { apiErrorMessage } from '../lib/api'
 import { useAppConfig } from '../hooks/useAppConfig'
 import { ThumbUp, ThumbDown } from '../components/ThumbIcon'
 import {
@@ -838,7 +838,7 @@ function CloseWithoutSurvey({ ticket }: { ticket: TicketRead }) {
       />
       {mutation.isError && (
         <span className="text-[11px] text-danger-ink">
-          {(mutation.error as any)?.response?.data?.detail ?? 'Failed to close ticket'}
+          {apiErrorMessage(mutation.error, 'Failed to close ticket')}
         </span>
       )}
       <div className="flex gap-1.5">

@@ -30,4 +30,19 @@ api.interceptors.response.use(
   },
 )
 
+// FastAPI error `detail` is a string for HTTPException but an array of
+// {type, loc, msg, input, ctx} objects for 422 validation errors — rendering
+// the raw value crashes React (error #31). Always go through this helper.
+export function apiErrorMessage(err: unknown, fallback: string): string {
+  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    const msgs = detail
+      .map((d) => (typeof d?.msg === 'string' ? d.msg.replace(/^Value error, /, '') : null))
+      .filter(Boolean)
+    if (msgs.length > 0) return msgs.join(' — ')
+  }
+  return fallback
+}
+
 export default api

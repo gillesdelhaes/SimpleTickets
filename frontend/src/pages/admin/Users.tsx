@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import AdminPageShell from '../../components/admin/AdminPageShell'
-import api from '../../lib/api'
+import api, { apiErrorMessage } from '../../lib/api'
 import { parseUTC } from '../../types/ticket'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -76,8 +76,7 @@ function CreateUserModal({ onClose }: CreateModalProps) {
       onClose()
     },
     onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(msg ?? 'Failed to create user.')
+      setError(apiErrorMessage(err, 'Failed to create user.'))
     },
   })
 
@@ -302,9 +301,9 @@ export default function Users() {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
     },
     onError: (err: unknown, variables) => {
-      const res = (err as { response?: { data?: { detail?: string }; status?: number } })?.response
+      const res = (err as { response?: { status?: number } })?.response
       if (res?.status === 409 && variables.is_active === false) {
-        if (window.confirm(res.data?.detail ?? 'This technician has open tickets. Deactivate anyway?')) {
+        if (window.confirm(apiErrorMessage(err, 'This technician has open tickets. Deactivate anyway?'))) {
           toggleActive.mutate({ ...variables, force: true })
         }
       }

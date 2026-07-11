@@ -11,12 +11,13 @@ GET  /api/setup/status       — unauthenticated; used by frontend to gate the w
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
 from app.models.enums import AuthProvider, Role
 from app.models.user import User
+from app.schemas.fields import LooseEmail
 from app.services.passwords import hash_password
 from app.services.settings_service import (
     has_any_admin,
@@ -54,7 +55,7 @@ async def setup_status(session: AsyncSession = Depends(get_session)) -> dict:
 
 class AdminSetupRequest(BaseModel):
     name: str
-    email: EmailStr
+    email: LooseEmail
     password: str
 
     @field_validator("password")

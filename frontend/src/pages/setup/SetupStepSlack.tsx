@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import api from '../../lib/api'
+import api, { apiErrorMessage } from '../../lib/api'
 
 interface Props {
   onNext: (configured: boolean, teamName: string) => void
@@ -81,8 +81,7 @@ export default function SetupStepSlack({ onNext }: Props) {
       })
       onNext(true, testResult?.team_name || '')
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(msg || 'Failed to save Slack settings')
+      setError(apiErrorMessage(err, 'Failed to save Slack settings'))
     } finally {
       setSaving(false)
     }

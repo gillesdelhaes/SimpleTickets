@@ -1,8 +1,10 @@
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, field_validator
+
+from app.schemas.fields import LooseEmail
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: LooseEmail
     password: str
 
 
@@ -13,7 +15,7 @@ class TokenResponse(BaseModel):
 
 class CreateLocalUserRequest(BaseModel):
     name: str
-    email: EmailStr
+    email: LooseEmail
     password: str
     role: str = "technician"
 

@@ -12,7 +12,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useUnreadReplies } from '../hooks/useUnreadReplies'
 import { getAllStatuses, timeAgo, PRIORITY_LABELS, type Priority } from '../types/ticket'
 import { useAppConfig } from '../hooks/useAppConfig'
-import api from '../lib/api'
+import api, { apiErrorMessage } from '../lib/api'
 
 const PAGE_SIZE = 25
 
@@ -241,7 +241,7 @@ export default function Queue() {
       setBulkAssignId('')
       setBulkPriority('')
     } catch (err: any) {
-      setBulkError(err?.response?.data?.detail ?? 'Bulk update failed — please try again.')
+      setBulkError(apiErrorMessage(err, 'Bulk update failed — please try again.'))
     } finally {
       setBulkLoading(false)
     }
