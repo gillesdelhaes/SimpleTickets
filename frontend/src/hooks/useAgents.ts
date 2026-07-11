@@ -8,6 +8,7 @@ export interface UserRead {
   email: string
   role: string
   is_active: boolean
+  slack_user_id: string | null
 }
 
 export function useAgents() {

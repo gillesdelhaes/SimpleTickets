@@ -5,6 +5,7 @@ import AppShell from '../../components/layout/AppShell'
 import { useAuth } from '../../contexts/AuthContext'
 import api, { apiErrorMessage } from '../../lib/api'
 import { parseUTC } from '../../types/ticket'
+import { useAgents } from '../../hooks/useAgents'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -236,8 +237,11 @@ const SLACK_META: Record<string, { label: string; hint: string; placeholder?: st
   slack_two_way_sync:   { label: 'Two-way sync',    hint: 'Sync web replies to Slack threads and vice versa' },
 }
 
+const ESCALATION_KEY = 'sla_escalation_target'
+
 function SlackTab() {
   const { data, isLoading } = useSettingsQuery()
+  const { data: agents } = useAgents()
   const [edits, setEdits] = useState<Record<string, string>>({})
   const [revealing, setRevealing] = useState<Record<string, boolean>>({})
   const [testResult, setTestResult] = useState<{ ok: boolean; team_name?: string; error?: string } | null>(null)
@@ -245,13 +249,25 @@ function SlackTab() {
   const [saved, setSaved] = useState(false)
   const [showGuide, setShowGuide] = useState(false)
   const [slackStatus, setSlackStatus] = useState<{ ok: boolean; team_name?: string; error?: string } | null>(null)
+  const [escalationModeOverride, setEscalationModeOverride] = useState<'all' | 'person' | 'channel' | null>(null)
 
   const settingMap = Object.fromEntries((data?.settings ?? []).map(s => [s.key, s]))
-  const mutation = useSaveMutation(() => { setEdits({}); setRevealing({}); setSaved(true); setTimeout(() => setSaved(false), 2500) })
+  const mutation = useSaveMutation(() => { setEdits({}); setRevealing({}); setEscalationModeOverride(null); setSaved(true); setTimeout(() => setSaved(false), 2500) })
 
   function getValue(key: string) { return key in edits ? edits[key] : (settingMap[key]?.value ?? '') }
   function edit(key: string, value: string) { setEdits(e => ({ ...e, [key]: value })) }
-  const dirty = SLACK_KEYS.some(k => k in edits)
+  const dirty = SLACK_KEYS.some(k => k in edits) || ESCALATION_KEY in edits
+
+  const eligibleAgents = (agents ?? []).filter(a => a.slack_user_id)
+  const escalationValue = getValue(ESCALATION_KEY)
+  const serverEscalationMode: 'all' | 'person' | 'channel' =
+    !escalationValue ? 'all' : eligibleAgents.some(a => a.slack_user_id === escalationValue) ? 'person' : 'channel'
+  const escalationMode = escalationModeOverride ?? serverEscalationMode
+
+  function setEscalationMode(mode: 'all' | 'person' | 'channel') {
+    setEscalationModeOverride(mode)
+    if (mode === 'all') edit(ESCALATION_KEY, '')
+  }
 
   useEffect(() => {
     api.get('/admin/settings/slack-status').then(r => setSlackStatus(r.data)).catch(() => {})
@@ -295,7 +311,7 @@ function SlackTab() {
           </div>
         </CardHeader>
 
-        {SLACK_KEYS.map((key, i) => {
+        {SLACK_KEYS.map((key) => {
           const meta = SLACK_META[key]
           const row = settingMap[key]
           const isToggle = key === 'slack_two_way_sync'
@@ -305,7 +321,7 @@ function SlackTab() {
           return (
             <div
               key={key}
-              className={i < SLACK_KEYS.length - 1 ? 'border-b border-track' : ''}
+              className="border-b border-track"
               style={{ padding: '14px 22px', display: 'grid', gridTemplateColumns: '220px 1fr auto', gap: 16, alignItems: 'center' }}
             >
               <div>
@@ -341,7 +357,70 @@ function SlackTab() {
             </div>
           )
         })}
-        <SaveBar dirty={dirty} pending={mutation.isPending} onSave={() => mutation.mutate(SLACK_KEYS.filter(k => k in edits).map(k => ({ key: k, value: edits[k] })))} />
+
+        <div style={{ padding: '14px 22px', display: 'grid', gridTemplateColumns: '220px 1fr', gap: 16, alignItems: 'start' }}>
+          <div>
+            <div className="text-[13.5px] font-semibold text-ink">Escalate SLA breaches to</div>
+            <div className="text-[12px] text-ink-3 mt-0.5">Who gets DMed when a ticket is close to (or past) its SLA deadline</div>
+          </div>
+          <div className="flex flex-col gap-2.5">
+            <div className="selectwrap" style={{ maxWidth: 320 }}>
+              <select
+                className="select"
+                value={escalationMode}
+                onChange={e => setEscalationMode(e.target.value as 'all' | 'person' | 'channel')}
+              >
+                <option value="all">All active technicians</option>
+                <option value="person">A specific person</option>
+                <option value="channel">A Slack channel</option>
+              </select>
+            </div>
+
+            {escalationMode === 'person' && (
+              <div className="selectwrap" style={{ maxWidth: 320 }}>
+                <select
+                  className="select"
+                  value={eligibleAgents.some(a => a.slack_user_id === escalationValue) ? escalationValue : ''}
+                  onChange={e => edit(ESCALATION_KEY, e.target.value)}
+                >
+                  <option value="" disabled>Choose a person…</option>
+                  {eligibleAgents.map(a => (
+                    <option key={a.id} value={a.slack_user_id ?? ''}>{a.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {escalationMode === 'person' && eligibleAgents.length === 0 && (
+              <p className="text-[12px] text-ink-3 m-0">
+                No technicians have a Slack ID linked yet — add one under Admin → Users.
+              </p>
+            )}
+
+            {escalationMode === 'channel' && (
+              <>
+                <input
+                  className="input font-mono"
+                  style={{ maxWidth: 320 }}
+                  value={eligibleAgents.some(a => a.slack_user_id === escalationValue) ? '' : escalationValue}
+                  onChange={e => edit(ESCALATION_KEY, e.target.value)}
+                  placeholder="C0123456789"
+                />
+                <p className="text-[12px] text-ink-3 m-0">
+                  The channel's ID (not its name) — find it in Slack via the channel name → "View channel details".
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+
+        <SaveBar
+          dirty={dirty}
+          pending={mutation.isPending}
+          onSave={() => mutation.mutate([
+            ...SLACK_KEYS.filter(k => k in edits).map(k => ({ key: k, value: edits[k] })),
+            ...(ESCALATION_KEY in edits ? [{ key: ESCALATION_KEY, value: edits[ESCALATION_KEY] }] : []),
+          ])}
+        />
       </Card>
 
       {/* Setup guide */}

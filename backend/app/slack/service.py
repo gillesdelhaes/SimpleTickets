@@ -1048,7 +1048,9 @@ async def post_sla_warning_to_technicians(
     kind: str = "sla",
 ) -> None:
     """
-    DM every active technician/admin who has a slack_user_id registered.
+    Post the SLA warning to the configured escalation target (a Slack channel
+    or a specific person), or DM every active technician/admin with a linked
+    Slack ID if no target is configured.
     kind='sla'            — resolution SLA breach in ~15 min
     kind='first_response' — first-response deadline in ~15 min
     Fire-and-forget — errors are logged, not raised.
@@ -1061,17 +1063,23 @@ async def post_sla_warning_to_technicians(
     if client is None:
         return
 
-    # Fetch all active staff with a Slack user ID
-    result = await session.execute(
-        select(User).where(
-            User.slack_user_id.isnot(None),
-            User.is_active == True,  # noqa: E712
-            User.role.in_(["technician", "admin"]),
+    from app.services.settings_service import get_setting
+    target = (await get_setting("sla_escalation_target", session, default="")).strip()
+
+    if target:
+        recipients = [target]
+    else:
+        # No target configured — fall back to DMing every active staff member
+        result = await session.execute(
+            select(User).where(
+                User.slack_user_id.isnot(None),
+                User.is_active == True,  # noqa: E712
+                User.role.in_(["technician", "admin"]),
+            )
         )
-    )
-    technicians = result.scalars().all()
-    if not technicians:
-        return
+        recipients = [tech.slack_user_id for tech in result.scalars().all()]
+        if not recipients:
+            return
 
     # Resolve assignee name
     assignee_name = "Unassigned"
@@ -1111,12 +1119,12 @@ async def post_sla_warning_to_technicians(
         f"{thread_hint}"
     )
 
-    for tech in technicians:
+    for recipient in recipients:
         try:
             await client.chat_postMessage(
-                channel=tech.slack_user_id,  # DM when channel = user ID
+                channel=recipient,  # a channel ID posts there; a user ID opens/uses a DM
                 text=text,
             )
-            logger.debug("Sent SLA warning DM to %s for ticket %s", tech.slack_user_id, ticket.display_id)
+            logger.debug("Sent SLA warning to %s for ticket %s", recipient, ticket.display_id)
         except Exception:
-            logger.exception("Failed to send SLA warning DM to %s", tech.slack_user_id)
+            logger.exception("Failed to send SLA warning to %s", recipient)

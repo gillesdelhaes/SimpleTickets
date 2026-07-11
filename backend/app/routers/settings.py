@@ -36,6 +36,7 @@ _WRITABLE_KEYS = {
     "business_hours_end",
     "business_days",
     "csat_auto_close_days",
+    "sla_escalation_target",
 }
 
 # Keys the GET endpoint may return. Deliberately excludes internal secrets

@@ -322,6 +322,7 @@ def upgrade() -> None:
             {"key": "slack_two_way_sync",   "value": "true",      "is_secret": False, "group_name": "slack", "updated_at": _now},
             {"key": "timezone",             "value": "UTC",       "is_secret": False, "group_name": "app",   "updated_at": _now},
             {"key": "csat_auto_close_days", "value": "7",         "is_secret": False, "group_name": "app",   "updated_at": _now},
+            {"key": "sla_escalation_target", "value": None,       "is_secret": False, "group_name": "slack", "updated_at": _now},
         ],
     )
 
