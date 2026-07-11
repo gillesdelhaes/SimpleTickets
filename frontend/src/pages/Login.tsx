@@ -126,6 +126,11 @@ export default function Login() {
                 )}
               </button>
             </div>
+            <div style={{ textAlign: 'right' }}>
+              <Link to="/forgot-password" style={{ fontSize: 11.5, fontWeight: 600, textDecoration: 'none', color: 'var(--brand-ink)' }}>
+                Forgot password?
+              </Link>
+            </div>
           </div>
 
           {justReset && !error && (
@@ -160,10 +165,6 @@ export default function Login() {
               'Sign in'
             )}
           </button>
-
-          <p className="sub" style={{ marginTop: 18, textAlign: 'center' }}>
-            <Link to="/forgot-password">Forgot password?</Link>
-          </p>
         </form>
       </section>
     </div>
