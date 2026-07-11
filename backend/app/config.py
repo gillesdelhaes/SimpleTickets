@@ -78,11 +78,6 @@ class SettingsManager:
     # Safe after warm() has been called.
 
     @property
-    def secret_key(self) -> str:
-        # Always prefer the live env value (set by bootstrap) over the cache
-        return settings.app_secret_key
-
-    @property
     def slack_bot_token(self) -> str:
         return self._cache.get("slack_bot_token") or settings.slack_bot_token
 

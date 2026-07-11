@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import AdminPageShell from '../../components/admin/AdminPageShell'
 import api from '../../lib/api'
 import { parseUTC } from '../../types/ticket'
+import { useAgents } from '../../hooks/useAgents'
 
 interface AuditLogRead {
   id: number
@@ -43,30 +44,29 @@ const ENTITY_TYPES = ['', 'user', 'ticket', 'reply', 'category', 'sla_policy']
 
 export default function Audit() {
   const navigate = useNavigate()
+  const { data: agents } = useAgents()
   const [actionFilter, setActionFilter] = useState('')
   const [entityType, setEntityType] = useState('')
-  const [actorSearch, setActorSearch] = useState('')
+  const [entityId, setEntityId] = useState('')
+  const [actorId, setActorId] = useState('')
   const [page, setPage] = useState(0)
 
   const params = new URLSearchParams()
   if (actionFilter) params.set('action', actionFilter)
   if (entityType) params.set('entity_type', entityType)
+  if (entityId.trim()) params.set('entity_id', entityId.trim())
+  if (actorId) params.set('actor_id', actorId)
   params.set('limit', String(PAGE_SIZE))
   params.set('offset', String(page * PAGE_SIZE))
 
   const { data, isLoading } = useQuery<AuditLogResponse>({
-    queryKey: ['audit-log', { actionFilter, entityType, page }],
+    queryKey: ['audit-log', { actionFilter, entityType, entityId, actorId, page }],
     queryFn: () => api.get<AuditLogResponse>(`/admin/audit?${params}`).then(r => r.data),
     staleTime: 15_000,
   })
 
-  // client-side actor name filter
-  const items = actorSearch.trim()
-    ? (data?.items ?? []).filter(e =>
-        e.actor_name?.toLowerCase().includes(actorSearch.toLowerCase()) ||
-        e.actor_email?.toLowerCase().includes(actorSearch.toLowerCase())
-      )
-    : (data?.items ?? [])
+  const items = data?.items ?? []
+  const hasFilters = actionFilter || entityType || entityId || actorId
 
   const headers = ['Timestamp', 'Actor', 'Action', 'Entity', 'IP']
 
@@ -96,16 +96,30 @@ export default function Audit() {
         </div>
 
         <input
-          className="input"
-          style={{ width: 190 }}
-          value={actorSearch}
-          onChange={e => setActorSearch(e.target.value)}
-          placeholder="Filter by actor…"
+          className="input font-mono"
+          style={{ width: 110, fontSize: 12.5 }}
+          value={entityId}
+          onChange={e => { setEntityId(e.target.value); setPage(0) }}
+          placeholder="Entity ID"
         />
 
-        {(actionFilter || entityType || actorSearch) && (
+        <div className="selectwrap">
+          <select
+            className="select"
+            style={{ width: 'auto', paddingRight: 32, ...(actorId ? {} : { color: 'var(--ink-3)' }) }}
+            value={actorId}
+            onChange={e => { setActorId(e.target.value); setPage(0) }}
+          >
+            <option value="">All actors</option>
+            {(agents ?? []).map(a => (
+              <option key={a.id} value={a.id}>{a.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {hasFilters && (
           <button
-            onClick={() => { setActionFilter(''); setEntityType(''); setActorSearch(''); setPage(0) }}
+            onClick={() => { setActionFilter(''); setEntityType(''); setEntityId(''); setActorId(''); setPage(0) }}
             className="btn ghost sm"
           >
             Clear filters

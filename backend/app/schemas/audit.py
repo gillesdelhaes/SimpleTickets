@@ -22,16 +22,3 @@ class AuditLogRead(BaseModel):
 class AuditLogResponse(BaseModel):
     items: list[AuditLogRead]
     total: int
-
-
-class TicketHistoryRead(BaseModel):
-    id: int
-    ticket_id: int
-    actor_id: Optional[int]
-    actor_name: Optional[str]   # denormalized
-    field_changed: str
-    old_value: Optional[str]
-    new_value: Optional[str]
-    created_at: datetime
-
-    model_config = {"from_attributes": True}

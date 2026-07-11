@@ -9,8 +9,6 @@ interface UseTicketsParams {
   unassigned?: boolean
   has_negative_csat?: boolean
   category_id?: number | null
-  submitter_id?: number | null
-  q?: string
   sort?: string
   sort_dir?: string
   limit?: number
@@ -18,9 +16,9 @@ interface UseTicketsParams {
 }
 
 export function useTickets(params: UseTicketsParams = {}) {
-  const { status, priority, assignee_id, unassigned, has_negative_csat, category_id, submitter_id, q, sort, sort_dir, limit = 50, offset = 0 } = params
+  const { status, priority, assignee_id, unassigned, has_negative_csat, category_id, sort, sort_dir, limit = 50, offset = 0 } = params
 
-  const queryKey = ['tickets', { status, priority, assignee_id, unassigned, has_negative_csat, category_id, submitter_id, q, sort, sort_dir, limit, offset }]
+  const queryKey = ['tickets', { status, priority, assignee_id, unassigned, has_negative_csat, category_id, sort, sort_dir, limit, offset }]
 
   return useQuery<TicketListResponse>({
     queryKey,
@@ -32,8 +30,6 @@ export function useTickets(params: UseTicketsParams = {}) {
       if (unassigned) p.set('unassigned', 'true')
       if (has_negative_csat) p.set('has_negative_csat', 'true')
       if (category_id != null) p.set('category_id', String(category_id))
-      if (submitter_id != null) p.set('submitter_id', String(submitter_id))
-      if (q) p.set('q', q)
       if (sort) p.set('sort', sort)
       if (sort_dir) p.set('sort_dir', sort_dir)
       p.set('limit', String(limit))

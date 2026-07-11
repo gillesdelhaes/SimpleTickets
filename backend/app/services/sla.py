@@ -29,62 +29,6 @@ from app.models.ticket_status_config import TicketStatusConfig
 logger = logging.getLogger(__name__)
 
 
-# ── Public SLA state helpers ───────────────────────────────────────────────────
-
-
-def sla_remaining_seconds(ticket: Ticket) -> int | None:
-    """
-    Return seconds remaining until SLA deadline, accounting for any paused time.
-    Returns None if the ticket has no SLA deadline.
-    Returns a negative value if the deadline has already passed.
-    """
-    if ticket.sla_deadline is None:
-        return None
-
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
-    deadline = ticket.sla_deadline
-
-    # If currently paused, the clock hasn't advanced since sla_paused_at
-    if ticket.sla_paused_at is not None:
-        effective_now = ticket.sla_paused_at
-    else:
-        effective_now = now
-
-    if deadline.tzinfo is None:
-        deadline = deadline.replace(tzinfo=timezone.utc)
-    if effective_now.tzinfo is None:
-        effective_now = effective_now.replace(tzinfo=timezone.utc)
-
-    return int((deadline - effective_now).total_seconds())
-
-
-def sla_status_label(ticket: Ticket) -> str:
-    """Return 'ok', 'warning' (< 20 % remaining), or 'breached'."""
-    if ticket.sla_breached:
-        return "breached"
-    remaining = sla_remaining_seconds(ticket)
-    if remaining is None:
-        return "none"
-    if remaining <= 0:
-        return "breached"
-    if ticket.sla_deadline is None:
-        return "none"
-
-    deadline = ticket.sla_deadline
-    if deadline.tzinfo is None:
-        deadline = deadline.replace(tzinfo=timezone.utc)
-    created = ticket.created_at
-    if created.tzinfo is None:
-        created = created.replace(tzinfo=timezone.utc)
-
-    total_seconds = (deadline - created).total_seconds()
-    if total_seconds <= 0:
-        return "ok"
-
-    pct_remaining = remaining / total_seconds
-    return "warning" if pct_remaining < 0.20 else "ok"
-
-
 # ── Business-hours SLA deadline computation ───────────────────────────────────
 
 

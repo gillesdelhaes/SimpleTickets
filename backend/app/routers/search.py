@@ -127,7 +127,7 @@ async def search_tickets(
         )
         .group_by(combined.c.ticket_id)
         .order_by(func.max(combined.c.rank).desc())
-        .limit(limit * 3)  # fetch extra to account for role filtering below
+        .limit(limit)
     )
 
     ranked_rows = (await session.execute(ranked_stmt)).all()
@@ -138,7 +138,7 @@ async def search_tickets(
     rank_map: dict[int, float] = {row.ticket_id: float(row.best_rank) for row in ranked_rows}
     candidate_ids: list[int] = list(rank_map.keys())
 
-    # ── Step 2: fetch enriched ticket rows with role filter ───────────────────
+    # ── Step 2: fetch enriched ticket rows ────────────────────────────────────
 
     Submitter = aliased(User, flat=True)
     Assignee = aliased(User, flat=True)
@@ -168,7 +168,6 @@ async def search_tickets(
         ticket_map[t.id] = _build_ticket_read(t, row[1], row[2], row[3], row[4])
 
     # ── Step 3: headlines — run ts_headline for each matched ticket ───────────
-    # We compute headlines for tickets that actually passed the role filter
     visible_ids = list(ticket_map.keys())
     headline_map: dict[int, str] = {}
 

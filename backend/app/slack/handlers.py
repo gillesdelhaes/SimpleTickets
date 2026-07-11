@@ -219,7 +219,6 @@ async def _handle_csat_response(body: dict, client: Any, *, score: bool) -> None
                 ticket_id=ticket_id,
                 score=score,
                 responded_at=now,
-                slack_user_id=slack_user_id,
                 dm_ts=message_ts,
             ))
 

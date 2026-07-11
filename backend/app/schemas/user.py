@@ -10,7 +10,6 @@ class UserRead(BaseModel):
     id: int
     email: str
     name: str
-    avatar_url: Optional[str]
     role: Role
     auth_provider: AuthProvider
     slack_user_id: Optional[str]

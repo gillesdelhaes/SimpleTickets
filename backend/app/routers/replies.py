@@ -26,7 +26,6 @@ def _to_read(reply: TicketReply, author_name: str | None) -> ReplyRead:
         author_name=author_name or reply.slack_author_name,
         body=reply.body,
         is_internal=reply.is_internal,
-        slack_ts=reply.slack_ts,
         created_at=reply.created_at,
     )
 

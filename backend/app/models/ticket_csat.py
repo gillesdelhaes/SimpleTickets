@@ -11,5 +11,4 @@ class TicketCSAT(SQLModel, table=True):
     ticket_id: int = Field(foreign_key="tickets.id", index=True)
     score: bool  # True = positive (👍), False = negative (👎)
     responded_at: datetime
-    slack_user_id: str
-    dm_ts: Optional[str] = Field(default=None)  # Slack message ts; unique per ticket for dedup
+    dm_ts: Optional[str] = Field(default=None)  # Slack message ts; DB-unique per ticket, guards concurrent double-clicks

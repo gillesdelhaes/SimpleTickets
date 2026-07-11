@@ -4,13 +4,12 @@ Ticket CRUD.
 Access: all endpoints require technician or admin role.
 """
 import logging
-import re
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 logger = logging.getLogger(__name__)
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -264,10 +263,8 @@ async def list_tickets(
     priority_filter: list[Priority] = Query(default=[], alias="priority"),
     category_id: int | None = Query(default=None),
     assignee_id: int | None = Query(default=None),
-    submitter_id: int | None = Query(default=None),
     unassigned: bool = Query(default=False),
     has_negative_csat: bool = Query(default=False),
-    q: str | None = Query(default=None, description="Search in title"),
     sort: str = Query(default="created_at"),
     sort_dir: str = Query(default="desc"),
     limit: int = Query(default=50, ge=1, le=200),
@@ -286,8 +283,6 @@ async def list_tickets(
         where.append(Ticket.category_id == category_id)
     if assignee_id is not None:
         where.append(Ticket.assignee_id == assignee_id)
-    if submitter_id is not None:
-        where.append(Ticket.submitter_id == submitter_id)
     if unassigned:
         where.append(Ticket.assignee_id.is_(None))
     if has_negative_csat:
@@ -297,12 +292,6 @@ async def list_tickets(
             .correlate(Ticket)
             .exists()
         )
-    if q:
-        search_clauses = [Ticket.title.ilike(f"%{q}%")]
-        tkt_match = re.match(r'^(?:TKT-)?(\d+)$', q.strip().upper())
-        if tkt_match:
-            search_clauses.append(Ticket.id == int(tkt_match.group(1)))
-        where.append(or_(*search_clauses))
 
     _sort_cols = {
         "created_at": Ticket.created_at,
