@@ -62,7 +62,7 @@ function SaveBar({ dirty, pending, onSave }: { dirty: boolean; pending: boolean;
 }
 
 function Saved() {
-  return <span className="text-[12px] font-semibold text-brand-ink">✓ Saved</span>
+  return <span className="text-[12px] font-semibold text-ok-ink">✓ Saved</span>
 }
 
 // ── Settings API helpers ───────────────────────────────────────────────────────

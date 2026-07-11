@@ -421,7 +421,7 @@ function MetaRow({ label, children }: MetaRowProps) {
 function SavedFlash({ show }: { show: boolean }) {
   return (
     <span
-      className="text-[11px] font-semibold text-brand-ink ml-1.5 transition-opacity duration-300"
+      className="text-[11px] font-semibold text-ok-ink ml-1.5 transition-opacity duration-300"
       style={{ opacity: show ? 1 : 0 }}
     >
       ✓ Saved
