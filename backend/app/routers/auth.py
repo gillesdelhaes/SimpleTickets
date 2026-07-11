@@ -1,5 +1,6 @@
+import secrets
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from time import monotonic
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -10,10 +11,13 @@ from pydantic import BaseModel
 
 from app.auth.deps import get_current_user
 from app.auth.jwt import create_access_token
+from app.config import settings_manager
 from app.database import get_session
-from app.models import User
-from app.schemas.auth import LoginRequest, TokenResponse
+from app.models import PasswordResetToken, User
+from app.schemas.auth import ForgotPasswordRequest, LoginRequest, ResetPasswordRequest, TokenResponse
+from app.services.audit import write_audit
 from app.services.passwords import hash_password, verify_password
+from app.slack.service import send_password_reset_dm
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -122,4 +126,140 @@ async def change_password(
     if not current_user.hashed_password or not verify_password(body.current_password, current_user.hashed_password):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
     current_user.hashed_password = hash_password(body.new_password)
+    await session.commit()
+
+
+# ── Password reset via Slack DM ────────────────────────────────────────────────
+# Self-service recovery for the "lone admin forgot their password" lockout.
+# Only works for accounts with a linked slack_user_id on a Slack-configured
+# instance — everyone else still needs another admin's help, same as today.
+
+_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0/O/1/I/L — read aloud safely
+_CODE_LENGTH = 8
+_CODE_TTL_MINUTES = 15
+_CODE_COOLDOWN_SECONDS = 60.0  # don't re-DM the same user faster than this
+
+_RESET_LIMIT = 5
+_RESET_WINDOW = 900.0  # 15 minutes
+_reset_attempts: dict[str, list[float]] = defaultdict(list)
+_last_code_sent: dict[int, float] = {}
+
+_GENERIC_FORGOT_MESSAGE = "If that account exists and is linked to Slack, a reset code has been sent."
+
+
+def _check_reset_rate_limit(ip: str) -> None:
+    now = monotonic()
+    recent = [t for t in _reset_attempts.get(ip, ()) if now - t < _RESET_WINDOW]
+    if len(recent) >= _RESET_LIMIT:
+        _reset_attempts[ip] = recent
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many attempts — please wait a while and try again.",
+        )
+    recent.append(now)
+    _reset_attempts[ip] = recent
+
+
+@router.post("/forgot-password")
+async def forgot_password(
+    body: ForgotPasswordRequest,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """
+    Request a one-time password-reset code via Slack DM. Always returns the
+    same generic message regardless of whether the account exists, is active,
+    or has Slack linked — a prober learns nothing from the response.
+    """
+    _check_reset_rate_limit(_client_ip(request))
+
+    result = await session.execute(select(User).where(User.email == body.email.lower()))
+    user = result.scalar_one_or_none()
+
+    if user and user.is_active and user.slack_user_id and settings_manager.is_slack_configured():
+        now_mono = monotonic()
+        if now_mono - _last_code_sent.get(user.id, 0.0) >= _CODE_COOLDOWN_SECONDS:
+            code = "".join(secrets.choice(_CODE_ALPHABET) for _ in range(_CODE_LENGTH))
+            # Send before touching the DB — a failed DM means the user never saw
+            # the code, so it must not invalidate a still-valid earlier one.
+            sent = await send_password_reset_dm(user.slack_user_id, code)
+            if sent:
+                now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+                # Invalidate any still-outstanding codes so only the newest one works.
+                stale = (await session.execute(
+                    select(PasswordResetToken).where(
+                        PasswordResetToken.user_id == user.id,
+                        PasswordResetToken.used_at.is_(None),
+                    )
+                )).scalars().all()
+                for tok in stale:
+                    tok.used_at = now
+
+                session.add(PasswordResetToken(
+                    user_id=user.id,
+                    code_hash=hash_password(code),
+                    expires_at=now + timedelta(minutes=_CODE_TTL_MINUTES),
+                ))
+                await write_audit(
+                    session,
+                    actor_id=user.id,
+                    action="user.password_reset_requested",
+                    entity_type="user",
+                    entity_id=str(user.id),
+                    ip_address=_client_ip(request),
+                )
+                await session.commit()
+                _last_code_sent[user.id] = now_mono
+
+    return {"message": _GENERIC_FORGOT_MESSAGE}
+
+
+@router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_password(
+    body: ResetPasswordRequest,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Complete a password reset using the code DMed via /forgot-password."""
+    _check_reset_rate_limit(_client_ip(request))
+
+    _invalid = HTTPException(status_code=400, detail="Invalid or expired reset code")
+
+    result = await session.execute(select(User).where(User.email == body.email.lower()))
+    user = result.scalar_one_or_none()
+    if user is None:
+        # Burn the same bcrypt cost as a real check so timing doesn't reveal
+        # whether the account exists.
+        verify_password(body.code, _DUMMY_PASSWORD_HASH)
+        raise _invalid
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    candidates = (await session.execute(
+        select(PasswordResetToken)
+        .where(
+            PasswordResetToken.user_id == user.id,
+            PasswordResetToken.used_at.is_(None),
+            PasswordResetToken.expires_at > now,
+        )
+        .order_by(PasswordResetToken.created_at.desc())
+    )).scalars().all()
+
+    matched = next((c for c in candidates if verify_password(body.code, c.code_hash)), None)
+    if matched is None:
+        if not candidates:
+            verify_password(body.code, _DUMMY_PASSWORD_HASH)
+        raise _invalid
+
+    matched.used_at = now
+    user.hashed_password = hash_password(body.new_password)
+
+    await write_audit(
+        session,
+        actor_id=user.id,
+        action="user.password_reset_completed",
+        entity_type="user",
+        entity_id=str(user.id),
+        ip_address=_client_ip(request),
+    )
     await session.commit()

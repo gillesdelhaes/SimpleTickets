@@ -3,6 +3,8 @@ import { AuthProvider } from './contexts/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import SetupGuard from './components/SetupGuard'
 import Login from './pages/Login'
+import ForgotPassword from './pages/ForgotPassword'
+import ResetPassword from './pages/ResetPassword'
 import Dashboard from './pages/Dashboard'
 import Queue from './pages/Queue'
 import TicketDetail from './pages/TicketDetail'
@@ -21,6 +23,8 @@ export default function App() {
           <Route path="/setup" element={<SetupWizard />} />
           <Route path="/" element={<Navigate to="/queue" replace />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
           {/* ── IT staff: technician + admin ── */}
           <Route element={<ProtectedRoute roles={['technician', 'admin']} />}>

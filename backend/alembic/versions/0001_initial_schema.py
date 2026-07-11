@@ -233,6 +233,20 @@ def upgrade() -> None:
     # Prevent duplicate inserts from Slack at-least-once delivery — partial so NULLs are excluded
     op.execute("CREATE UNIQUE INDEX uq_ticket_csat_dm_ts ON ticket_csat (ticket_id, dm_ts) WHERE dm_ts IS NOT NULL")
 
+    # ── password_reset_tokens ─────────────────────────────────────────────────
+    op.create_table(
+        "password_reset_tokens",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("code_hash", sqlmodel.AutoString(), nullable=False),
+        sa.Column("expires_at", sa.DateTime(), nullable=False),
+        sa.Column("used_at", sa.DateTime(), nullable=True),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index("ix_password_reset_tokens_user_id", "password_reset_tokens", ["user_id"])
+
     # ── seed: categories ───────────────────────────────────────────────────────
     op.bulk_insert(
         sa.table(
@@ -313,6 +327,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_table("password_reset_tokens")
     op.drop_table("ticket_csat")
     op.drop_table("ticket_read_markers")
     op.drop_table("app_settings")

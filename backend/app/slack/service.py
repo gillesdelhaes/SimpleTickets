@@ -221,6 +221,40 @@ async def notify_reporter_dm(ticket: Ticket, slack_user_id: str) -> None:
         logger.exception("notify_reporter_dm: failed to DM user %s", slack_user_id)
 
 
+async def send_password_reset_dm(slack_user_id: str, code: str) -> bool:
+    """DM a one-time password-reset code to a staff member. Returns True if the
+    Slack API call succeeded (the router still returns a generic response to
+    the caller either way, to avoid leaking account/Slack-link state)."""
+    from app.slack.bot import get_slack_client
+    client = get_slack_client()
+    if client is None:
+        return False
+
+    try:
+        await client.chat_postMessage(
+            channel=slack_user_id,
+            text=f"Your SimpleTickets password reset code is {code}",
+            blocks=[
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": (
+                            "🔑 *Password reset requested*\n"
+                            f"Your one-time code is `{code}`\n"
+                            "It expires in 15 minutes and can only be used once. "
+                            "If you didn't request this, you can ignore this message."
+                        ),
+                    },
+                }
+            ],
+        )
+        return True
+    except Exception:  # noqa: BLE001
+        logger.exception("send_password_reset_dm: failed to DM %s", slack_user_id)
+        return False
+
+
 async def _get_submitter_slack_id(ticket: Ticket) -> str | None:
     """Return the Slack user ID for DM notifications.
     Uses slack_submitter_id if present; falls back to the linked User.slack_user_id

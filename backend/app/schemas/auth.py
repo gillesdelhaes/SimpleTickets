@@ -13,6 +13,23 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: LooseEmail
+
+
+class ResetPasswordRequest(BaseModel):
+    email: LooseEmail
+    code: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def min_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        return v
+
+
 class CreateLocalUserRequest(BaseModel):
     name: str
     email: LooseEmail

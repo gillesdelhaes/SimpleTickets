@@ -1,17 +1,19 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import api, { apiErrorMessage } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function Login() {
   const { login, user } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const justReset = Boolean((location.state as { passwordReset?: boolean } | null)?.passwordReset)
 
   // Already authenticated — go home
   useEffect(() => {
@@ -126,6 +128,15 @@ export default function Login() {
             </div>
           </div>
 
+          {justReset && !error && (
+            <div
+              className="rounded-control px-4 py-3 mb-4 text-[13px] leading-relaxed text-ok-ink"
+              style={{ background: 'var(--ok-bg)', border: '1px solid var(--ok-bg)' }}
+            >
+              Password reset — sign in with your new password.
+            </div>
+          )}
+
           {error && (
             <div
               role="alert"
@@ -149,6 +160,10 @@ export default function Login() {
               'Sign in'
             )}
           </button>
+
+          <p className="sub" style={{ marginTop: 18, textAlign: 'center' }}>
+            <Link to="/forgot-password">Forgot password?</Link>
+          </p>
         </form>
       </section>
     </div>
