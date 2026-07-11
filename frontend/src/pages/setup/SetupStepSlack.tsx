@@ -167,7 +167,7 @@ export default function SetupStepSlack({ onNext }: Props) {
           {testing ? 'Testing…' : 'Test connection'}
         </button>
         {testResult && (
-          <span className={`text-[13px] ${testResult.ok ? 'text-brand-ink' : 'text-danger-ink'}`}>
+          <span className={`text-[13px] ${testResult.ok ? 'text-ok-ink' : 'text-danger-ink'}`}>
             {testResult.ok ? `✓ Connected to ${testResult.team_name}` : `✗ ${testResult.error}`}
           </span>
         )}

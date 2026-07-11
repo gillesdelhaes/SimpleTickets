@@ -285,7 +285,7 @@ function SlackTab() {
           <div className="flex gap-2 items-center ml-auto">
             {saved && <Saved />}
             {testResult && (
-              <span className={`text-[12px] ${testResult.ok ? 'text-brand-ink' : 'text-danger-ink'}`}>
+              <span className={`text-[12px] ${testResult.ok ? 'text-ok-ink' : 'text-danger-ink'}`}>
                 {testResult.ok ? `✓ Connected to ${testResult.team_name}` : `✗ ${testResult.error}`}
               </span>
             )}

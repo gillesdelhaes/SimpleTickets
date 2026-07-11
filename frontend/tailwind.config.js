@@ -16,9 +16,11 @@ export default {
         'brand-ink': 'var(--brand-ink)',
         'warn-ink': 'var(--warn-ink)',
         'danger-ink': 'var(--danger-ink)',
+        'ok-ink': 'var(--ok-ink)', // app token (index.css), not a glasshouse one
         'brand-tint': 'var(--brand-tint)',
         'warn-tint': 'var(--warn-bg)',
         'danger-tint': 'var(--danger-bg)',
+        'ok-tint': 'var(--ok-bg)',
       },
       borderRadius: {
         panel: '22px',
