@@ -345,10 +345,11 @@ function SlackTab() {
       </Card>
 
       {/* Setup guide */}
-      <div>
+      <Card>
         <button
           onClick={() => setShowGuide(v => !v)}
-          className="flex items-center gap-2 bg-transparent border-0 cursor-pointer text-[13px] font-medium text-ink-2 hover:text-ink py-1 px-0"
+          className="flex items-center gap-2 w-full bg-transparent border-0 cursor-pointer text-[13px] font-medium text-ink-2 hover:text-ink"
+          style={{ padding: '14px 22px', textAlign: 'left' }}
         >
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
             style={{ transition: 'transform 0.2s', transform: showGuide ? 'rotate(90deg)' : 'none' }}>
@@ -356,8 +357,12 @@ function SlackTab() {
           </svg>
           {showGuide ? 'Hide' : 'Show'} Slack app setup guide
         </button>
-        {showGuide && <SlackGuide />}
-      </div>
+        {showGuide && (
+          <div style={{ padding: '2px 22px 20px', borderTop: '1px solid var(--track)' }}>
+            <SlackGuide />
+          </div>
+        )}
+      </Card>
     </div>
   )
 }
