@@ -8,6 +8,7 @@ import SLABadge from '../components/tickets/SLABadge'
 import CreateTicketModal from '../components/tickets/CreateTicketModal'
 import { useTickets } from '../hooks/useTickets'
 import { useCategories } from '../hooks/useCategories'
+import { useSavedQueueViews } from '../hooks/useSavedQueueViews'
 import { useAuth } from '../contexts/AuthContext'
 import { useUnreadReplies } from '../hooks/useUnreadReplies'
 import { getAllStatuses, timeAgo, PRIORITY_LABELS, type Priority } from '../types/ticket'
@@ -109,6 +110,9 @@ export default function Queue() {
   const [bulkPriority, setBulkPriority] = useState<string>('')
   const [bulkLoading, setBulkLoading] = useState(false)
   const [bulkError, setBulkError] = useState<string | null>(null)
+  const { views: savedViews, saveView, deleteView } = useSavedQueueViews()
+  const [namingView, setNamingView] = useState(false)
+  const [newViewName, setNewViewName] = useState('')
 
   // Read filters from URL
   const selectedStatuses = searchParams.getAll('status')
@@ -187,6 +191,27 @@ export default function Queue() {
       next.set('page', '0')
       return next
     })
+  }
+
+  // ── Saved views ────────────────────────────────────────────────────────────
+
+  function currentFilterQuery(): string {
+    const q = new URLSearchParams(searchParams)
+    q.delete('page')
+    return q.toString()
+  }
+
+  function applyView(query: string) {
+    setSearchParams(new URLSearchParams(query))
+  }
+
+  function handleSaveView(e: React.FormEvent) {
+    e.preventDefault()
+    const name = newViewName.trim()
+    if (!name) return
+    saveView(name, currentFilterQuery())
+    setNewViewName('')
+    setNamingView(false)
   }
 
   async function handleClaim(e: React.MouseEvent, ticketId: number) {
@@ -341,6 +366,50 @@ export default function Queue() {
             ))}
           </div>
         )}
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <FilterLabel>Views</FilterLabel>
+          {savedViews.map(v => (
+            <span key={v.id} className={`chip${currentFilterQuery() === v.query ? ' on' : ''}`} style={{ paddingRight: 8 }}>
+              <button
+                type="button"
+                onClick={() => applyView(v.query)}
+                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'inherit', font: 'inherit' }}
+              >
+                {v.name}
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteView(v.id)}
+                aria-label={`Delete view ${v.name}`}
+                className="text-ink-3 hover:text-danger-ink"
+                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', opacity: 0.7 }}
+              >
+                <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <path d="M1 1l8 8M9 1l-8 8" />
+                </svg>
+              </button>
+            </span>
+          ))}
+
+          {namingView ? (
+            <form onSubmit={handleSaveView} className="flex items-center gap-1.5">
+              <input
+                className="input"
+                style={{ width: 170, padding: '5px 11px', fontSize: 12.5 }}
+                autoFocus
+                value={newViewName}
+                onChange={e => setNewViewName(e.target.value)}
+                placeholder="View name…"
+                onKeyDown={e => { if (e.key === 'Escape') { setNamingView(false); setNewViewName('') } }}
+              />
+              <button type="submit" className="btn ghost sm" disabled={!newViewName.trim()}>Save</button>
+              <button type="button" className="btn ghost sm" onClick={() => { setNamingView(false); setNewViewName('') }}>Cancel</button>
+            </form>
+          ) : (
+            <FilterChip label="+ Save current filters" active={false} onClick={() => setNamingView(true)} />
+          )}
+        </div>
       </div>
 
       {/* Bulk action bar */}
