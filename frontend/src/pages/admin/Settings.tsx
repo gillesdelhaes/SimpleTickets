@@ -30,8 +30,8 @@ type Priority = 'low' | 'medium' | 'high' | 'critical'
 interface SettingRead { key: string; value: string | null; is_secret: boolean; group_name: string }
 interface CategoryRead { id: number; name: string; is_archived: boolean; created_at: string }
 interface SLAPolicyRead { id: number; name: string; priority: Priority; first_response_minutes: number; resolution_minutes: number }
-interface StatusRow { id: number; name: string; label: string; color: string; pauses_sla: boolean; is_default: boolean; is_resolved_state: boolean; sort_order: number; is_archived: boolean }
-interface StatusForm { name: string; label: string; color: string; pauses_sla: boolean; is_default: boolean; is_resolved_state: boolean; sort_order: number }
+interface StatusRow { id: number; name: string; label: string; color: string; pauses_sla: boolean; is_default: boolean; is_resolved_state: boolean; sends_csat: boolean; sort_order: number; is_archived: boolean }
+interface StatusForm { name: string; label: string; color: string; pauses_sla: boolean; is_default: boolean; is_resolved_state: boolean; sends_csat: boolean; sort_order: number }
 
 // ── Shared building blocks ────────────────────────────────────────────────────
 
@@ -893,7 +893,7 @@ function SLATab() {
 
 // ── Statuses tab ──────────────────────────────────────────────────────────────
 
-const BLANK_STATUS: StatusForm = { name: '', label: '', color: '#737373', pauses_sla: false, is_default: false, is_resolved_state: false, sort_order: 0 }
+const BLANK_STATUS: StatusForm = { name: '', label: '', color: '#737373', pauses_sla: false, is_default: false, is_resolved_state: false, sends_csat: false, sort_order: 0 }
 // Preset swatches offered when creating a status — stored as data in the DB
 const PRESET_COLORS = ['#3B82F6', '#FF4713', '#F59E0B', '#10B981', '#737373', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316', '#6366F1']
 
@@ -960,7 +960,7 @@ function StatusesTab() {
             <table>
               <thead>
                 <tr>
-                  {['Colour', 'Slug', 'Label', 'Pauses SLA', 'Default', 'Resolved', 'Order', ''].map(h => (
+                  {['Colour', 'Slug', 'Label', 'Pauses SLA', 'Default', 'Resolved', 'Sends CSAT', 'Order', ''].map(h => (
                     <th key={h}>{h}</th>
                   ))}
                 </tr>
@@ -975,11 +975,12 @@ function StatusesTab() {
                     <td><Toggle checked={s.pauses_sla} onChange={v => patchMutation.mutate({ id: s.id, patch: { pauses_sla: v } })} /></td>
                     <td><Toggle checked={s.is_default} onChange={v => patchMutation.mutate({ id: s.id, patch: { is_default: v } })} /></td>
                     <td><Toggle checked={s.is_resolved_state} onChange={v => patchMutation.mutate({ id: s.id, patch: { is_resolved_state: v } })} /></td>
+                    <td><Toggle checked={s.sends_csat} onChange={v => patchMutation.mutate({ id: s.id, patch: { sends_csat: v } })} /></td>
                     <td><span className="sn">{s.sort_order}</span></td>
                     <td>
                       <div className="flex gap-1.5">
                         <button
-                          onClick={() => { setEditId(s.id); setForm({ name: s.name, label: s.label, color: s.color, pauses_sla: s.pauses_sla, is_default: s.is_default, is_resolved_state: s.is_resolved_state, sort_order: s.sort_order }); setError(null) }}
+                          onClick={() => { setEditId(s.id); setForm({ name: s.name, label: s.label, color: s.color, pauses_sla: s.pauses_sla, is_default: s.is_default, is_resolved_state: s.is_resolved_state, sends_csat: s.sends_csat, sort_order: s.sort_order }); setError(null) }}
                           className="btn ghost sm"
                           style={{ padding: '3px 10px', fontSize: 11.5 }}
                         >
@@ -1057,6 +1058,7 @@ function StatusesTab() {
               { key: 'pauses_sla', title: 'Pauses SLA', hint: 'SLA clock stops while in this status' },
               { key: 'is_default', title: 'Default status', hint: 'Applied to newly created tickets' },
               { key: 'is_resolved_state', title: 'Resolved state', hint: 'Tickets re-open on new Slack reply' },
+              { key: 'sends_csat', title: 'Sends CSAT survey', hint: 'DMs the submitter 👍/👎 on entry (resolved states only)' },
             ].map(({ key, title, hint }) => (
               <label key={key} className="flex items-center gap-2 cursor-pointer text-[13px]">
                 <input type="checkbox" checked={(form as any)[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.checked }))} style={{ accentColor: 'var(--b1)' }} />

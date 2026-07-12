@@ -225,13 +225,19 @@ async def _handle_csat_response(body: dict, client: Any, *, score: bool) -> None
             from app.services.sla import apply_sla_status_change
 
             old_status = current_status
+            # Pick from active statuses in sort order — same selection rule as
+            # close_without_survey and the auto-close job.
+            pickable = sorted(
+                (s for s in status_cfgs if not s.is_archived),
+                key=lambda s: s.sort_order,
+            )
             if score:
                 # Terminal resolved state — the one that doesn't trigger another CSAT
-                close_cfg = next((s for s in status_cfgs if s.is_resolved_state and not s.sends_csat), None)
+                close_cfg = next((s for s in pickable if s.is_resolved_state and not s.sends_csat), None)
                 new_status = close_cfg.name if close_cfg else "closed"
             else:
                 # First active (non-resolved) state
-                open_cfg = next((s for s in status_cfgs if not s.is_resolved_state), None)
+                open_cfg = next((s for s in pickable if not s.is_resolved_state), None)
                 new_status = open_cfg.name if open_cfg else "open"
                 ticket.resolved_at = None
 

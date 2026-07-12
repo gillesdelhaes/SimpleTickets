@@ -819,6 +819,7 @@ async def get_ticket_history(
 async def mark_duplicate(
     ticket_id: int,
     body: MarkDuplicateRequest,
+    request: Request,
     current_user: User = Depends(require_technician),
     session: AsyncSession = Depends(get_session),
 ) -> TicketRead:
@@ -856,6 +857,24 @@ async def mark_duplicate(
 
     ticket.updated_at = now
     _record_history(session, ticket.id, current_user.id, changes)
+
+    # Closing-as-duplicate is a terminal path that never sends a CSAT survey, so
+    # it gets the same audit trail as close_without_survey — otherwise linking a
+    # ticket to any random one is a silent way to dodge a bad score.
+    await write_audit(
+        session,
+        actor_id=current_user.id,
+        action="ticket.marked_duplicate",
+        entity_type="ticket",
+        entity_id=str(ticket_id),
+        payload={
+            "duplicate_of_id": canonical.id,
+            "duplicate_of": canonical.display_id,
+            "closed": "status" in changes,
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+
     await session.commit()
     await session.refresh(ticket)
 
@@ -881,6 +900,7 @@ async def mark_duplicate(
 @router.delete("/{ticket_id}/mark-duplicate", response_model=TicketRead)
 async def unmark_duplicate(
     ticket_id: int,
+    request: Request,
     current_user: User = Depends(require_technician),
     session: AsyncSession = Depends(get_session),
 ) -> TicketRead:
@@ -893,8 +913,9 @@ async def unmark_duplicate(
     now = utcnow()
     default_status = await _get_default_status(session)
 
+    old_dup_id = ticket.duplicate_of_id
     changes: dict[str, tuple[str | None, str | None]] = {
-        "duplicate_of": (f"TKT-{ticket.duplicate_of_id:04d}", None),
+        "duplicate_of": (f"TKT-{old_dup_id:04d}", None),
     }
     ticket.duplicate_of_id = None
 
@@ -907,6 +928,23 @@ async def unmark_duplicate(
 
     ticket.updated_at = now
     _record_history(session, ticket.id, current_user.id, changes)
+
+    # Audited for the same reason as marking: mark-then-unlink must not be a
+    # traceless close/reopen cycle.
+    await write_audit(
+        session,
+        actor_id=current_user.id,
+        action="ticket.unmarked_duplicate",
+        entity_type="ticket",
+        entity_id=str(ticket_id),
+        payload={
+            "was_duplicate_of_id": old_dup_id,
+            "was_duplicate_of": f"TKT-{old_dup_id:04d}",
+            "reopened": "status" in changes,
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+
     await session.commit()
 
     items, _ = await _fetch_enriched(session, [Ticket.id == ticket_id])

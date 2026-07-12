@@ -376,13 +376,15 @@ async def _auto_close_resolved() -> None:
             if not csat_statuses:
                 return
 
-            # Lookup the terminal close status (resolved, no CSAT) dynamically
+            # Lookup the terminal close status (resolved, no CSAT) dynamically.
+            # Ordered by sort_order so this picks the same status as
+            # close_without_survey when several no-survey resolved states exist.
             close_cfg_result = await session.execute(
                 select(TicketStatusConfig).where(
                     TicketStatusConfig.is_resolved_state == True,  # noqa: E712
                     TicketStatusConfig.sends_csat == False,  # noqa: E712
                     TicketStatusConfig.is_archived == False,  # noqa: E712
-                ).limit(1)
+                ).order_by(TicketStatusConfig.sort_order).limit(1)
             )
             close_cfg = close_cfg_result.scalar_one_or_none()
             close_status = close_cfg.name if close_cfg else "closed"

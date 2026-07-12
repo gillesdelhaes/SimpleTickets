@@ -29,6 +29,7 @@ class StatusRead(BaseModel):
     pauses_sla: bool
     is_default: bool
     is_resolved_state: bool
+    sends_csat: bool
     sort_order: int
     is_archived: bool
 
@@ -45,6 +46,7 @@ class StatusCreate(BaseModel):
     pauses_sla: bool = False
     is_default: bool = False
     is_resolved_state: bool = False
+    sends_csat: bool = False
     sort_order: int = 0
 
     @field_validator("name")
@@ -64,6 +66,7 @@ class StatusUpdate(BaseModel):
     pauses_sla: Optional[bool] = None
     is_default: Optional[bool] = None
     is_resolved_state: Optional[bool] = None
+    sends_csat: Optional[bool] = None
     sort_order: Optional[int] = None
     is_archived: Optional[bool] = None
 
@@ -128,7 +131,7 @@ async def update_status(
 
     for field in provided:
         value = getattr(body, field)
-        if value is not None or field in ("is_default", "is_resolved_state", "pauses_sla", "is_archived"):
+        if value is not None or field in ("is_default", "is_resolved_state", "pauses_sla", "sends_csat", "is_archived"):
             setattr(row, field, value)
 
     await session.commit()
