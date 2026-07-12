@@ -146,9 +146,8 @@ async def update_settings(
         await session.rollback()
         raise
 
-    # Invalidate cache so next request picks up new values
+    # Re-warm the cache so subsequent requests see the new values
     from app.config import settings_manager
-    settings_manager.invalidate()
     await settings_manager.warm(session)
 
     # Reload Slack bot if any Slack credential changed

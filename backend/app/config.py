@@ -7,12 +7,11 @@ Phase 1 — `settings` (pydantic-settings, reads from env/.env at import time).
 
 Phase 2 — `settings_manager` (SettingsManager, reads from app_settings DB table).
   DB values override env defaults at runtime.
-  Cache TTL: 30 seconds. Invalidated immediately after any PATCH /admin/settings.
-  Must be warmed in FastAPI lifespan before serving requests.
+  Cached in-process; re-warmed after any settings write (PATCH /admin/settings,
+  setup, restore). Must be warmed in FastAPI lifespan before serving requests.
 """
 import logging
 import secrets
-import time
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -43,35 +42,20 @@ settings = Settings()
 class SettingsManager:
     """
     Wraps the static Settings with a DB-backed override layer.
-    Call warm() once at startup to pre-load all values into the in-process cache.
+    Call warm() once at startup to pre-load all values into the in-process
+    cache, and again after any settings write (PATCH /admin/settings, setup,
+    restore) to pick up the new values.
     """
 
     def __init__(self) -> None:
         self._cache: dict[str, str] = {}
-        self._cache_at: float = 0.0
-        self._TTL: float = 30.0
-
-    def invalidate(self) -> None:
-        """Force a full cache reload on next access."""
-        self._cache_at = 0.0
 
     async def warm(self, session) -> None:
-        """Pre-load all settings into cache. Call from lifespan startup."""
-        await self._refresh(session)
-
-    async def _refresh(self, session) -> None:
+        """(Re)load all settings into the cache. Replaces it atomically, so
+        readers never observe a partially-loaded cache."""
         from app.services.settings_service import get_all_settings
         self._cache = await get_all_settings(session)
-        self._cache_at = time.monotonic()
         logger.debug("Settings cache refreshed (%d keys)", len(self._cache))
-
-    async def _ensure_fresh(self, session) -> None:
-        if time.monotonic() - self._cache_at > self._TTL:
-            await self._refresh(session)
-
-    async def get(self, key: str, session, default: str = "") -> str:
-        await self._ensure_fresh(session)
-        return self._cache.get(key) or default
 
     # ── Synchronous properties (read from cache only, no DB) ──────────────────
     # Used by JWT signing and other places where we cannot inject a session.

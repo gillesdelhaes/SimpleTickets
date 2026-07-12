@@ -313,9 +313,7 @@ async def restore_backup(
             ))
 
         await session.commit()
-        # Reload the settings cache from the restored table now, rather than
-        # leaving it stale-but-invalidated until the next request.
-        settings_manager.invalidate()
+        # Reload the settings cache from the restored table.
         await settings_manager.warm(session)
     except HTTPException:
         await session.rollback()

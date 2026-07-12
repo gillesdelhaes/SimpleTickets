@@ -192,7 +192,6 @@ async def setup_complete(
     from app.slack.bot import reload_slack
     import asyncio
 
-    settings_manager.invalidate()
     # Refresh cache synchronously with this session before reloading Slack
     await settings_manager.warm(session)
     asyncio.create_task(reload_slack())
