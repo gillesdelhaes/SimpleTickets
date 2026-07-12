@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.deps import require_admin
 from app.config import settings, settings_manager
 from app.services.audit import write_audit
+from app.services.settings_service import encrypt_value
 from app.database import get_session
 from app.models.app_setting import AppSetting
 from app.models.audit_log import AuditLog
@@ -83,6 +84,7 @@ _DT_COLS: dict[str, set[str]] = {
     "ticket_csat":         {"responded_at"},
     "audit_log":           {"created_at"},
     "ticket_read_markers": {"last_read_at"},
+    "app_settings":        {"updated_at"},
 }
 
 
@@ -254,11 +256,40 @@ async def restore_backup(
                 deserialized = [_deserialize_row(r, table_name) for r in rows]
                 await session.execute(sa_insert(model.__table__), deserialized)
 
-        # App settings
-        app_settings_rows = tables.get("app_settings", [])
+        # App settings — never accept secret keys from a backup (exports exclude
+        # them, but a hand-edited archive could smuggle them back in).
+        app_settings_rows = [
+            r for r in tables.get("app_settings", []) if r.get("key") not in _SECRET_KEYS
+        ]
         if app_settings_rows:
             deserialized = [_deserialize_row(r, "app_settings") for r in app_settings_rows]
             await session.execute(sa_insert(AppSetting.__table__), deserialized)
+
+        # Re-seed the per-instance secret rows the truncate wiped and the backup
+        # (deliberately) doesn't carry. Without this:
+        #   - bootstrap finds no app_secret_key row on the next restart and
+        #     generates a NEW master key, making every secret encrypted by the
+        #     still-running process undecryptable;
+        #   - set_setting() re-creates missing token rows with is_secret=False,
+        #     so Slack tokens re-entered after the restore land in plaintext
+        #     (and GET /admin/settings would serve them unmasked);
+        #   - with no jwt_secret row, tokens fall back to being signed with the
+        #     master key until the next restart.
+        # jwt_secret keeps its current value so the restoring admin's session
+        # (and everyone else's) survives the restore.
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        session.add(AppSetting(
+            key="app_secret_key", value=settings.app_secret_key,
+            is_secret=False, group_name="app", updated_at=now,
+        ))
+        session.add(AppSetting(
+            key="jwt_secret", value=encrypt_value(settings_manager.jwt_secret),
+            is_secret=True, group_name="app", updated_at=now,
+        ))
+        for key in ("slack_bot_token", "slack_app_token", "slack_signing_secret"):
+            session.add(AppSetting(
+                key=key, value=None, is_secret=True, group_name="slack", updated_at=now,
+            ))
 
         # Verify the restored data includes at least one admin — a corrupt backup must
         # not lock out the current user with no recovery path.
@@ -280,7 +311,10 @@ async def restore_backup(
             ))
 
         await session.commit()
+        # Reload the settings cache from the restored table now, rather than
+        # leaving it stale-but-invalidated until the next request.
         settings_manager.invalidate()
+        await settings_manager.warm(session)
     except HTTPException:
         await session.rollback()
         raise

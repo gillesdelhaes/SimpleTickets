@@ -447,10 +447,25 @@ function DuplicatePickerRow({ ticket }: { ticket: TicketRead }) {
     if (!val.trim()) { setResults([]); setOpen(false); return }
     timerRef.current = setTimeout(async () => {
       try {
-        const res = await api.get<{ items: TicketRead[] }>('/tickets', {
-          params: { q: val, limit: 8 },
-        })
-        const filtered = res.data.items.filter(t => t.id !== ticket.id)
+        const q = val.trim()
+        // "TKT-0042" / "0042" / "42" → direct ID lookup; any text → full-text
+        // search (the /tickets list endpoint has no text filter).
+        const idMatch = q.match(/^(?:TKT-?)?0*(\d+)$/i)
+        const [byId, byText] = await Promise.all([
+          idMatch
+            ? api.get<TicketRead>(`/tickets/${Number(idMatch[1])}`).then(r => r.data).catch(() => null)
+            : Promise.resolve(null),
+          q.length >= 2
+            ? api.get<{ items: { ticket: TicketRead }[] }>('/search', { params: { q, limit: 8 } })
+                .then(r => r.data.items.map(i => i.ticket)).catch(() => [] as TicketRead[])
+            : Promise.resolve([] as TicketRead[]),
+        ])
+        const seen = new Set<number>([ticket.id])
+        const filtered = [...(byId ? [byId] : []), ...byText].filter(t => {
+          if (seen.has(t.id)) return false
+          seen.add(t.id)
+          return true
+        }).slice(0, 8)
         setResults(filtered)
         setOpen(filtered.length > 0)
       } catch { /* ignore */ }
