@@ -562,6 +562,7 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
   const { data: categories } = useCategories()
   const { data: agents } = useAgents()
   const [savedField, setSavedField] = useState<string | null>(null)
+  const [patchError, setPatchError] = useState<string | null>(null)
 
   const patchMutation = useMutation({
     mutationFn: (update: Partial<TicketRead>) =>
@@ -570,8 +571,12 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
       queryClient.setQueryData(['ticket', ticket.id], updated)
       queryClient.invalidateQueries({ queryKey: ['tickets'] })
       const field = Object.keys(variables)[0]
+      setPatchError(null)
       setSavedField(field)
       setTimeout(() => setSavedField(null), 1800)
+    },
+    onError: (err: unknown) => {
+      setPatchError(apiErrorMessage(err, 'Update failed — please try again.'))
     },
   })
 
@@ -597,6 +602,15 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
       </div>
 
       <div className="px-5 pb-5 pt-3 flex flex-col gap-4">
+        {patchError && (
+          <div
+            className="rounded-control px-3 py-2 text-[12px] text-danger-ink"
+            style={{ background: 'var(--danger-bg)' }}
+          >
+            {patchError}
+          </div>
+        )}
+
         {/* Status */}
         <MetaRow label="Status">
           <div className="relative">
@@ -1052,7 +1066,7 @@ export default function TicketDetail() {
     return (
       <AppShell title="Loading…">
         <div style={{ height: 24, width: 200, borderRadius: 8, background: 'var(--track)', animation: 'shimmer 1.5s ease-in-out infinite', marginBottom: 20 }} />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 24 }}>
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_320px]" style={{ gap: 24 }}>
           <div style={{ height: 400, borderRadius: 22, background: 'var(--track)', animation: 'shimmer 1.5s ease-in-out infinite' }} />
           <div style={{ height: 400, borderRadius: 22, background: 'var(--track)', animation: 'shimmer 1.5s ease-in-out infinite' }} />
         </div>
@@ -1134,8 +1148,8 @@ export default function TicketDetail() {
           </div>
         )}
 
-        {/* Two-column layout */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 14, alignItems: 'start' }}>
+        {/* Two-column layout — single column on phones */}
+        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_300px] items-start" style={{ gap: 14 }}>
           <ThreadColumn ticket={ticket} isTech={isTech} currentUserId={user?.id} />
           <MetaSidebar
             ticket={ticket}

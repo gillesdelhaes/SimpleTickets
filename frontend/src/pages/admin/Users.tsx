@@ -176,6 +176,11 @@ function RoleBadge({ user }: RoleBadgeProps) {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
       setEditing(false)
     },
+    onError: (err: unknown) => {
+      // e.g. 409 demoting the last active admin — must not fail invisibly
+      window.alert(apiErrorMessage(err, 'Failed to change role.'))
+      setEditing(false)
+    },
   })
 
   if (editing) {
@@ -302,10 +307,19 @@ export default function Users() {
     },
     onError: (err: unknown, variables) => {
       const res = (err as { response?: { status?: number } })?.response
-      if (res?.status === 409 && variables.is_active === false) {
-        if (window.confirm(apiErrorMessage(err, 'This technician has open tickets. Deactivate anyway?'))) {
+      const message = apiErrorMessage(err, 'Failed to update user.')
+      // Only the open-tickets 409 is forceable ("… Deactivate anyway?"). The
+      // last-admin 409 (or a forced retry failing again) can never succeed —
+      // surface it instead of re-prompting forever.
+      if (
+        res?.status === 409 && variables.is_active === false &&
+        !variables.force && message.includes('Deactivate anyway')
+      ) {
+        if (window.confirm(message)) {
           toggleActive.mutate({ ...variables, force: true })
         }
+      } else {
+        window.alert(message)
       }
     },
   })

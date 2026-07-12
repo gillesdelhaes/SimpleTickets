@@ -7,6 +7,7 @@ import io
 import json
 import logging
 import os
+import shutil
 import tempfile
 import zipfile
 from datetime import datetime, timezone
@@ -291,13 +292,14 @@ async def restore_backup(
                 key=key, value=None, is_secret=True, group_name="slack", updated_at=now,
             ))
 
-        # Verify the restored data includes at least one admin — a corrupt backup must
-        # not lock out the current user with no recovery path.
+        # Verify the restored data includes at least one *active* admin — a backup
+        # whose only admins are deactivated would lock everyone out just as surely
+        # as one with no admins at all.
         restored_users = tables.get("users", [])
-        if not any(u.get("role") == "admin" for u in restored_users):
+        if not any(u.get("role") == "admin" and u.get("is_active") for u in restored_users):
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
-                "Backup contains no admin users — restore aborted to prevent lockout",
+                "Backup contains no active admin users — restore aborted to prevent lockout",
             )
 
         # Advance each sequence past the largest inserted ID so new rows get correct IDs.
@@ -328,6 +330,17 @@ async def restore_backup(
 
     # ── Restore attachment files ──────────────────────────────────────────────
     storage_root = Path(settings.storage_local_path).resolve()
+
+    # The restored DB references only the backup's attachments — clear whatever
+    # the previous instance left on disk so orphaned files don't accumulate
+    # across restores. (Runs only after the DB restore committed successfully.)
+    if storage_root.exists():
+        for child in storage_root.iterdir():
+            if child.is_dir():
+                shutil.rmtree(child, ignore_errors=True)
+            else:
+                child.unlink(missing_ok=True)
+
     restored_files = 0
     for name in zf.namelist():
         if name.startswith("attachments/") and not name.endswith("/"):

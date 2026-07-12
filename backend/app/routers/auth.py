@@ -150,6 +150,13 @@ _GENERIC_FORGOT_MESSAGE = "If that account exists and is linked to Slack, a rese
 def _check_reset_rate_limit(ip: str) -> None:
     now = monotonic()
     recent = [t for t in _reset_attempts.get(ip, ()) if now - t < _RESET_WINDOW]
+
+    # Same bounded-memory eviction as the login limiter — rotating/spoofed IPs
+    # must not grow the map forever.
+    if len(_reset_attempts) > _MAX_TRACKED_IPS:
+        for stale in [k for k, v in _reset_attempts.items() if not v or now - v[-1] >= _RESET_WINDOW]:
+            del _reset_attempts[stale]
+
     if len(recent) >= _RESET_LIMIT:
         _reset_attempts[ip] = recent
         raise HTTPException(

@@ -40,7 +40,7 @@ function formatDate(d: string) {
 
 const PAGE_SIZE = 50
 
-const ENTITY_TYPES = ['', 'user', 'ticket', 'reply', 'category', 'sla_policy']
+const ENTITY_TYPES = ['', 'user', 'ticket', 'reply', 'category', 'sla_policy', 'settings', 'backup']
 
 export default function Audit() {
   const navigate = useNavigate()

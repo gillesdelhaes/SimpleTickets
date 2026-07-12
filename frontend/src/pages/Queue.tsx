@@ -216,8 +216,12 @@ export default function Queue() {
 
   async function handleClaim(e: React.MouseEvent, ticketId: number) {
     e.stopPropagation()
-    await api.patch(`/tickets/${ticketId}`, { assignee_id: user?.id })
-    queryClient.invalidateQueries({ queryKey: ['tickets'] })
+    try {
+      await api.patch(`/tickets/${ticketId}`, { assignee_id: user?.id })
+      queryClient.invalidateQueries({ queryKey: ['tickets'] })
+    } catch (err) {
+      setBulkError(apiErrorMessage(err, 'Failed to claim the ticket — please try again.'))
+    }
   }
 
   function setPage(p: number) {
