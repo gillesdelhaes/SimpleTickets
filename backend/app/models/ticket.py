@@ -53,6 +53,11 @@ class Ticket(SQLModel, table=True):
     # Origin: 'web' = created via web portal, 'slack' = created via Slack
     source: str = Field(default="slack")
 
+    # Which connected Slack workspace this ticket came from (null = no Slack
+    # origin — a pure web-portal ticket with no Slack reporter). Determines
+    # which workspace's bot handles replies/DMs/thread sync for this ticket.
+    workspace_id: Optional[int] = Field(default=None, foreign_key="slack_workspaces.id", index=True)
+
     # Slack integration
     slack_channel_id: Optional[str] = Field(default=None)
     slack_message_ts: Optional[str] = Field(default=None)

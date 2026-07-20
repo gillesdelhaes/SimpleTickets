@@ -1,16 +1,18 @@
 """
 DB-backed settings service.
 
-All app configuration (except DATABASE_URL) is stored in the app_settings
-table. Sensitive values are encrypted with Fernet using a key derived from
+Global app configuration (except DATABASE_URL) is stored in the app_settings
+table — Slack workspace credentials live per-row in slack_workspaces instead
+(see models.SlackWorkspace), but reuse encrypt_value/decrypt_value from here.
+Sensitive values are encrypted with Fernet using a key derived from
 APP_SECRET_KEY. The app_secret_key row itself is stored plaintext — it IS
 the encryption key, so encrypting it with itself is circular.
 
 Usage:
     from app.services.settings_service import get_setting, set_setting
 
-    bot_token = await get_setting("slack_bot_token", session)
-    await set_setting("slack_bot_token", "xoxb-...", session)
+    tz = await get_setting("timezone", session, default="UTC")
+    await set_setting("timezone", "America/New_York", session)
 """
 import base64
 import hashlib

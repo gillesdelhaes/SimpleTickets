@@ -11,9 +11,9 @@ from pydantic import BaseModel
 
 from app.auth.deps import get_current_user
 from app.auth.jwt import create_access_token
-from app.config import settings_manager
 from app.database import get_session
 from app.models import PasswordResetToken, User
+from app.models.user_slack_identity import UserSlackIdentity
 from app.schemas.auth import ForgotPasswordRequest, LoginRequest, ResetPasswordRequest, TokenResponse
 from app.services.audit import write_audit
 from app.services.passwords import hash_password, verify_password
@@ -131,8 +131,8 @@ async def change_password(
 
 # ── Password reset via Slack DM ────────────────────────────────────────────────
 # Self-service recovery for the "lone admin forgot their password" lockout.
-# Only works for accounts with a linked slack_user_id on a Slack-configured
-# instance — everyone else still needs another admin's help, same as today.
+# Only works for accounts with at least one linked Slack identity (in any
+# workspace) — everyone else still needs another admin's help, same as today.
 
 _CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0/O/1/I/L — read aloud safely
 _CODE_LENGTH = 8
@@ -183,13 +183,20 @@ async def forgot_password(
     result = await session.execute(select(User).where(User.email == body.email.lower()))
     user = result.scalar_one_or_none()
 
-    if user and user.is_active and user.slack_user_id and settings_manager.is_slack_configured():
+    has_identity = False
+    if user and user.is_active:
+        identity_row = (await session.execute(
+            select(UserSlackIdentity.id).where(UserSlackIdentity.user_id == user.id).limit(1)
+        )).scalar_one_or_none()
+        has_identity = identity_row is not None
+
+    if user and user.is_active and has_identity:
         now_mono = monotonic()
         if now_mono - _last_code_sent.get(user.id, 0.0) >= _CODE_COOLDOWN_SECONDS:
             code = "".join(secrets.choice(_CODE_ALPHABET) for _ in range(_CODE_LENGTH))
             # Send before touching the DB — a failed DM means the user never saw
             # the code, so it must not invalidate a still-valid earlier one.
-            sent = await send_password_reset_dm(user.slack_user_id, code)
+            sent = await send_password_reset_dm(user, code, session)
             if sent:
                 now = datetime.now(timezone.utc).replace(tzinfo=None)
 

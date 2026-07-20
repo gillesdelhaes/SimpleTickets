@@ -30,7 +30,6 @@ class User(SQLModel, table=True):
             default=AuthProvider.local,
         )
     )
-    slack_user_id: Optional[str] = Field(default=None, index=True)
     hashed_password: Optional[str] = Field(default=None)
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=utcnow)

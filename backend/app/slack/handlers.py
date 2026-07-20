@@ -17,10 +17,10 @@ from typing import Any
 
 from sqlalchemy import select
 
-from app.config import settings_manager
 from app.database import AsyncSessionLocal
-from app.models import Category, Ticket, TicketCSAT, TicketHistory, TicketReply, User
+from app.models import Category, Ticket, TicketCSAT, TicketHistory, TicketReply
 from app.models.enums import Priority
+from app.models.slack_workspace import SlackWorkspace
 from app.models.ticket_status_config import TicketStatusConfig
 from app.slack.service import (
     _download_slack_files,
@@ -155,7 +155,7 @@ async def _build_ticket_modal() -> dict:
 # ── CSAT response helper ───────────────────────────────────────────────────────
 
 
-async def _handle_csat_response(body: dict, client: Any, *, score: bool) -> None:
+async def _handle_csat_response(body: dict, client: Any, workspace_id: int, *, score: bool) -> None:
     slack_user_id: str = body.get("user", {}).get("id", "")
     action = body.get("actions", [{}])[0]
     try:
@@ -169,7 +169,7 @@ async def _handle_csat_response(body: dict, client: Any, *, score: bool) -> None
     try:
         async with AsyncSessionLocal() as session:
             ticket = await session.get(Ticket, ticket_id)
-            if not ticket:
+            if not ticket or ticket.workspace_id != workspace_id:
                 return
 
             # Only the ticket's submitter (the person the survey DM was sent to)
@@ -263,16 +263,31 @@ async def _handle_csat_response(body: dict, client: Any, *, score: bool) -> None
             ))
             await session.commit()
 
+            # Watchers hear about the CSAT-driven status change too
+            try:
+                from app.slack.service import notify_ticket_watchers
+                await notify_ticket_watchers(
+                    ticket,
+                    (f"👁 *{ticket.display_id}* — {ticket.title}\n"
+                     + ("✅ Submitter confirmed the fix — ticket closed."
+                        if score else
+                        "↩️ Submitter says it's not resolved — ticket reopened.")),
+                    exclude_slack_ids={slack_user_id} if slack_user_id else frozenset(),
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("csat_response: watcher notify failed for ticket %d", ticket_id)
+
             # Notify assignee on negative response
             if not score and ticket.assignee_id:
-                assignee = await session.get(User, ticket.assignee_id)
-                if assignee and assignee.slack_user_id:
+                from app.slack.service import _get_staff_slack_id
+                assignee_slack_id = await _get_staff_slack_id(session, ticket.assignee_id, workspace_id)
+                if assignee_slack_id:
                     try:
                         from app.slack.bot import get_slack_client
-                        c = get_slack_client()
+                        c = get_slack_client(workspace_id)
                         if c:
                             await c.chat_postMessage(
-                                channel=assignee.slack_user_id,
+                                channel=assignee_slack_id,
                                 text=(
                                     f"↩️ *{ticket.display_id}* was reopened — "
                                     f"the submitter indicated the issue is not yet resolved."
@@ -305,8 +320,15 @@ async def _handle_csat_response(body: dict, client: Any, *, score: bool) -> None
 
 # ── handler registration ───────────────────────────────────────────────────────
 
-def register_handlers(app: Any) -> None:
-    """Register all event/action/command handlers on the Bolt AsyncApp."""
+def register_handlers(app: Any, workspace: SlackWorkspace) -> None:
+    """
+    Register all event/action/command handlers on the Bolt AsyncApp for one
+    connected workspace. `workspace` is closed over so every handler knows
+    which workspace it's running in — that's what makes inbound routing
+    correct: this app instance only ever receives events from that one
+    workspace's Slack installation.
+    """
+    workspace_id: int = workspace.id  # type: ignore[assignment]
 
     # ── reaction_added ─────────────────────────────────────────────────────────
 
@@ -317,10 +339,11 @@ def register_handlers(app: Any) -> None:
         with the configured trigger emoji.
 
         The REACTOR must exist in SimpleTickets as a tech or admin (matched via
-        slack_user_id). Any Slack user can be the original message author.
+        a linked Slack identity for this workspace). Any Slack user can be the
+        original message author.
         """
         emoji = event.get("reaction", "")
-        if emoji != settings_manager.slack_trigger_emoji:
+        if emoji != workspace.trigger_emoji:
             return
 
         reactor_slack_id: str = event.get("user", "")
@@ -333,7 +356,7 @@ def register_handlers(app: Any) -> None:
 
         # ── Verify reactor is a technician/admin ───────────────────────────
         async with AsyncSessionLocal() as session:
-            reactor = await get_user_by_slack_id(session, reactor_slack_id)
+            reactor = await get_user_by_slack_id(session, workspace_id, reactor_slack_id)
 
         if reactor is None:
             logger.debug(
@@ -380,6 +403,7 @@ def register_handlers(app: Any) -> None:
                 slack_submitter_id=author_slack_id or None,
                 slack_channel_id=channel_id,
                 slack_message_ts=message_ts,
+                workspace_id=workspace_id,
             )
         except Exception:  # noqa: BLE001
             logger.exception("reaction_added: ticket creation failed")
@@ -393,7 +417,7 @@ def register_handlers(app: Any) -> None:
         # ── Download any files from the original message ───────────────────
         if original_files:
             try:
-                await _download_slack_files(ticket.id, None, original_files)
+                await _download_slack_files(ticket.id, None, original_files, workspace_id)
             except Exception:  # noqa: BLE001
                 logger.exception("reaction_added: failed to download files for %s", ticket.display_id)
 
@@ -455,6 +479,7 @@ def register_handlers(app: Any) -> None:
                         text=text,
                         client=client,
                         files=event_files,
+                        workspace_id=workspace_id,
                     )
                 except Exception:  # noqa: BLE001
                     logger.exception(
@@ -477,6 +502,7 @@ def register_handlers(app: Any) -> None:
                     select(Ticket)
                     .where(
                         Ticket.slack_channel_id == channel_id,
+                        Ticket.workspace_id == workspace_id,
                         Ticket.status.not_in(resolved_names),
                     )
                     .order_by(Ticket.created_at.desc())
@@ -494,6 +520,7 @@ def register_handlers(app: Any) -> None:
                         text=text,
                         client=client,
                         files=event_files,
+                        workspace_id=workspace_id,
                     )
                 except Exception:  # noqa: BLE001
                     logger.exception(
@@ -518,6 +545,7 @@ def register_handlers(app: Any) -> None:
                     slack_submitter_id=slack_user_id or None,
                     slack_channel_id=channel_id,
                     slack_message_ts=message_ts,
+                    workspace_id=workspace_id,
                 )
             except Exception:  # noqa: BLE001
                 logger.exception("handle_message(DM): ticket creation failed for user %s", slack_user_id)
@@ -533,7 +561,7 @@ def register_handlers(app: Any) -> None:
             # Download any files attached to the initial DM
             if event_files:
                 try:
-                    await _download_slack_files(ticket.id, None, event_files)
+                    await _download_slack_files(ticket.id, None, event_files, workspace_id)
                 except Exception:  # noqa: BLE001
                     logger.exception("handle_message(DM): failed to download files for %s", ticket.display_id)
 
@@ -564,6 +592,7 @@ def register_handlers(app: Any) -> None:
                 text=text,
                 client=client,
                 files=event_files,
+                workspace_id=workspace_id,
             )
         except Exception:  # noqa: BLE001
             logger.exception(
@@ -588,7 +617,7 @@ def register_handlers(app: Any) -> None:
         except Exception:  # noqa: BLE001
             pass
         try:
-            view = await build_home_view(slack_user_id, client, tab=current_tab)
+            view = await build_home_view(slack_user_id, client, workspace_id, tab=current_tab)
             await client.views_publish(user_id=slack_user_id, view=view)
         except Exception:  # noqa: BLE001
             logger.exception("app_home_opened: failed to publish home for %s", slack_user_id)
@@ -657,6 +686,7 @@ def register_handlers(app: Any) -> None:
                 category_id=category_value,
                 slack_submitter_name=submitter_name,
                 slack_submitter_id=slack_user_id or None,
+                workspace_id=workspace_id,
             )
         except Exception:  # noqa: BLE001
             logger.exception("ticket_modal: ticket creation failed")
@@ -697,7 +727,7 @@ def register_handlers(app: Any) -> None:
         # Refresh App Home so the new ticket appears immediately
         if slack_user_id:
             try:
-                home_view = await build_home_view(slack_user_id, client, tab="active")
+                home_view = await build_home_view(slack_user_id, client, workspace_id, tab="active")
                 await client.views_publish(user_id=slack_user_id, view=home_view)
             except Exception:  # noqa: BLE001
                 pass  # non-critical
@@ -712,7 +742,7 @@ def register_handlers(app: Any) -> None:
         if not slack_user_id:
             return
         try:
-            view = await build_home_view(slack_user_id, client, tab=tab)
+            view = await build_home_view(slack_user_id, client, workspace_id, tab=tab)
             await client.views_publish(user_id=slack_user_id, view=view)
         except Exception:  # noqa: BLE001
             logger.exception("home_tab: failed to refresh home for %s", slack_user_id)
@@ -732,7 +762,7 @@ def register_handlers(app: Any) -> None:
 
         async with AsyncSessionLocal() as session:
             ticket = await session.get(Ticket, ticket_id)
-        if not ticket:
+        if not ticket or ticket.workspace_id != workspace_id:
             return
 
         modal: dict = {
@@ -792,16 +822,13 @@ def register_handlers(app: Any) -> None:
         try:
             async with AsyncSessionLocal() as session:
                 ticket = await session.get(Ticket, ticket_id)
-                if not ticket:
+                if not ticket or ticket.workspace_id != workspace_id:
                     return
 
                 # Resolve author
                 author_id: int | None = None
                 author_name = await _slack_display_name(client, slack_user_id) if slack_user_id else "Slack user"
-                user_result = await session.execute(
-                    select(User).where(User.slack_user_id == slack_user_id)
-                )
-                db_user = user_result.scalar_one_or_none()
+                db_user = await get_user_by_slack_id(session, workspace_id, slack_user_id) if slack_user_id else None
                 if db_user:
                     author_id = db_user.id
                     author_name = db_user.name or db_user.email
@@ -829,13 +856,22 @@ def register_handlers(app: Any) -> None:
                 session.add(reply)
                 await session.commit()
                 logger.info("Home reply added to ticket %s by %s", ticket.display_id, author_name)
+
+                from app.slack.service import _reply_preview, notify_ticket_watchers
+                await notify_ticket_watchers(
+                    ticket,
+                    (f"👁 *{ticket.display_id}* — {ticket.title}\n"
+                     f"💬 New reply from {author_name}:\n{_reply_preview(reply_text)}"),
+                    exclude_user_ids={author_id} if author_id is not None else frozenset(),
+                    exclude_slack_ids={slack_user_id} if slack_user_id else frozenset(),
+                )
         except Exception:  # noqa: BLE001
             logger.exception("home_reply_modal: failed to save reply for ticket %d", ticket_id)
 
         # Refresh home
         if slack_user_id:
             try:
-                home_view = await build_home_view(slack_user_id, client, tab=tab)
+                home_view = await build_home_view(slack_user_id, client, workspace_id, tab=tab)
                 await client.views_publish(user_id=slack_user_id, view=home_view)
             except Exception:  # noqa: BLE001
                 pass
@@ -859,7 +895,7 @@ def register_handlers(app: Any) -> None:
         try:
             async with AsyncSessionLocal() as session:
                 ticket = await session.get(Ticket, ticket_id)
-                if not ticket:
+                if not ticket or ticket.workspace_id != workspace_id:
                     return
 
                 # Find the first resolved status
@@ -890,10 +926,7 @@ def register_handlers(app: Any) -> None:
                     return  # already resolved/closed
 
                 actor_name = "User (Slack)"
-                user_result = await session.execute(
-                    select(User).where(User.slack_user_id == slack_user_id)
-                )
-                db_user = user_result.scalar_one_or_none()
+                db_user = await get_user_by_slack_id(session, workspace_id, slack_user_id) if slack_user_id else None
                 if db_user:
                     actor_name = db_user.name or db_user.email
 
@@ -931,6 +964,7 @@ def register_handlers(app: Any) -> None:
                     {"status": (old_status, resolved_status)},
                     actor_name,
                     notify_submitter=False,
+                    actor_user_id=db_user.id if db_user else None,
                 )
 
                 # Send CSAT DM if this status triggers it
@@ -949,7 +983,7 @@ def register_handlers(app: Any) -> None:
         # Refresh home — go to resolved tab so user can see it
         if slack_user_id:
             try:
-                home_view = await build_home_view(slack_user_id, client, tab="resolved")
+                home_view = await build_home_view(slack_user_id, client, workspace_id, tab="resolved")
                 await client.views_publish(user_id=slack_user_id, view=home_view)
             except Exception:  # noqa: BLE001
                 pass
@@ -959,12 +993,12 @@ def register_handlers(app: Any) -> None:
     @app.action("csat_positive")
     async def handle_csat_positive(ack: Any, body: dict, client: Any) -> None:
         await ack()
-        await _handle_csat_response(body, client, score=True)
+        await _handle_csat_response(body, client, workspace_id, score=True)
 
     @app.action("csat_negative")
     async def handle_csat_negative(ack: Any, body: dict, client: Any) -> None:
         await ack()
-        await _handle_csat_response(body, client, score=False)
+        await _handle_csat_response(body, client, workspace_id, score=False)
 
     # ── Message shortcut: Create ticket from any message ──────────────────────
 
@@ -1120,6 +1154,7 @@ def register_handlers(app: Any) -> None:
                 slack_submitter_id=author_slack_id or None,
                 slack_channel_id=channel_id or None,
                 slack_message_ts=message_ts or None,
+                workspace_id=workspace_id,
             )
         except Exception:  # noqa: BLE001
             logger.exception("message_shortcut_modal: ticket creation failed")

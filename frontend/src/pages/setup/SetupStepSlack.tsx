@@ -42,6 +42,7 @@ function StepCard({ n, children }: { n: number; children: React.ReactNode }) {
 }
 
 export default function SetupStepSlack({ onNext }: Props) {
+  const [name, setName] = useState('')
   const [botToken, setBotToken] = useState('')
   const [appToken, setAppToken] = useState('')
   const [signingSecret, setSigningSecret] = useState('')
@@ -61,6 +62,7 @@ export default function SetupStepSlack({ onNext }: Props) {
     try {
       const res = await api.post('/setup/test-slack', { bot_token: botToken, app_token: appToken })
       setTestResult(res.data)
+      if (res.data.ok && !name.trim() && res.data.team_name) setName(res.data.team_name)
     } catch {
       setTestResult({ ok: false, error: 'Request failed' })
     } finally {
@@ -73,6 +75,7 @@ export default function SetupStepSlack({ onNext }: Props) {
     setSaving(true)
     try {
       await api.post('/setup/slack', {
+        name: name.trim() || testResult?.team_name || 'Primary workspace',
         bot_token: botToken,
         app_token: appToken,
         signing_secret: signingSecret,
@@ -138,6 +141,12 @@ export default function SetupStepSlack({ onNext }: Props) {
             ))}
           </ul>
         </StepCard>
+      </div>
+
+      {/* Workspace name */}
+      <div className="fieldrow">
+        <label htmlFor="slack-name">Workspace name <span className="font-normal text-ink-3">shown in the ticket list and admin settings</span></label>
+        <input id="slack-name" className="input" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Acme Corp" />
       </div>
 
       {/* Token fields */}

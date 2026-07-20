@@ -25,12 +25,8 @@ class Settings(BaseSettings):
     app_secret_key: str = "dev-secret-change-in-production"
     database_url: str = "postgresql+asyncpg://postgres:postgres@db:5432/simpletickets"
 
-    # All other fields serve as defaults when the DB has no value
-    slack_bot_token: str = ""
-    slack_signing_secret: str = ""
-    slack_app_token: str = ""
-    slack_trigger_emoji: str = "clipboard"
-    slack_two_way_sync: bool = True
+    # Slack credentials live per-workspace in the slack_workspaces table (see
+    # models.SlackWorkspace) — not here.
     storage_local_path: str = "/data/attachments"
 
 
@@ -60,29 +56,6 @@ class SettingsManager:
     # ── Synchronous properties (read from cache only, no DB) ──────────────────
     # Used by JWT signing and other places where we cannot inject a session.
     # Safe after warm() has been called.
-
-    @property
-    def slack_bot_token(self) -> str:
-        return self._cache.get("slack_bot_token") or settings.slack_bot_token
-
-    @property
-    def slack_app_token(self) -> str:
-        return self._cache.get("slack_app_token") or settings.slack_app_token
-
-    @property
-    def slack_signing_secret(self) -> str:
-        return self._cache.get("slack_signing_secret") or settings.slack_signing_secret
-
-    @property
-    def slack_trigger_emoji(self) -> str:
-        return self._cache.get("slack_trigger_emoji") or settings.slack_trigger_emoji
-
-    @property
-    def slack_two_way_sync(self) -> bool:
-        v = self._cache.get("slack_two_way_sync")
-        if v is not None:
-            return v.lower() not in ("false", "0", "no")
-        return settings.slack_two_way_sync
 
     @property
     def jwt_secret(self) -> str:
@@ -143,9 +116,6 @@ class SettingsManager:
             ) from exc
         self._cache["jwt_secret"] = new_secret
         logger.info("Generated new JWT secret and persisted to DB (encrypted)")
-
-    def is_slack_configured(self) -> bool:
-        return bool(self.slack_bot_token and self.slack_app_token)
 
 
 settings_manager = SettingsManager()

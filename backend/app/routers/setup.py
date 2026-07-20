@@ -15,11 +15,14 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
+from app.dt import utcnow
 from app.models.enums import AuthProvider, Role
+from app.models.slack_workspace import SlackWorkspace
 from app.models.user import User
 from app.schemas.fields import LooseEmail
 from app.services.passwords import hash_password
 from app.services.settings_service import (
+    encrypt_value,
     has_any_admin,
     is_setup_complete,
     set_setting,
@@ -145,6 +148,7 @@ async def test_slack(
 # ── POST /setup/slack ──────────────────────────────────────────────────────────
 
 class SlackSetupRequest(BaseModel):
+    name: str = "Primary workspace"
     bot_token: str
     app_token: str
     signing_secret: str = ""
@@ -157,14 +161,37 @@ async def setup_slack(
     body: SlackSetupRequest,
     session: AsyncSession = Depends(_require_setup_incomplete),
 ) -> dict:
-    """Persist Slack credentials to app_settings."""
-    await set_setting("slack_bot_token",      body.bot_token,                                session)
-    await set_setting("slack_app_token",      body.app_token,                                session)
-    await set_setting("slack_signing_secret", body.signing_secret,                           session)
-    await set_setting("slack_trigger_emoji",  body.trigger_emoji,                            session)
-    await set_setting("slack_two_way_sync",   "true" if body.two_way_sync else "false",      session)
+    """Create the first connected Slack workspace. More workspaces can be
+    added later from Settings → Workspaces."""
+    import asyncio
+
+    team_name = None
+    try:
+        from slack_sdk import WebClient
+        client = WebClient(token=body.bot_token)
+        auth = await asyncio.to_thread(client.auth_test)
+        team_name = auth.get("team")
+        team_id = auth.get("team_id")
+    except Exception:  # noqa: BLE001
+        team_id = None
+
+    now = utcnow()
+    workspace = SlackWorkspace(
+        name=(body.name or "Primary workspace").strip() or "Primary workspace",
+        team_id=team_id,
+        team_name=team_name,
+        bot_token=encrypt_value(body.bot_token),
+        app_token=encrypt_value(body.app_token),
+        signing_secret=encrypt_value(body.signing_secret) if body.signing_secret else "",
+        trigger_emoji=(body.trigger_emoji or "clipboard").strip() or "clipboard",
+        two_way_sync=body.two_way_sync,
+        is_active=True,
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(workspace)
     await session.commit()
-    logger.info("Setup: Slack settings saved")
+    logger.info("Setup: first Slack workspace saved (name=%r)", workspace.name)
     return {"success": True}
 
 

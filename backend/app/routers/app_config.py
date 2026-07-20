@@ -1,11 +1,12 @@
 """Public app configuration endpoint — accessible to any authenticated user."""
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import get_current_user
 from app.database import get_session
+from app.models.slack_workspace import SlackWorkspace
 from app.models.ticket_status_config import TicketStatusConfig
 from app.models.user import User
 from app.services.settings_service import get_setting
@@ -36,7 +37,6 @@ async def get_app_config(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> AppConfig:
-    from app.config import settings_manager
     tz = await get_setting("timezone", session, default="UTC")
     rows = (
         await session.execute(
@@ -58,5 +58,14 @@ async def get_app_config(
         )
         for r in rows
     ]
+    active_count: int = (await session.execute(
+        select(func.count()).select_from(SlackWorkspace).where(SlackWorkspace.is_active == True)  # noqa: E712
+    )).scalar_one()
+
     from app.slack.bot import is_slack_online
-    return AppConfig(timezone=tz, statuses=statuses, slack_configured=settings_manager.is_slack_configured(), slack_online=is_slack_online())
+    return AppConfig(
+        timezone=tz,
+        statuses=statuses,
+        slack_configured=active_count > 0,
+        slack_online=await is_slack_online(),
+    )

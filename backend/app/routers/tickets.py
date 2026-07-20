@@ -17,6 +17,7 @@ from app.auth.deps import get_current_user, require_technician
 from app.database import get_session
 from app.models import Category, SLAPolicy, Ticket, TicketCSAT, TicketHistory, User
 from app.models.enums import Priority, Role
+from app.models.slack_workspace import SlackWorkspace
 from app.models.ticket_status_config import TicketStatusConfig
 from app.schemas.ticket import BulkTicketUpdate, CloseTicketRequest, MarkDuplicateRequest, TicketCreate, TicketListResponse, TicketRead, TicketUpdate
 from app.services.audit import write_audit
@@ -75,11 +76,13 @@ async def _fetch_enriched(
             Assignee.name.label("assignee_name"),
             Category.name.label("category_name"),
             DuplicateOf.title.label("duplicate_of_title"),
+            SlackWorkspace.name.label("workspace_name"),
         )
         .outerjoin(Submitter, Ticket.submitter_id == Submitter.id)
         .outerjoin(Assignee, Ticket.assignee_id == Assignee.id)
         .outerjoin(Category, Ticket.category_id == Category.id)
         .outerjoin(DuplicateOf, Ticket.duplicate_of_id == DuplicateOf.id)
+        .outerjoin(SlackWorkspace, Ticket.workspace_id == SlackWorkspace.id)
     )
 
     for clause in where_clauses:
@@ -108,6 +111,7 @@ async def _fetch_enriched(
         asg_name: str | None = row[2]
         cat_name: str | None = row[3]
         dup_title: str | None = row[4]
+        ws_name: str | None = row[5]
 
         items.append(
             TicketRead(
@@ -129,6 +133,8 @@ async def _fetch_enriched(
                 duplicate_of_id=ticket.duplicate_of_id,
                 duplicate_of_title=dup_title,
                 source=ticket.source,
+                workspace_id=ticket.workspace_id,
+                workspace_name=ws_name,
                 slack_channel_id=ticket.slack_channel_id,
                 slack_message_ts=ticket.slack_message_ts,
                 first_response_deadline=ticket.first_response_deadline,
@@ -206,8 +212,24 @@ async def create_ticket(
         first_response_deadline = await compute_sla_deadline(now, sla_policy.first_response_minutes, session)
 
     # If a Slack reporter is given, the ticket is on behalf of a Slack user —
-    # submitter_id stays None and we store the Slack identity instead.
+    # submitter_id stays None and we store the Slack identity instead. That
+    # reporter came from a specific workspace's user list, so workspace_id is
+    # required alongside it (it's what lets replies/DMs route back correctly).
     slack_reporter = body.slack_reporter_id or None
+    workspace_id: int | None = None
+    if slack_reporter:
+        if body.workspace_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="workspace_id is required when slack_reporter_id is set",
+            )
+        workspace = await session.get(SlackWorkspace, body.workspace_id)
+        if workspace is None or not workspace.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Workspace not found or inactive",
+            )
+        workspace_id = workspace.id
 
     default_status = await _get_default_status(session)
 
@@ -224,6 +246,7 @@ async def create_ticket(
         sla_deadline=sla_deadline,
         first_response_deadline=first_response_deadline,
         source="web",
+        workspace_id=workspace_id,
         created_at=now,
         updated_at=now,
     )
@@ -444,21 +467,22 @@ async def bulk_update_tickets(
     # fire-and-forget — a Slack failure must not fail the bulk operation.
     # (expire_on_commit=False keeps ticket column attributes valid post-commit.)
     assignee_name = assignee.name if body.assignee_id is not None else None
-    assignee_slack_id = assignee.slack_user_id if body.assignee_id is not None else None
     _SLACK_TRACKED = {"status", "priority", "assignee_id"}
     for ticket, changes, entered_csat in changed:
         if changes.keys() & _SLACK_TRACKED:
             try:
                 from app.slack.service import post_ticket_update_to_slack
                 await post_ticket_update_to_slack(
-                    ticket, changes, current_user.name, assignee_name=assignee_name
+                    ticket, changes, current_user.name,
+                    assignee_name=assignee_name,
+                    actor_user_id=current_user.id,
                 )
             except Exception:  # noqa: BLE001
                 logger.exception("Failed to post bulk update to Slack for ticket %s", ticket.id)
-        if "assignee_id" in changes and assignee_slack_id:
+        if "assignee_id" in changes and body.assignee_id is not None:
             try:
                 from app.slack.service import notify_assignee_dm
-                await notify_assignee_dm(ticket, assignee_slack_id, current_user.name)
+                await notify_assignee_dm(ticket, body.assignee_id, current_user.name)
             except Exception:  # noqa: BLE001
                 logger.exception("Failed to notify assignee for ticket %s", ticket.id)
         if entered_csat:
@@ -597,7 +621,7 @@ async def update_ticket(
                 ticket.resolved_at = None
 
     # assignee_id
-    new_assignee_slack_id: str | None = None
+    new_assignee_id: int | None = None
     if "assignee_id" in provided:
         new_assignee = body.assignee_id
         if new_assignee is not None:
@@ -607,7 +631,7 @@ async def update_ticket(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail="Assignee not found or inactive",
                 )
-            new_assignee_slack_id = assignee.slack_user_id
+            new_assignee_id = new_assignee
         if ticket.assignee_id != new_assignee:
             changes["assignee_id"] = (
                 str(ticket.assignee_id) if ticket.assignee_id else None,
@@ -639,15 +663,17 @@ async def update_ticket(
                 current_user.name,
                 assignee_name=enriched.assignee_name,
                 category_name=enriched.category_name,
+                actor_user_id=current_user.id,
             )
         except Exception:  # noqa: BLE001
             logger.exception("Failed to post field update to Slack for ticket %s", ticket_id)
 
-    # DM the newly assigned technician if they have a Slack account
-    if "assignee_id" in changes and new_assignee_slack_id:
+    # DM the newly assigned technician if they have a Slack identity linked
+    # in this ticket's workspace
+    if "assignee_id" in changes and new_assignee_id is not None:
         try:
             from app.slack.service import notify_assignee_dm
-            await notify_assignee_dm(ticket, new_assignee_slack_id, current_user.name)
+            await notify_assignee_dm(ticket, new_assignee_id, current_user.name)
         except Exception:  # noqa: BLE001
             logger.exception("Failed to notify assignee for ticket %s", ticket_id)
 
@@ -728,7 +754,9 @@ async def close_without_survey(
     enriched = items[0]
     try:
         from app.slack.service import post_ticket_update_to_slack
-        await post_ticket_update_to_slack(ticket, changes, current_user.name)
+        await post_ticket_update_to_slack(
+            ticket, changes, current_user.name, actor_user_id=current_user.id
+        )
     except Exception:  # noqa: BLE001
         logger.exception("Failed to post close update to Slack for ticket %s", ticket_id)
 
@@ -879,16 +907,23 @@ async def mark_duplicate(
     await session.refresh(ticket)
 
     # DM the submitter
-    submitter_slack_id: str | None = ticket.slack_submitter_id
-    if not submitter_slack_id and ticket.submitter_id:
-        submitter = await session.get(User, ticket.submitter_id)
-        submitter_slack_id = submitter.slack_user_id if submitter else None
-    if submitter_slack_id:
-        try:
-            from app.slack.service import notify_duplicate_dm
-            await notify_duplicate_dm(ticket, canonical, submitter_slack_id)
-        except Exception:  # noqa: BLE001
-            logger.exception("Failed to send duplicate DM for ticket %s", ticket_id)
+    try:
+        from app.slack.service import notify_duplicate_dm
+        await notify_duplicate_dm(ticket, canonical)
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to send duplicate DM for ticket %s", ticket_id)
+
+    try:
+        from app.slack.service import notify_ticket_watchers
+        await notify_ticket_watchers(
+            ticket,
+            (f"👁 *{ticket.display_id}* — {ticket.title}\n"
+             f"🔗 Marked as duplicate of *{canonical.display_id}* by {current_user.name}"
+             + (" — ticket closed." if "status" in changes else ".")),
+            exclude_user_ids={current_user.id},
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to notify watchers for ticket %s", ticket_id)
 
     items, _ = await _fetch_enriched(session, [Ticket.id == ticket_id])
     return items[0]
@@ -946,6 +981,18 @@ async def unmark_duplicate(
     )
 
     await session.commit()
+
+    try:
+        from app.slack.service import notify_ticket_watchers
+        await notify_ticket_watchers(
+            ticket,
+            (f"👁 *{ticket.display_id}* — {ticket.title}\n"
+             f"🔗 Duplicate link removed by {current_user.name}"
+             + (" — ticket reopened." if "status" in changes else ".")),
+            exclude_user_ids={current_user.id},
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to notify watchers for ticket %s", ticket_id)
 
     items, _ = await _fetch_enriched(session, [Ticket.id == ticket_id])
     return items[0]

@@ -1,9 +1,10 @@
 """
-Slack Users — list workspace members for the reporter picker.
+Slack Users — list one workspace's members for the reporter picker.
 
-GET /slack/users  returns a name-sorted list of non-bot workspace members.
-Returns an empty list when Slack is not configured.
-Results are cached in-memory for 5 minutes to avoid repeated workspace pagination.
+GET /slack/workspaces/{workspace_id}/users returns a name-sorted list of
+non-bot workspace members. Returns an empty list when that workspace's bot
+isn't currently connected. Results are cached in-memory per workspace for 5
+minutes to avoid repeated workspace pagination.
 """
 import time
 from fastapi import APIRouter, Depends
@@ -13,11 +14,11 @@ from app.auth.deps import get_current_user
 from app.models import User
 from app.slack.bot import get_slack_client
 
-router = APIRouter(prefix="/slack", tags=["slack"])
+router = APIRouter(prefix="/slack/workspaces", tags=["slack"])
 
 _CACHE_TTL = 300  # 5 minutes
-_cache: list["SlackUser"] = []
-_cache_at: float = 0.0
+_cache: dict[int, list["SlackUser"]] = {}
+_cache_at: dict[int, float] = {}
 
 
 class SlackUser(BaseModel):
@@ -25,21 +26,21 @@ class SlackUser(BaseModel):
     name: str
 
 
-@router.get("/users", response_model=list[SlackUser])
+@router.get("/{workspace_id}/users", response_model=list[SlackUser])
 async def list_slack_users(
+    workspace_id: int,
     _user: User = Depends(get_current_user),
 ) -> list[SlackUser]:
     """
-    List Slack workspace users for the ticket reporter picker.
-    Filters out bots and deleted accounts. Requires Slack to be configured.
-    Results are cached for 5 minutes.
+    List a Slack workspace's members for the ticket reporter picker.
+    Filters out bots and deleted accounts. Requires that workspace's bot to
+    be connected. Results are cached for 5 minutes per workspace.
     """
-    global _cache, _cache_at
+    now = time.monotonic()
+    if workspace_id in _cache and now - _cache_at.get(workspace_id, 0.0) < _CACHE_TTL:
+        return _cache[workspace_id]
 
-    if _cache and time.monotonic() - _cache_at < _CACHE_TTL:
-        return _cache
-
-    client = get_slack_client()
+    client = get_slack_client(workspace_id)
     if client is None:
         return []
 
@@ -73,6 +74,6 @@ async def list_slack_users(
             break
 
     users.sort(key=lambda u: u.name.lower())
-    _cache = users
-    _cache_at = time.monotonic()
+    _cache[workspace_id] = users
+    _cache_at[workspace_id] = now
     return users

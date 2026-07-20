@@ -2,11 +2,12 @@
 Admin Panel API.
 
 Endpoints:
-  POST  /admin/users                      create local account
-  POST  /admin/users/{id}/set-password    set a user's password directly
-  GET   /admin/users                      list all users with filters + pagination
-  PATCH /admin/users/{id}                 update role, is_active, name, slack_user_id (writes audit entry)
-  GET   /admin/audit                      paginated, filterable audit log
+  POST  /admin/users                                    create local account
+  POST  /admin/users/{id}/set-password                  set a user's password directly
+  GET   /admin/users                                     list all users with filters + pagination
+  PATCH /admin/users/{id}                                update role, is_active, name (writes audit entry)
+  PUT   /admin/users/{id}/slack-identity/{workspace_id}  link/unlink a per-workspace Slack ID
+  GET   /admin/audit                                     paginated, filterable audit log
 """
 from typing import Optional
 
@@ -19,13 +20,64 @@ from sqlalchemy.orm import aliased
 from app.auth.deps import require_admin
 from app.database import get_session
 from app.models import AuditLog, AuthProvider, Role, Ticket, User
+from app.models.slack_workspace import SlackWorkspace
+from app.models.user_slack_identity import UserSlackIdentity
 from app.schemas.audit import AuditLogRead, AuditLogResponse
 from app.schemas.auth import CreateLocalUserRequest
-from app.schemas.user import UserAdminUpdate, UserListResponse, UserRead
+from app.schemas.user import SlackIdentityRead, SlackIdentityUpdate, UserAdminUpdate, UserListResponse, UserRead
 from app.services.audit import write_audit
 from app.services.passwords import hash_password
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+# ── Slack identity enrichment ────────────────────────────────────────────────
+
+
+async def _to_user_read(session: AsyncSession, user: User) -> UserRead:
+    identities = await _load_identities(session, [user.id])
+    return _build_user_read(user, identities.get(user.id, []))
+
+
+async def _to_user_reads(session: AsyncSession, users: list[User]) -> list[UserRead]:
+    identities = await _load_identities(session, [u.id for u in users])
+    return [_build_user_read(u, identities.get(u.id, [])) for u in users]
+
+
+async def _load_identities(session: AsyncSession, user_ids: list[int]) -> dict[int, list[SlackIdentityRead]]:
+    if not user_ids:
+        return {}
+    rows = (await session.execute(
+        select(
+            UserSlackIdentity.user_id,
+            UserSlackIdentity.workspace_id,
+            SlackWorkspace.name,
+            UserSlackIdentity.slack_user_id,
+        )
+        .join(SlackWorkspace, SlackWorkspace.id == UserSlackIdentity.workspace_id)
+        .where(UserSlackIdentity.user_id.in_(user_ids))
+        .order_by(SlackWorkspace.name)
+    )).all()
+    by_user: dict[int, list[SlackIdentityRead]] = {}
+    for user_id, workspace_id, workspace_name, slack_user_id in rows:
+        by_user.setdefault(user_id, []).append(
+            SlackIdentityRead(workspace_id=workspace_id, workspace_name=workspace_name, slack_user_id=slack_user_id)
+        )
+    return by_user
+
+
+def _build_user_read(user: User, identities: list[SlackIdentityRead]) -> UserRead:
+    return UserRead(
+        id=user.id,
+        email=user.email,
+        name=user.name,
+        role=user.role,
+        auth_provider=user.auth_provider,
+        slack_identities=identities,
+        is_active=user.is_active,
+        created_at=user.created_at,
+        last_login_at=user.last_login_at,
+    )
 
 
 # ── POST /admin/users ──────────────────────────────────────────────────────────
@@ -79,7 +131,7 @@ async def create_local_user(
 
     await session.commit()
     await session.refresh(user)
-    return UserRead.model_validate(user)
+    return _build_user_read(user, [])
 
 
 # ── POST /admin/users/{id}/set-password ───────────────────────────────────────
@@ -146,7 +198,7 @@ async def list_users(
     users = list((await session.execute(stmt)).scalars().all())
 
     return UserListResponse(
-        items=[UserRead.model_validate(u) for u in users],
+        items=await _to_user_reads(session, users),
         total=total,
     )
 
@@ -212,12 +264,6 @@ async def update_user(
             changes["name"] = {"from": user.name, "to": body.name}
             user.name = body.name
 
-    if "slack_user_id" in provided:
-        new_sid = body.slack_user_id.strip() if body.slack_user_id else None
-        if user.slack_user_id != new_sid:
-            changes["slack_user_id"] = {"from": user.slack_user_id, "to": new_sid}
-            user.slack_user_id = new_sid
-
     if "role" in provided and body.role is not None:
         if user.role != body.role:
             changes["role"] = {"from": user.role.value, "to": body.role.value}
@@ -269,9 +315,9 @@ async def update_user(
             ip_address=ip,
         )
 
-    # Profile-field edits (name / Slack ID) — the docstring promises these are
-    # audited, so record them too.
-    profile_changes = {k: changes[k] for k in ("name", "slack_user_id") if k in changes}
+    # Profile-field edits (name) — the docstring promises these are audited,
+    # so record them too.
+    profile_changes = {k: changes[k] for k in ("name",) if k in changes}
     if profile_changes:
         await write_audit(
             session,
@@ -284,11 +330,84 @@ async def update_user(
         )
 
     if not changes:
-        return UserRead.model_validate(user)
+        return await _to_user_read(session, user)
 
     await session.commit()
     await session.refresh(user)
-    return UserRead.model_validate(user)
+    return await _to_user_read(session, user)
+
+
+# ── PUT /admin/users/{id}/slack-identity/{workspace_id} ───────────────────────
+
+
+@router.put("/users/{user_id}/slack-identity/{workspace_id}", response_model=UserRead)
+async def set_slack_identity(
+    user_id: int,
+    workspace_id: int,
+    body: SlackIdentityUpdate,
+    request: Request,
+    admin: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> UserRead:
+    """
+    Link or unlink a staff member's Slack identity for one workspace. Slack
+    user IDs are workspace-specific, so a staff member has one of these per
+    connected workspace they need DMs in. A null slack_user_id unlinks it.
+    """
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    workspace = await session.get(SlackWorkspace, workspace_id)
+    if workspace is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+    new_sid = body.slack_user_id.strip() if body.slack_user_id else None
+
+    existing = (await session.execute(
+        select(UserSlackIdentity).where(
+            UserSlackIdentity.user_id == user_id,
+            UserSlackIdentity.workspace_id == workspace_id,
+        )
+    )).scalar_one_or_none()
+    old_sid = existing.slack_user_id if existing else None
+
+    if old_sid == new_sid:
+        return await _to_user_read(session, user)
+
+    if new_sid is None:
+        await session.delete(existing)
+    else:
+        conflict = (await session.execute(
+            select(UserSlackIdentity).where(
+                UserSlackIdentity.workspace_id == workspace_id,
+                UserSlackIdentity.slack_user_id == new_sid,
+                UserSlackIdentity.user_id != user_id,
+            )
+        )).scalar_one_or_none()
+        if conflict is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f'That Slack ID is already linked to another user in "{workspace.name}"',
+            )
+        if existing is not None:
+            existing.slack_user_id = new_sid
+        else:
+            session.add(UserSlackIdentity(user_id=user_id, workspace_id=workspace_id, slack_user_id=new_sid))
+
+    await write_audit(
+        session,
+        actor_id=admin.id,
+        action="user.updated",
+        entity_type="user",
+        entity_id=user_id,
+        payload={
+            "email": user.email,
+            "slack_identity": {"workspace": workspace.name, "from": old_sid, "to": new_sid},
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+    await session.commit()
+    return await _to_user_read(session, user)
 
 
 # ── GET /admin/audit ───────────────────────────────────────────────────────────

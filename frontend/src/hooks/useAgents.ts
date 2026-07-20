@@ -2,13 +2,19 @@ import { useQuery } from '@tanstack/react-query'
 import api from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
 
+export interface SlackIdentity {
+  workspace_id: number
+  workspace_name: string
+  slack_user_id: string
+}
+
 export interface UserRead {
   id: number
   name: string
   email: string
   role: string
   is_active: boolean
-  slack_user_id: string | null
+  slack_identities: SlackIdentity[]
 }
 
 export function useAgents() {

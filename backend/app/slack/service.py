@@ -3,6 +3,14 @@ Internal service for creating tickets from Slack events and syncing replies
 between SimpleTickets and Slack threads.
 
 Called by Slack handlers and HTTP routers — bypasses HTTP, writes directly to DB.
+
+Multi-workspace: every ticket that has a Slack origin carries a
+`workspace_id` (see models.Ticket), and every staff Slack identity is scoped
+to one workspace (see models.UserSlackIdentity, since Slack user IDs are
+workspace-specific). Almost every function below takes (or reads off) a
+`ticket`/`workspace_id` to resolve the right bot client and the right staff
+identities — see `_get_workspace`, `_get_staff_slack_id`,
+`_get_submitter_slack_id`.
 """
 import logging
 import re
@@ -16,14 +24,17 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings, settings_manager
+from app.config import settings
 from app.services.sla import compute_sla_deadline
+from app.services.settings_service import decrypt_value
 from app.utils import utcnow
 from app.database import AsyncSessionLocal
 from app.models import Category, SLAPolicy, Ticket, TicketHistory, TicketReply, User
 from app.models.enums import Priority
+from app.models.slack_workspace import SlackWorkspace
 from app.models.ticket_attachment import TicketAttachment
 from app.models.ticket_status_config import TicketStatusConfig
+from app.models.user_slack_identity import UserSlackIdentity
 
 logger = logging.getLogger(__name__)
 
@@ -35,18 +46,57 @@ _PRIORITY_LABELS: dict[str, str] = {
 }
 
 
-# ── User lookup ────────────────────────────────────────────────────────────────
+# ── Workspace / staff identity lookups ──────────────────────────────────────────
 
 
-async def get_user_by_slack_id(session: AsyncSession, slack_user_id: str) -> Optional[User]:
-    """Find an active SimpleTickets (technician/admin) user by their Slack user ID."""
+async def _get_workspace(session: AsyncSession, workspace_id: Optional[int]) -> Optional[SlackWorkspace]:
+    """Fetch a workspace row, or None if there isn't one (no Slack origin)."""
+    if workspace_id is None:
+        return None
+    return await session.get(SlackWorkspace, workspace_id)
+
+
+async def get_user_by_slack_id(session: AsyncSession, workspace_id: int, slack_user_id: str) -> Optional[User]:
+    """Find an active SimpleTickets (technician/admin) user by their Slack
+    user ID within one specific workspace."""
     result = await session.execute(
-        select(User).where(
-            User.slack_user_id == slack_user_id,
+        select(User)
+        .join(UserSlackIdentity, UserSlackIdentity.user_id == User.id)
+        .where(
+            UserSlackIdentity.workspace_id == workspace_id,
+            UserSlackIdentity.slack_user_id == slack_user_id,
             User.is_active == True,  # noqa: E712
         )
     )
     return result.scalar_one_or_none()
+
+
+async def _get_staff_slack_id(session: AsyncSession, user_id: int, workspace_id: Optional[int]) -> Optional[str]:
+    """Return a staff member's linked Slack user ID for one workspace, or None
+    if they have no identity there (or there's no workspace to look in)."""
+    if workspace_id is None:
+        return None
+    result = await session.execute(
+        select(UserSlackIdentity.slack_user_id).where(
+            UserSlackIdentity.user_id == user_id,
+            UserSlackIdentity.workspace_id == workspace_id,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def _get_submitter_slack_id(ticket: Ticket) -> str | None:
+    """Return the Slack user ID for DM notifications, scoped to the ticket's
+    originating workspace. Uses slack_submitter_id if present (captured at
+    creation time, already workspace-correct); falls back to the linked
+    staff User's identity in that same workspace for tickets a technician
+    submitted for themselves via the portal."""
+    if ticket.slack_submitter_id:
+        return ticket.slack_submitter_id
+    if ticket.submitter_id and ticket.workspace_id:
+        async with AsyncSessionLocal() as session:
+            return await _get_staff_slack_id(session, ticket.submitter_id, ticket.workspace_id)
+    return None
 
 
 # ── Ticket creation ────────────────────────────────────────────────────────────
@@ -56,6 +106,7 @@ async def create_ticket_from_slack(
     *,
     title: str,
     description: str,
+    workspace_id: int,
     priority: Priority = Priority.medium,
     category_id: Optional[int] = None,
     submitter_id: Optional[int] = None,
@@ -108,6 +159,7 @@ async def create_ticket_from_slack(
             sla_policy_id=sla_policy_id,
             sla_deadline=sla_deadline,
             first_response_deadline=first_response_deadline,
+            workspace_id=workspace_id,
             slack_channel_id=slack_channel_id,
             slack_message_ts=slack_message_ts,
             created_at=now,
@@ -128,9 +180,10 @@ async def create_ticket_from_slack(
         await session.refresh(ticket)
 
         logger.info(
-            "Created ticket %s from Slack (submitter_id=%s, slack_channel=%s)",
+            "Created ticket %s from Slack (submitter_id=%s, workspace_id=%s, slack_channel=%s)",
             ticket.display_id,
             submitter_id,
+            workspace_id,
             slack_channel_id,
         )
         return ticket
@@ -139,12 +192,21 @@ async def create_ticket_from_slack(
 # ── Web → Slack sync ───────────────────────────────────────────────────────────
 
 
-async def notify_assignee_dm(ticket: Ticket, assignee_slack_user_id: str, actor_name: str) -> None:
-    """DM a technician when they are assigned a ticket."""
-    if not settings_manager.slack_two_way_sync:
+async def notify_assignee_dm(ticket: Ticket, assignee_user_id: int, actor_name: str) -> None:
+    """DM a technician when they are assigned a ticket, via their Slack
+    identity for the ticket's originating workspace."""
+    if ticket.workspace_id is None:
         return
+    async with AsyncSessionLocal() as session:
+        workspace = await _get_workspace(session, ticket.workspace_id)
+        if workspace is None or not workspace.two_way_sync:
+            return
+        assignee_slack_id = await _get_staff_slack_id(session, assignee_user_id, ticket.workspace_id)
+    if not assignee_slack_id:
+        return
+
     from app.slack.bot import get_slack_client
-    client = get_slack_client()
+    client = get_slack_client(ticket.workspace_id)
     if client is None:
         return
 
@@ -153,7 +215,7 @@ async def notify_assignee_dm(ticket: Ticket, assignee_slack_user_id: str, actor_
 
     try:
         await client.chat_postMessage(
-            channel=assignee_slack_user_id,
+            channel=assignee_slack_id,
             text=(
                 f"👤 *You've been assigned a ticket*\n"
                 f"*{ticket.display_id}* — {ticket.title}\n"
@@ -161,15 +223,24 @@ async def notify_assignee_dm(ticket: Ticket, assignee_slack_user_id: str, actor_
             ),
         )
     except Exception:  # noqa: BLE001
-        logger.exception("notify_assignee_dm: failed to DM assignee %s", assignee_slack_user_id)
+        logger.exception("notify_assignee_dm: failed to DM assignee %s", assignee_slack_id)
 
 
-async def notify_duplicate_dm(ticket: Ticket, canonical: Ticket, submitter_slack_id: str) -> None:
+async def notify_duplicate_dm(ticket: Ticket, canonical: Ticket) -> None:
     """DM the ticket submitter when their ticket is closed as a duplicate."""
-    if not settings_manager.slack_two_way_sync:
+    if ticket.workspace_id is None:
         return
+    async with AsyncSessionLocal() as session:
+        workspace = await _get_workspace(session, ticket.workspace_id)
+    if workspace is None or not workspace.two_way_sync:
+        return
+
+    submitter_slack_id = await _get_submitter_slack_id(ticket)
+    if not submitter_slack_id:
+        return
+
     from app.slack.bot import get_slack_client
-    client = get_slack_client()
+    client = get_slack_client(ticket.workspace_id)
     if client is None:
         return
     try:
@@ -193,9 +264,11 @@ async def notify_reporter_dm(ticket: Ticket, slack_user_id: str) -> None:
     the channel), then saves the returned channel_id + ts on the ticket so all
     future web-portal replies and status updates thread back to the user.
     """
-    from app.slack.bot import get_slack_client
+    if ticket.workspace_id is None:
+        return
 
-    client = get_slack_client()
+    from app.slack.bot import get_slack_client
+    client = get_slack_client(ticket.workspace_id)
     if client is None:
         return
 
@@ -221,62 +294,121 @@ async def notify_reporter_dm(ticket: Ticket, slack_user_id: str) -> None:
         logger.exception("notify_reporter_dm: failed to DM user %s", slack_user_id)
 
 
-async def send_password_reset_dm(slack_user_id: str, code: str) -> bool:
-    """DM a one-time password-reset code to a staff member. Returns True if the
-    Slack API call succeeded (the router still returns a generic response to
-    the caller either way, to avoid leaking account/Slack-link state)."""
+async def send_password_reset_dm(user: User, code: str, session: AsyncSession) -> bool:
+    """DM a one-time password-reset code to a staff member. Tries every
+    workspace where they have a linked Slack identity, in order, until one
+    succeeds (staff can be linked in several workspaces). Returns True if the
+    Slack API call succeeded — the router still returns a generic response to
+    the caller either way, to avoid leaking account/Slack-link state."""
+    from app.slack.bot import get_slack_client, is_slack_online
+
+    result = await session.execute(
+        select(UserSlackIdentity).where(UserSlackIdentity.user_id == user.id)
+    )
+    identities = result.scalars().all()
+
+    for identity in identities:
+        if not await is_slack_online(identity.workspace_id):
+            continue
+        client = get_slack_client(identity.workspace_id)
+        if client is None:
+            continue
+        try:
+            await client.chat_postMessage(
+                channel=identity.slack_user_id,
+                text=f"Your SimpleTickets password reset code is {code}",
+                blocks=[
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": (
+                                "🔑 *Password reset requested*\n"
+                                f"Your one-time code is `{code}`\n"
+                                "It expires in 15 minutes and can only be used once. "
+                                "If you didn't request this, you can ignore this message."
+                            ),
+                        },
+                    }
+                ],
+            )
+            return True
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "send_password_reset_dm: failed to DM %s in workspace %s",
+                identity.slack_user_id, identity.workspace_id,
+            )
+            continue
+
+    return False
+
+
+async def notify_ticket_watchers(
+    ticket: Ticket,
+    text: str,
+    *,
+    exclude_user_ids: "set[int] | frozenset[int]" = frozenset(),
+    exclude_slack_ids: "set[str] | frozenset[str]" = frozenset(),
+) -> None:
+    """
+    DM every active watcher of a ticket (P9). Watching is a portal feature, so
+    this is independent of two-way sync — but still needs the ticket's
+    workspace to resolve a bot client and each watcher's identity in it.
+    Skips watchers with no linked Slack identity in that workspace, the
+    ticket's submitter (they're notified through their own DM flow), and the
+    exclude sets (the acting user / the Slack user who triggered the event).
+    Fire-and-forget.
+    """
+    if ticket.workspace_id is None:
+        return
+
     from app.slack.bot import get_slack_client
-    client = get_slack_client()
+    client = get_slack_client(ticket.workspace_id)
     if client is None:
-        return False
+        return
 
-    try:
-        await client.chat_postMessage(
-            channel=slack_user_id,
-            text=f"Your SimpleTickets password reset code is {code}",
-            blocks=[
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": (
-                            "🔑 *Password reset requested*\n"
-                            f"Your one-time code is `{code}`\n"
-                            "It expires in 15 minutes and can only be used once. "
-                            "If you didn't request this, you can ignore this message."
-                        ),
-                    },
-                }
-            ],
-        )
-        return True
-    except Exception:  # noqa: BLE001
-        logger.exception("send_password_reset_dm: failed to DM %s", slack_user_id)
-        return False
+    from app.models.ticket_watcher import TicketWatcher
+
+    async with AsyncSessionLocal() as session:
+        rows = (await session.execute(
+            select(User.id, UserSlackIdentity.slack_user_id)
+            .join(TicketWatcher, TicketWatcher.user_id == User.id)
+            .join(
+                UserSlackIdentity,
+                (UserSlackIdentity.user_id == User.id)
+                & (UserSlackIdentity.workspace_id == ticket.workspace_id),
+            )
+            .where(
+                TicketWatcher.ticket_id == ticket.id,
+                User.is_active == True,  # noqa: E712
+            )
+        )).all()
+    if not rows:
+        return
+
+    submitter_slack = await _get_submitter_slack_id(ticket)
+    for user_id, slack_id in rows:
+        if user_id in exclude_user_ids or slack_id in exclude_slack_ids or slack_id == submitter_slack:
+            continue
+        try:
+            await client.chat_postMessage(channel=slack_id, text=text)
+        except Exception:  # noqa: BLE001
+            logger.exception("notify_ticket_watchers: failed to DM watcher %s", slack_id)
 
 
-async def _get_submitter_slack_id(ticket: Ticket) -> str | None:
-    """Return the Slack user ID for DM notifications.
-    Uses slack_submitter_id if present; falls back to the linked User.slack_user_id
-    for tickets submitted via the portal where only submitter_id is set."""
-    if ticket.slack_submitter_id:
-        return ticket.slack_submitter_id
-    if ticket.submitter_id:
-        async with AsyncSessionLocal() as session:
-            user = await session.get(User, ticket.submitter_id)
-            if user and user.slack_user_id:
-                return user.slack_user_id
-    return None
+def _reply_preview(body: str, limit: int = 500) -> str:
+    """Trim long reply bodies for watcher DMs."""
+    return body if len(body) <= limit else body[:limit] + "…"
 
 
 
 async def send_csat_dm(ticket: "Ticket") -> None:
     """DM the ticket submitter 👍/👎 when their ticket moves to a sends_csat=True status."""
     slack_user_id = await _get_submitter_slack_id(ticket)
-    if not slack_user_id:
+    if not slack_user_id or ticket.workspace_id is None:
         return
     from app.slack.bot import get_slack_client
-    client = get_slack_client()
+    client = get_slack_client(ticket.workspace_id)
     if client is None:
         return
 
@@ -354,15 +486,20 @@ async def post_reply_to_slack(
     themselves (e.g. via the App Home reply modal) to avoid a self-notification.
 
     Returns the Slack message ts if successful (used to set reply.slack_ts for
-    deduplication), or None if Slack is not configured / sync is disabled.
+    deduplication), or None if the ticket has no Slack workspace / sync is
+    disabled / Slack isn't configured.
     """
-    if not settings_manager.slack_two_way_sync:
+    if ticket.workspace_id is None:
+        return None
+    async with AsyncSessionLocal() as session:
+        workspace = await _get_workspace(session, ticket.workspace_id)
+    if workspace is None or not workspace.two_way_sync:
         return None
     if not (ticket.slack_channel_id and ticket.slack_message_ts):
         return None
 
     from app.slack.bot import get_slack_client
-    client = get_slack_client()
+    client = get_slack_client(ticket.workspace_id)
     if client is None:
         return None
 
@@ -411,19 +548,19 @@ async def post_ticket_update_to_slack(
     assignee_name: Optional[str] = None,
     category_name: Optional[str] = None,
     notify_submitter: bool = True,
+    actor_user_id: Optional[int] = None,
 ) -> None:
     """
     Post a single combined update message to the originating Slack thread
-    covering any combination of status, priority, assignee, and category changes.
-    Silently no-ops if Slack is not configured / sync is disabled / no thread anchor.
+    covering any combination of status, priority, assignee, and category changes,
+    and DM the ticket's watchers. The thread/submitter part silently no-ops if
+    sync is disabled or there's no thread anchor; watcher DMs only need the
+    ticket's workspace bot to be up.
     """
-    if not settings_manager.slack_two_way_sync:
+    if ticket.workspace_id is None:
         return
-    if not (ticket.slack_channel_id and ticket.slack_message_ts):
-        return
-
     from app.slack.bot import get_slack_client
-    client = get_slack_client()
+    client = get_slack_client(ticket.workspace_id)
     if client is None:
         return
 
@@ -458,6 +595,20 @@ async def post_ticket_update_to_slack(
         return
 
     text = f"🔄 *{ticket.display_id}* updated by {actor_name}\n" + "\n".join(lines)
+
+    # Watchers first — independent of the thread anchor / two-way sync below.
+    await notify_ticket_watchers(
+        ticket,
+        f"👁 *{ticket.display_id}* — {ticket.title}\nUpdated by {actor_name}\n" + "\n".join(lines),
+        exclude_user_ids={actor_user_id} if actor_user_id is not None else frozenset(),
+    )
+
+    async with AsyncSessionLocal() as session:
+        workspace = await _get_workspace(session, ticket.workspace_id)
+    if workspace is None or not workspace.two_way_sync:
+        return
+    if not (ticket.slack_channel_id and ticket.slack_message_ts):
+        return
 
     try:
         await client.chat_postMessage(
@@ -496,6 +647,7 @@ async def handle_slack_thread_message(
     slack_user_id: str,
     text: str,
     client: Any,
+    workspace_id: int,
     files: Optional[list[dict]] = None,
 ) -> None:
     """
@@ -505,20 +657,23 @@ async def handle_slack_thread_message(
     inside a ticket's Slack thread. Creates a TicketReply with slack_ts set
     so the reply is never re-posted back to Slack (deduplication).
     """
-    if not settings_manager.slack_two_way_sync:
+    async with AsyncSessionLocal() as session:
+        workspace = await _get_workspace(session, workspace_id)
+    if workspace is None or not workspace.two_way_sync:
         return
 
     async with AsyncSessionLocal() as session:
-        # Find the ticket whose Slack thread matches
+        # Find the ticket whose Slack thread matches, within this workspace
         result = await session.execute(
             select(Ticket).where(
                 Ticket.slack_channel_id == channel_id,
                 Ticket.slack_message_ts == thread_ts,
+                Ticket.workspace_id == workspace_id,
             )
         )
         ticket = result.scalar_one_or_none()
         if ticket is None:
-            return  # thread doesn't belong to any ticket
+            return  # thread doesn't belong to any ticket in this workspace
 
         # Dedup: skip if this Slack ts is already recorded on a reply
         existing = await session.execute(
@@ -539,7 +694,7 @@ async def handle_slack_thread_message(
 
         if slack_user_id:
             try:
-                matched = await get_user_by_slack_id(session, slack_user_id)
+                matched = await get_user_by_slack_id(session, workspace_id, slack_user_id)
                 if matched:
                     author_id = matched.id
                     author_name_fallback = matched.name
@@ -619,9 +774,22 @@ async def handle_slack_thread_message(
             author_name_fallback if author_id is None else f"id={author_id}",
         )
 
+        # Watcher DMs — exclude whoever wrote the reply (staff by user id,
+        # anyone by their Slack ID).
+        try:
+            await notify_ticket_watchers(
+                ticket,
+                (f"👁 *{ticket.display_id}* — {ticket.title}\n"
+                 f"💬 New reply from {author_name_fallback}:\n{_reply_preview(text or '(no content)')}"),
+                exclude_user_ids={author_id} if author_id is not None else frozenset(),
+                exclude_slack_ids={slack_user_id} if slack_user_id else frozenset(),
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to notify watchers for ticket %s", ticket.display_id)
+
         # Download any attached files from the Slack message
         if files:
-            await _download_slack_files(ticket.id, reply.id, files)
+            await _download_slack_files(ticket.id, reply.id, files, workspace_id)
 
 
 # ── App Home ──────────────────────────────────────────────────────────────────
@@ -674,9 +842,11 @@ def _format_sla_home(ticket: "Ticket") -> str | None:
     return f"⏱ SLA: {int(remaining // 86400)}d left"
 
 
-async def build_home_view(slack_user_id: str, client: Any, tab: str = "active") -> dict:
+async def build_home_view(slack_user_id: str, client: Any, workspace_id: int, tab: str = "active") -> dict:
     """
-    Build the Block Kit view for a user's App Home tab.
+    Build the Block Kit view for a user's App Home tab, scoped to one
+    workspace (the same Slack user ID string is meaningless outside the
+    workspace it came from).
 
     Tabs:
     - active:   open + in-progress (non-resolved, non-paused)
@@ -706,6 +876,7 @@ async def build_home_view(slack_user_id: str, client: Any, tab: str = "active") 
             select(Ticket)
             .where(
                 Ticket.slack_submitter_id == slack_user_id,
+                Ticket.workspace_id == workspace_id,
                 Ticket.status.in_(status_filter),
             )
             .order_by(Ticket.created_at.desc())
@@ -891,9 +1062,14 @@ async def _download_slack_files(
     ticket_id: int,
     reply_id: Optional[int],
     files: list[dict],
+    workspace_id: int,
 ) -> None:
     """Download Slack file attachments and persist them as TicketAttachment records."""
-    bot_token = settings_manager.slack_bot_token
+    async with AsyncSessionLocal() as session:
+        workspace = await _get_workspace(session, workspace_id)
+    if workspace is None or not workspace.bot_token:
+        return
+    bot_token = decrypt_value(workspace.bot_token)
     if not bot_token:
         return
 
@@ -982,15 +1158,20 @@ async def upload_attachments_to_slack(
     Pass reply_id=None to upload ticket-level attachments (e.g. on ticket creation).
     Pass a reply_id to upload attachments linked to a specific reply.
     Uses the files_upload_v2 (getUploadURLExternal) flow.
-    Silently no-ops if Slack is not configured / no thread / no attachments.
+    Silently no-ops if the ticket has no Slack workspace / sync is disabled /
+    no thread / no attachments.
     """
-    if not settings_manager.slack_two_way_sync:
+    if ticket.workspace_id is None:
+        return
+    async with AsyncSessionLocal() as session:
+        workspace = await _get_workspace(session, ticket.workspace_id)
+    if workspace is None or not workspace.two_way_sync:
         return
     if not (ticket.slack_channel_id and ticket.slack_message_ts):
         return
 
     from app.slack.bot import get_slack_client
-    client = get_slack_client()
+    client = get_slack_client(ticket.workspace_id)
     if client is None:
         return
 
@@ -1048,36 +1229,42 @@ async def post_sla_warning_to_technicians(
     kind: str = "sla",
 ) -> None:
     """
-    Post the SLA warning to the configured escalation target (a Slack channel
-    or a specific person), or DM every active technician/admin with a linked
-    Slack ID if no target is configured.
+    Post the SLA warning to the ticket's workspace's configured escalation
+    target (a Slack channel or a specific person), or DM every active
+    technician/admin with a linked identity in that workspace if no target
+    is configured.
     kind='sla'            — resolution SLA breach in ~15 min
     kind='first_response' — first-response deadline in ~15 min
     Fire-and-forget — errors are logged, not raised.
     """
-    if not settings_manager.slack_two_way_sync:
+    if ticket.workspace_id is None:
+        return
+    workspace = await _get_workspace(session, ticket.workspace_id)
+    if workspace is None or not workspace.two_way_sync:
         return
 
     from app.slack.bot import get_slack_client
-    client = get_slack_client()
+    client = get_slack_client(ticket.workspace_id)
     if client is None:
         return
 
-    from app.services.settings_service import get_setting
-    target = (await get_setting("sla_escalation_target", session, default="")).strip()
+    target = (workspace.sla_escalation_target or "").strip()
 
     if target:
         recipients = [target]
     else:
         # No target configured — fall back to DMing every active staff member
+        # with a linked identity in this workspace
         result = await session.execute(
-            select(User).where(
-                User.slack_user_id.isnot(None),
+            select(UserSlackIdentity.slack_user_id)
+            .join(User, User.id == UserSlackIdentity.user_id)
+            .where(
+                UserSlackIdentity.workspace_id == ticket.workspace_id,
                 User.is_active == True,  # noqa: E712
                 User.role.in_(["technician", "admin"]),
             )
         )
-        recipients = [tech.slack_user_id for tech in result.scalars().all()]
+        recipients = [row[0] for row in result.all()]
         if not recipients:
             return
 

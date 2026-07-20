@@ -1,19 +1,19 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import AppShell from '../../components/layout/AppShell'
 import { useAuth } from '../../contexts/AuthContext'
 import api, { apiErrorMessage } from '../../lib/api'
 import { parseUTC } from '../../types/ticket'
-import { useAgents } from '../../hooks/useAgents'
+import { useAgents, type UserRead } from '../../hooks/useAgents'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Tab = 'general' | 'slack' | 'categories' | 'sla' | 'statuses' | 'backup' | 'account'
+type Tab = 'general' | 'workspaces' | 'categories' | 'sla' | 'statuses' | 'backup' | 'account'
 
 const ADMIN_TABS: { id: Tab; label: string }[] = [
   { id: 'general', label: 'General' },
-  { id: 'slack', label: 'Slack' },
+  { id: 'workspaces', label: 'Workspaces' },
   { id: 'categories', label: 'Categories' },
   { id: 'sla', label: 'SLA policies' },
   { id: 'statuses', label: 'Statuses' },
@@ -226,202 +226,70 @@ function GeneralTab() {
   )
 }
 
-// ── Slack tab ─────────────────────────────────────────────────────────────────
+// ── Workspaces tab ───────────────────────────────────────────────────────────
+// One deployment can connect several Slack workspaces at once — each ticket
+// carries the workspace it came from, and replies/DMs route back through
+// that workspace's own bot automatically.
 
-const SLACK_KEYS = ['slack_bot_token', 'slack_app_token', 'slack_signing_secret', 'slack_trigger_emoji', 'slack_two_way_sync'] as const
-const SLACK_META: Record<string, { label: string; hint: string; placeholder?: string }> = {
-  slack_bot_token:      { label: 'Bot token',       hint: 'Starts with xoxb-',                         placeholder: 'xoxb-…'   },
-  slack_app_token:      { label: 'App-level token', hint: 'Socket Mode — starts with xapp-',           placeholder: 'xapp-…'   },
-  slack_signing_secret: { label: 'Signing secret',  hint: 'From Basic Information → App Credentials',  placeholder: '••••••••' },
-  slack_trigger_emoji:  { label: 'Trigger emoji',   hint: 'Reaction name that creates a ticket',       placeholder: 'clipboard'},
-  slack_two_way_sync:   { label: 'Two-way sync',    hint: 'Sync web replies to Slack threads and vice versa' },
+interface WorkspaceRead {
+  id: number
+  name: string
+  team_id: string | null
+  team_name: string | null
+  bot_token: string | null
+  app_token: string | null
+  signing_secret: string | null
+  trigger_emoji: string
+  two_way_sync: boolean
+  sla_escalation_target: string | null
+  is_active: boolean
+  online: boolean
 }
 
-const ESCALATION_KEY = 'sla_escalation_target'
+function useWorkspacesQuery() {
+  return useQuery<WorkspaceRead[]>({
+    queryKey: ['admin-slack-workspaces'],
+    queryFn: async () => (await api.get<WorkspaceRead[]>('/admin/slack-workspaces')).data,
+    refetchInterval: 15_000, // connection status changes in the background
+  })
+}
 
-function SlackTab() {
-  const { data, isLoading } = useSettingsQuery()
+function WorkspacesTab() {
+  const { data: workspaces, isLoading } = useWorkspacesQuery()
   const { data: agents } = useAgents()
-  const [edits, setEdits] = useState<Record<string, string>>({})
-  const [revealing, setRevealing] = useState<Record<string, boolean>>({})
-  const [testResult, setTestResult] = useState<{ ok: boolean; team_name?: string; error?: string } | null>(null)
-  const [testing, setTesting] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const [showAdd, setShowAdd] = useState(false)
   const [showGuide, setShowGuide] = useState(false)
-  const [slackStatus, setSlackStatus] = useState<{ ok: boolean; team_name?: string; error?: string } | null>(null)
-  const [escalationModeOverride, setEscalationModeOverride] = useState<'all' | 'person' | 'channel' | null>(null)
-
-  const settingMap = Object.fromEntries((data?.settings ?? []).map(s => [s.key, s]))
-  const mutation = useSaveMutation(() => { setEdits({}); setRevealing({}); setEscalationModeOverride(null); setSaved(true); setTimeout(() => setSaved(false), 2500) })
-
-  function getValue(key: string) { return key in edits ? edits[key] : (settingMap[key]?.value ?? '') }
-  function edit(key: string, value: string) { setEdits(e => ({ ...e, [key]: value })) }
-  const dirty = SLACK_KEYS.some(k => k in edits) || ESCALATION_KEY in edits
-
-  const eligibleAgents = (agents ?? []).filter(a => a.slack_user_id)
-  const escalationValue = getValue(ESCALATION_KEY)
-  const serverEscalationMode: 'all' | 'person' | 'channel' =
-    !escalationValue ? 'all' : eligibleAgents.some(a => a.slack_user_id === escalationValue) ? 'person' : 'channel'
-  const escalationMode = escalationModeOverride ?? serverEscalationMode
-
-  function setEscalationMode(mode: 'all' | 'person' | 'channel') {
-    setEscalationModeOverride(mode)
-    if (mode === 'all') edit(ESCALATION_KEY, '')
-  }
-
-  useEffect(() => {
-    api.get('/admin/settings/slack-status').then(r => setSlackStatus(r.data)).catch(() => {})
-  }, [])
-
-  async function handleTest() {
-    const bot = getValue('slack_bot_token'); const app = getValue('slack_app_token')
-    setTesting(true); setTestResult(null)
-    try {
-      const result = (await api.post('/admin/settings/test-slack', { bot_token: bot, app_token: app })).data
-      setTestResult(result)
-      setSlackStatus(result)
-    }
-    catch { setTestResult({ ok: false, error: 'Request failed' }) }
-    finally { setTesting(false) }
-  }
 
   if (isLoading) return <div className="text-[13px] text-ink-3">Loading…</div>
+
+  const list = workspaces ?? []
+
   return (
     <div className="flex flex-col gap-4">
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <SectionLabel>Slack integration</SectionLabel>
-            {slackStatus && (
-              <span className={`pill ${slackStatus.ok ? 'use' : 'danger'}`}>
-                {slackStatus.ok ? slackStatus.team_name : 'Disconnected'}
-              </span>
-            )}
+      {list.map(ws => (
+        <WorkspaceCard key={ws.id} workspace={ws} agents={agents ?? []} />
+      ))}
+
+      {list.length === 0 && !showAdd && (
+        <Card>
+          <div className="px-6 py-10 text-center">
+            <p className="text-[13px] text-ink-2 m-0 mb-4">No Slack workspaces connected yet.</p>
+            <button className="btn" onClick={() => setShowAdd(true)}>Connect a workspace</button>
           </div>
-          <div className="flex gap-2 items-center ml-auto">
-            {saved && <Saved />}
-            {testResult && (
-              <span className={`text-[12px] ${testResult.ok ? 'text-ok-ink' : 'text-danger-ink'}`}>
-                {testResult.ok ? `✓ Connected to ${testResult.team_name}` : `✗ ${testResult.error}`}
-              </span>
-            )}
-            <button className="btn ghost sm" onClick={handleTest} disabled={testing}>
-              {testing ? 'Testing…' : 'Test connection'}
-            </button>
-          </div>
-        </CardHeader>
+        </Card>
+      )}
 
-        {SLACK_KEYS.map((key) => {
-          const meta = SLACK_META[key]
-          const row = settingMap[key]
-          const isToggle = key === 'slack_two_way_sync'
-          const isRevealing = revealing[key] ?? false
-          const val = getValue(key)
-
-          return (
-            <div
-              key={key}
-              className="border-b border-track"
-              style={{ padding: '14px 22px', display: 'grid', gridTemplateColumns: '220px 1fr auto', gap: 16, alignItems: 'center' }}
-            >
-              <div>
-                <div className="text-[13.5px] font-semibold text-ink">{meta.label}</div>
-                <div className="text-[12px] text-ink-3 mt-0.5">{meta.hint}</div>
-              </div>
-              <div>
-                {isToggle ? (
-                  <SettingSwitch on={val !== 'false'} onChange={v => edit(key, v ? 'true' : 'false')} />
-                ) : row?.is_secret && !isRevealing ? (
-                  <span className="font-mono text-[13px] text-ink-3">{val || '—'}</span>
-                ) : (
-                  <input
-                    className={`input${row?.is_secret ? ' font-mono' : ''}`}
-                    value={val}
-                    type={row?.is_secret ? 'password' : 'text'}
-                    onChange={e => edit(key, e.target.value)}
-                    placeholder={meta.placeholder ?? ''}
-                    onFocus={() => { if (row?.is_secret && !isRevealing) { setRevealing(r => ({ ...r, [key]: true })); edit(key, '') } }}
-                  />
-                )}
-              </div>
-              <div style={{ width: 60, textAlign: 'right' }}>
-                {row?.is_secret && !isRevealing && (
-                  <button
-                    onClick={() => { setRevealing(r => ({ ...r, [key]: true })); edit(key, '') }}
-                    className="bg-transparent border-0 cursor-pointer text-[12px] font-semibold text-brand-ink px-2 py-1"
-                  >
-                    Edit
-                  </button>
-                )}
-              </div>
-            </div>
-          )
-        })}
-
-        <div style={{ padding: '14px 22px', display: 'grid', gridTemplateColumns: '220px 1fr', gap: 16, alignItems: 'start' }}>
-          <div>
-            <div className="text-[13.5px] font-semibold text-ink">Escalate SLA breaches to</div>
-            <div className="text-[12px] text-ink-3 mt-0.5">Who gets DMed when a ticket is close to (or past) its SLA deadline</div>
-          </div>
-          <div className="flex flex-col gap-2.5">
-            <div className="selectwrap" style={{ maxWidth: 320 }}>
-              <select
-                className="select"
-                value={escalationMode}
-                onChange={e => setEscalationMode(e.target.value as 'all' | 'person' | 'channel')}
-              >
-                <option value="all">All active technicians</option>
-                <option value="person">A specific person</option>
-                <option value="channel">A Slack channel</option>
-              </select>
-            </div>
-
-            {escalationMode === 'person' && (
-              <div className="selectwrap" style={{ maxWidth: 320 }}>
-                <select
-                  className="select"
-                  value={eligibleAgents.some(a => a.slack_user_id === escalationValue) ? escalationValue : ''}
-                  onChange={e => edit(ESCALATION_KEY, e.target.value)}
-                >
-                  <option value="" disabled>Choose a person…</option>
-                  {eligibleAgents.map(a => (
-                    <option key={a.id} value={a.slack_user_id ?? ''}>{a.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-            {escalationMode === 'person' && eligibleAgents.length === 0 && (
-              <p className="text-[12px] text-ink-3 m-0">
-                No technicians have a Slack ID linked yet — add one under Admin → Users.
-              </p>
-            )}
-
-            {escalationMode === 'channel' && (
-              <>
-                <input
-                  className="input font-mono"
-                  style={{ maxWidth: 320 }}
-                  value={eligibleAgents.some(a => a.slack_user_id === escalationValue) ? '' : escalationValue}
-                  onChange={e => edit(ESCALATION_KEY, e.target.value)}
-                  placeholder="C0123456789"
-                />
-                <p className="text-[12px] text-ink-3 m-0">
-                  The channel's ID (not its name) — find it in Slack via the channel name → "View channel details".
-                </p>
-              </>
-            )}
-          </div>
-        </div>
-
-        <SaveBar
-          dirty={dirty}
-          pending={mutation.isPending}
-          onSave={() => mutation.mutate([
-            ...SLACK_KEYS.filter(k => k in edits).map(k => ({ key: k, value: edits[k] })),
-            ...(ESCALATION_KEY in edits ? [{ key: ESCALATION_KEY, value: edits[ESCALATION_KEY] }] : []),
-          ])}
-        />
-      </Card>
+      {showAdd ? (
+        <AddWorkspaceForm onDone={() => setShowAdd(false)} onCancel={() => setShowAdd(false)} />
+      ) : list.length > 0 && (
+        <button
+          className="btn ghost sm"
+          style={{ alignSelf: 'flex-start', color: 'var(--brand-ink)' }}
+          onClick={() => setShowAdd(true)}
+        >
+          + Add workspace
+        </button>
+      )}
 
       {/* Setup guide */}
       <Card>
@@ -438,11 +306,375 @@ function SlackTab() {
         </button>
         {showGuide && (
           <div style={{ padding: '2px 22px 20px', borderTop: '1px solid var(--track)' }}>
+            <p className="text-[12px] text-ink-3 mt-3 mb-0 leading-relaxed">
+              Each workspace connection is its own Slack app — repeat these steps once per workspace you connect.
+            </p>
             <SlackGuide />
           </div>
         )}
       </Card>
     </div>
+  )
+}
+
+const WORKSPACE_TOKEN_FIELDS: { key: 'bot_token' | 'app_token' | 'signing_secret'; label: string; hint: string; placeholder: string }[] = [
+  { key: 'bot_token',      label: 'Bot token',       hint: 'Starts with xoxb-',                        placeholder: 'xoxb-…'   },
+  { key: 'app_token',      label: 'App-level token', hint: 'Socket Mode — starts with xapp-',          placeholder: 'xapp-…'   },
+  { key: 'signing_secret', label: 'Signing secret',  hint: 'From Basic Information → App Credentials', placeholder: '••••••••' },
+]
+
+function WorkspaceCard({ workspace, agents }: { workspace: WorkspaceRead; agents: UserRead[] }) {
+  const qc = useQueryClient()
+  const [expanded, setExpanded] = useState(false)
+  const [edits, setEdits] = useState<Record<string, string>>({})
+  const [revealing, setRevealing] = useState<Record<string, boolean>>({})
+  const [renaming, setRenaming] = useState(false)
+  const [nameValue, setNameValue] = useState(workspace.name)
+  const [testResult, setTestResult] = useState<{ ok: boolean; team_name?: string; error?: string } | null>(null)
+  const [testing, setTesting] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [escalationModeOverride, setEscalationModeOverride] = useState<'all' | 'person' | 'channel' | null>(null)
+
+  const patchMutation = useMutation({
+    mutationFn: (body: Record<string, unknown>) =>
+      api.patch<WorkspaceRead>(`/admin/slack-workspaces/${workspace.id}`, body).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-slack-workspaces'] })
+      setEdits({}); setRevealing({}); setEscalationModeOverride(null)
+      setSaved(true); setTimeout(() => setSaved(false), 2000)
+    },
+  })
+
+  function getValue(key: string, fallback: string) { return key in edits ? edits[key] : fallback }
+  function edit(key: string, value: string) { setEdits(e => ({ ...e, [key]: value })) }
+  const dirty = Object.keys(edits).length > 0
+
+  // Slack IDs are workspace-specific — only agents linked *in this workspace*
+  // are eligible for its escalation-target picker.
+  const eligibleAgents = agents.filter(a => a.slack_identities.some(i => i.workspace_id === workspace.id))
+  function slackIdFor(a: UserRead) { return a.slack_identities.find(i => i.workspace_id === workspace.id)?.slack_user_id ?? '' }
+
+  const escalationValue = getValue('sla_escalation_target', workspace.sla_escalation_target ?? '')
+  const serverEscalationMode: 'all' | 'person' | 'channel' =
+    !escalationValue ? 'all' : eligibleAgents.some(a => slackIdFor(a) === escalationValue) ? 'person' : 'channel'
+  const escalationMode = escalationModeOverride ?? serverEscalationMode
+
+  function setEscalationMode(mode: 'all' | 'person' | 'channel') {
+    setEscalationModeOverride(mode)
+    if (mode === 'all') edit('sla_escalation_target', '')
+  }
+
+  async function handleTest() {
+    setTesting(true); setTestResult(null)
+    try {
+      const result = (await api.post(`/admin/slack-workspaces/${workspace.id}/test`)).data
+      setTestResult(result)
+    }
+    catch { setTestResult({ ok: false, error: 'Request failed' }) }
+    finally { setTesting(false) }
+  }
+
+  function commitRename() {
+    const v = nameValue.trim()
+    setRenaming(false)
+    if (v && v !== workspace.name) patchMutation.mutate({ name: v })
+    else setNameValue(workspace.name)
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <button
+          onClick={() => setExpanded(v => !v)}
+          className="bg-transparent border-0 cursor-pointer p-0 flex-shrink-0"
+          aria-label={expanded ? 'Collapse' : 'Expand'}
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+            className="text-ink-3" style={{ transition: 'transform 0.2s', transform: expanded ? 'rotate(90deg)' : 'none' }}>
+            <path d="M4 2l4 4-4 4" />
+          </svg>
+        </button>
+        {renaming ? (
+          <input
+            autoFocus
+            className="input"
+            style={{ width: 'auto', maxWidth: 220, padding: '5px 10px', fontSize: 14.5, fontWeight: 650 }}
+            value={nameValue}
+            onChange={e => setNameValue(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={e => {
+              if (e.key === 'Enter') commitRename()
+              if (e.key === 'Escape') { setNameValue(workspace.name); setRenaming(false) }
+            }}
+          />
+        ) : (
+          <h2
+            onClick={() => setRenaming(true)}
+            title="Click to rename"
+            style={{ margin: 0, fontSize: 14.5, fontWeight: 650, cursor: 'pointer' }}
+            className="hover:text-brand-ink"
+          >
+            {workspace.name}
+          </h2>
+        )}
+        {workspace.team_name && <span className="pill avail">{workspace.team_name}</span>}
+        <span className={`pill ${!workspace.is_active ? 'retired' : workspace.online ? 'use' : 'danger'}`}>
+          {!workspace.is_active ? 'Inactive' : workspace.online ? 'Connected' : 'Disconnected'}
+        </span>
+        <div className="flex gap-2 items-center ml-auto">
+          {saved && <Saved />}
+          <SettingSwitch on={workspace.is_active} onChange={v => patchMutation.mutate({ is_active: v })} />
+        </div>
+      </CardHeader>
+
+      {expanded && (
+        <>
+          <div className="flex gap-2 items-center" style={{ padding: '10px 22px', borderBottom: '1px solid var(--track)' }}>
+            <button className="btn ghost sm" onClick={handleTest} disabled={testing}>
+              {testing ? 'Testing…' : 'Test connection'}
+            </button>
+            {testResult && (
+              <span className={`text-[12px] ${testResult.ok ? 'text-ok-ink' : 'text-danger-ink'}`}>
+                {testResult.ok ? `✓ Connected to ${testResult.team_name}` : `✗ ${testResult.error}`}
+              </span>
+            )}
+          </div>
+
+          {WORKSPACE_TOKEN_FIELDS.map(({ key, label, hint, placeholder }) => {
+            const isRevealing = revealing[key] ?? false
+            const hasValue = Boolean(workspace[key])
+            const val = getValue(key, '')
+
+            return (
+              <div
+                key={key}
+                className="border-b border-track"
+                style={{ padding: '14px 22px', display: 'grid', gridTemplateColumns: '220px 1fr auto', gap: 16, alignItems: 'center' }}
+              >
+                <div>
+                  <div className="text-[13.5px] font-semibold text-ink">{label}</div>
+                  <div className="text-[12px] text-ink-3 mt-0.5">{hint}</div>
+                </div>
+                <div>
+                  {hasValue && !isRevealing ? (
+                    <span className="font-mono text-[13px] text-ink-3">{workspace[key]}</span>
+                  ) : (
+                    <input
+                      className="input font-mono"
+                      value={val}
+                      type="password"
+                      onChange={e => edit(key, e.target.value)}
+                      placeholder={placeholder}
+                    />
+                  )}
+                </div>
+                <div style={{ width: 60, textAlign: 'right' }}>
+                  {hasValue && !isRevealing && (
+                    <button
+                      onClick={() => { setRevealing(r => ({ ...r, [key]: true })); edit(key, '') }}
+                      className="bg-transparent border-0 cursor-pointer text-[12px] font-semibold text-brand-ink px-2 py-1"
+                    >
+                      Edit
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+
+          <div className="border-b border-track" style={{ padding: '14px 22px', display: 'grid', gridTemplateColumns: '220px 1fr', gap: 16, alignItems: 'center' }}>
+            <div>
+              <div className="text-[13.5px] font-semibold text-ink">Trigger emoji</div>
+              <div className="text-[12px] text-ink-3 mt-0.5">Reaction name that creates a ticket</div>
+            </div>
+            <input
+              className="input"
+              style={{ maxWidth: 220 }}
+              value={getValue('trigger_emoji', workspace.trigger_emoji)}
+              onChange={e => edit('trigger_emoji', e.target.value)}
+              placeholder="clipboard"
+            />
+          </div>
+
+          <div className="border-b border-track" style={{ padding: '14px 22px', display: 'grid', gridTemplateColumns: '220px 1fr', gap: 16, alignItems: 'center' }}>
+            <div>
+              <div className="text-[13.5px] font-semibold text-ink">Two-way sync</div>
+              <div className="text-[12px] text-ink-3 mt-0.5">Sync web replies to this workspace's Slack threads and vice versa</div>
+            </div>
+            <SettingSwitch
+              on={getValue('two_way_sync', String(workspace.two_way_sync)) !== 'false'}
+              onChange={v => edit('two_way_sync', v ? 'true' : 'false')}
+            />
+          </div>
+
+          <div style={{ padding: '14px 22px', display: 'grid', gridTemplateColumns: '220px 1fr', gap: 16, alignItems: 'start' }}>
+            <div>
+              <div className="text-[13.5px] font-semibold text-ink">Escalate SLA breaches to</div>
+              <div className="text-[12px] text-ink-3 mt-0.5">Who gets DMed when a ticket in this workspace is close to (or past) its SLA deadline</div>
+            </div>
+            <div className="flex flex-col gap-2.5">
+              <div className="selectwrap" style={{ maxWidth: 320 }}>
+                <select
+                  className="select"
+                  value={escalationMode}
+                  onChange={e => setEscalationMode(e.target.value as 'all' | 'person' | 'channel')}
+                >
+                  <option value="all">All active technicians</option>
+                  <option value="person">A specific person</option>
+                  <option value="channel">A Slack channel</option>
+                </select>
+              </div>
+
+              {escalationMode === 'person' && (
+                <div className="selectwrap" style={{ maxWidth: 320 }}>
+                  <select
+                    className="select"
+                    value={eligibleAgents.some(a => slackIdFor(a) === escalationValue) ? escalationValue : ''}
+                    onChange={e => edit('sla_escalation_target', e.target.value)}
+                  >
+                    <option value="" disabled>Choose a person…</option>
+                    {eligibleAgents.map(a => (
+                      <option key={a.id} value={slackIdFor(a)}>{a.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {escalationMode === 'person' && eligibleAgents.length === 0 && (
+                <p className="text-[12px] text-ink-3 m-0">
+                  No technicians have a Slack ID linked in this workspace yet — add one under Admin → Users.
+                </p>
+              )}
+
+              {escalationMode === 'channel' && (
+                <>
+                  <input
+                    className="input font-mono"
+                    style={{ maxWidth: 320 }}
+                    value={eligibleAgents.some(a => slackIdFor(a) === escalationValue) ? '' : escalationValue}
+                    onChange={e => edit('sla_escalation_target', e.target.value)}
+                    placeholder="C0123456789"
+                  />
+                  <p className="text-[12px] text-ink-3 m-0">
+                    The channel's ID (not its name) — find it in Slack via the channel name → "View channel details".
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+
+          <SaveBar
+            dirty={dirty}
+            pending={patchMutation.isPending}
+            onSave={() => patchMutation.mutate(edits)}
+          />
+        </>
+      )}
+    </Card>
+  )
+}
+
+function AddWorkspaceForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
+  const qc = useQueryClient()
+  const [name, setName] = useState('')
+  const [botToken, setBotToken] = useState('')
+  const [appToken, setAppToken] = useState('')
+  const [signingSecret, setSigningSecret] = useState('')
+  const [triggerEmoji, setTriggerEmoji] = useState('clipboard')
+  const [twoWaySync, setTwoWaySync] = useState(true)
+  const [testResult, setTestResult] = useState<{ ok: boolean; team_name?: string; error?: string } | null>(null)
+  const [testing, setTesting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const createMutation = useMutation({
+    mutationFn: () => api.post('/admin/slack-workspaces', {
+      name: name.trim() || testResult?.team_name || 'New workspace',
+      bot_token: botToken,
+      app_token: appToken,
+      signing_secret: signingSecret,
+      trigger_emoji: triggerEmoji.trim() || 'clipboard',
+      two_way_sync: twoWaySync,
+    }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-slack-workspaces'] }); onDone() },
+    onError: (err: any) => setError(apiErrorMessage(err, 'Failed to connect workspace')),
+  })
+
+  async function handleTest() {
+    if (!botToken) return
+    setTesting(true); setTestResult(null)
+    try {
+      const result = (await api.post('/admin/slack-workspaces/test', { bot_token: botToken })).data
+      setTestResult(result)
+      if (result.ok && !name.trim() && result.team_name) setName(result.team_name)
+    }
+    catch { setTestResult({ ok: false, error: 'Request failed' }) }
+    finally { setTesting(false) }
+  }
+
+  return (
+    <Card>
+      <CardHeader><SectionLabel>Connect a workspace</SectionLabel></CardHeader>
+      <div style={{ padding: '18px 22px' }}>
+        <div className="fieldrow">
+          <label htmlFor="ws-name">Name</label>
+          <input id="ws-name" className="input" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Acme Corp" />
+        </div>
+        <div className="fieldrow">
+          <label htmlFor="ws-bot">Bot token <span className="font-normal text-ink-3">starts with xoxb-</span></label>
+          <input id="ws-bot" className="input font-mono" value={botToken} onChange={e => setBotToken(e.target.value)} placeholder="xoxb-…" type="password" />
+        </div>
+        <div className="fieldrow">
+          <label htmlFor="ws-app">App-level token <span className="font-normal text-ink-3">Socket Mode — starts with xapp-</span></label>
+          <input id="ws-app" className="input font-mono" value={appToken} onChange={e => setAppToken(e.target.value)} placeholder="xapp-…" type="password" />
+        </div>
+        <div className="fieldrow">
+          <label htmlFor="ws-secret">Signing secret <span className="font-normal text-ink-3">Basic Information → App Credentials</span></label>
+          <input id="ws-secret" className="input font-mono" value={signingSecret} onChange={e => setSigningSecret(e.target.value)} placeholder="••••••••" type="password" />
+        </div>
+        <div className="fieldrow">
+          <label htmlFor="ws-emoji">Trigger emoji</label>
+          <input id="ws-emoji" className="input font-mono" style={{ maxWidth: 200 }} value={triggerEmoji} onChange={e => setTriggerEmoji(e.target.value)} placeholder="clipboard" />
+        </div>
+        <label className="flex items-center gap-3 cursor-pointer mb-4">
+          <SettingSwitch on={twoWaySync} onChange={setTwoWaySync} />
+          <span className="text-[13px] text-ink-2">Two-way sync (web replies → Slack threads, and vice versa)</span>
+        </label>
+
+        <div className="flex items-center gap-3 mb-4">
+          <button
+            type="button"
+            onClick={handleTest}
+            disabled={testing || !botToken}
+            className="btn ghost sm"
+            style={!botToken ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+          >
+            {testing ? 'Testing…' : 'Test connection'}
+          </button>
+          {testResult && (
+            <span className={`text-[13px] ${testResult.ok ? 'text-ok-ink' : 'text-danger-ink'}`}>
+              {testResult.ok ? `✓ Connected to ${testResult.team_name}` : `✗ ${testResult.error}`}
+            </span>
+          )}
+        </div>
+
+        {error && (
+          <div className="rounded-control px-3 py-2 mb-4 text-[13px] text-danger-ink" style={{ background: 'var(--danger-bg)' }}>
+            {error}
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          <button
+            onClick={() => createMutation.mutate()}
+            disabled={!botToken || !appToken || createMutation.isPending}
+            className="btn"
+            style={(!botToken || !appToken) ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+          >
+            {createMutation.isPending ? 'Connecting…' : 'Connect workspace'}
+          </button>
+          <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>
+        </div>
+      </div>
+    </Card>
   )
 }
 
@@ -1394,7 +1626,7 @@ export default function Settings() {
         </div>
 
         {isAdmin && tab === 'general'    && <GeneralTab />}
-        {isAdmin && tab === 'slack'      && <SlackTab />}
+        {isAdmin && tab === 'workspaces' && <WorkspacesTab />}
         {isAdmin && tab === 'categories' && <CategoriesTab />}
         {isAdmin && tab === 'sla'        && <SLATab />}
         {isAdmin && tab === 'statuses'   && <StatusesTab />}

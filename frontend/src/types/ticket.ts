@@ -31,6 +31,8 @@ export interface TicketRead {
   sla_breached: boolean
   duplicate_of_id: number | null
   duplicate_of_title: string | null
+  workspace_id: number | null
+  workspace_name: string | null
   slack_channel_id: string | null
   slack_message_ts: string | null
   first_response_deadline: string | null

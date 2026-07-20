@@ -3,11 +3,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import AdminPageShell from '../../components/admin/AdminPageShell'
 import api, { apiErrorMessage } from '../../lib/api'
 import { parseUTC } from '../../types/ticket'
+import { useWorkspaceOptions } from '../../hooks/useWorkspaces'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 type UserRole = 'technician' | 'admin'
 type AuthProvider = 'local'
+
+interface SlackIdentity {
+  workspace_id: number
+  workspace_name: string
+  slack_user_id: string
+}
 
 interface UserRead {
   id: number
@@ -15,7 +22,7 @@ interface UserRead {
   name: string
   role: UserRole
   auth_provider: AuthProvider
-  slack_user_id: string | null
+  slack_identities: SlackIdentity[]
   is_active: boolean
   created_at: string
   last_login_at: string | null
@@ -210,62 +217,121 @@ function RoleBadge({ user }: RoleBadgeProps) {
   )
 }
 
-// ── Slack ID cell (inline editable) ───────────────────────────────────────────
+// ── Slack identities cell (inline editable, one per workspace) ─────────────────
+// Slack user IDs are workspace-specific, so a staff member can have a
+// different linked identity in each connected workspace.
 
-function SlackIdCell({ user }: { user: UserRead }) {
+function SlackIdentitiesCell({ user }: { user: UserRead }) {
   const queryClient = useQueryClient()
-  const [editing, setEditing] = useState(false)
-  const [value, setValue] = useState(user.slack_user_id ?? '')
-
-  // Keep local value in sync when the row refreshes after a save
-  useEffect(() => {
-    if (!editing) setValue(user.slack_user_id ?? '')
-  }, [user.slack_user_id, editing])
+  const { data: workspaces } = useWorkspaceOptions()
+  const [adding, setAdding] = useState(false)
+  const [newWorkspaceId, setNewWorkspaceId] = useState<number | ''>('')
+  const [newSlackId, setNewSlackId] = useState('')
+  const [editingWorkspaceId, setEditingWorkspaceId] = useState<number | null>(null)
+  const [editValue, setEditValue] = useState('')
 
   const mutation = useMutation({
-    mutationFn: (slack_user_id: string | null) =>
-      api.patch<UserRead>(`/admin/users/${user.id}`, { slack_user_id }).then(r => r.data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
-    },
-    onError: () => {
-      setValue(user.slack_user_id ?? '')
-    },
+    mutationFn: ({ workspaceId, slackUserId }: { workspaceId: number; slackUserId: string | null }) =>
+      api.put<UserRead>(`/admin/users/${user.id}/slack-identity/${workspaceId}`, { slack_user_id: slackUserId }).then(r => r.data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin-users'] }) },
+    onError: (err: unknown) => { window.alert(apiErrorMessage(err, 'Failed to update Slack identity.')) },
   })
 
-  function commit() {
-    // Close immediately for instant feedback; mutation runs in background
-    setEditing(false)
-    const trimmed = value.trim() || null
-    if (trimmed !== user.slack_user_id) mutation.mutate(trimmed)
+  const linkedWorkspaceIds = new Set(user.slack_identities.map(i => i.workspace_id))
+  const availableWorkspaces = (workspaces ?? []).filter(w => !linkedWorkspaceIds.has(w.id))
+
+  function commitNew() {
+    if (newWorkspaceId === '' || !newSlackId.trim()) { setAdding(false); return }
+    mutation.mutate({ workspaceId: newWorkspaceId, slackUserId: newSlackId.trim() })
+    setAdding(false); setNewWorkspaceId(''); setNewSlackId('')
   }
 
-  if (editing) {
-    return (
-      <input
-        autoFocus
-        className="input font-mono"
-        style={{ width: 140, padding: '4px 9px', fontSize: 12 }}
-        value={value}
-        onChange={e => setValue(e.target.value)}
-        onBlur={commit}
-        onKeyDown={e => {
-          if (e.key === 'Enter') { e.preventDefault(); commit() }
-          if (e.key === 'Escape') { setValue(user.slack_user_id ?? ''); setEditing(false) }
-        }}
-        placeholder="U0123ABCDEF"
-      />
-    )
+  function commitEdit(workspaceId: number) {
+    const trimmed = editValue.trim()
+    setEditingWorkspaceId(null)
+    mutation.mutate({ workspaceId, slackUserId: trimmed || null })
   }
 
   return (
-    <span
-      onClick={() => setEditing(true)}
-      title="Click to set Slack user ID"
-      className={`font-mono text-[11px] cursor-pointer px-1.5 py-0.5 rounded-md hover:bg-row-hover ${user.slack_user_id ? 'text-ink-2' : 'text-ink-3 italic'}`}
-    >
-      {user.slack_user_id ?? 'not linked'}
-    </span>
+    <div className="flex flex-wrap items-center gap-1.5">
+      {user.slack_identities.map(identity => (
+        editingWorkspaceId === identity.workspace_id ? (
+          <input
+            key={identity.workspace_id}
+            autoFocus
+            className="input font-mono"
+            style={{ width: 130, padding: '3px 7px', fontSize: 11 }}
+            value={editValue}
+            onChange={e => setEditValue(e.target.value)}
+            onBlur={() => commitEdit(identity.workspace_id)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { e.preventDefault(); commitEdit(identity.workspace_id) }
+              if (e.key === 'Escape') setEditingWorkspaceId(null)
+            }}
+          />
+        ) : (
+          <span
+            key={identity.workspace_id}
+            onClick={() => { setEditingWorkspaceId(identity.workspace_id); setEditValue(identity.slack_user_id) }}
+            title="Click to edit — clear the value to unlink"
+            className="chip font-mono cursor-pointer"
+            style={{ padding: '2px 8px', fontSize: 10.5 }}
+          >
+            {identity.workspace_name}: {identity.slack_user_id}
+          </span>
+        )
+      ))}
+
+      {adding ? (
+        <div className="flex items-center gap-1">
+          <div className="selectwrap" style={{ minWidth: 100 }}>
+            <select
+              autoFocus
+              className="select"
+              style={{ padding: '3px 22px 3px 7px', fontSize: 11 }}
+              value={newWorkspaceId}
+              onChange={e => setNewWorkspaceId(e.target.value ? Number(e.target.value) : '')}
+            >
+              <option value="">Workspace…</option>
+              {availableWorkspaces.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+            </select>
+          </div>
+          <input
+            className="input font-mono"
+            style={{ width: 110, padding: '3px 7px', fontSize: 11 }}
+            value={newSlackId}
+            onChange={e => setNewSlackId(e.target.value)}
+            placeholder="U0123ABCDEF"
+            onKeyDown={e => {
+              if (e.key === 'Enter') { e.preventDefault(); commitNew() }
+              if (e.key === 'Escape') setAdding(false)
+            }}
+          />
+          <button
+            onClick={commitNew}
+            disabled={newWorkspaceId === '' || !newSlackId.trim()}
+            className="bg-transparent border-0 cursor-pointer text-brand-ink px-0.5"
+            aria-label="Save Slack identity"
+          >
+            ✓
+          </button>
+          <button onClick={() => setAdding(false)} className="bg-transparent border-0 cursor-pointer text-ink-3 px-0.5" aria-label="Cancel">
+            ✕
+          </button>
+        </div>
+      ) : availableWorkspaces.length > 0 ? (
+        <button
+          onClick={() => setAdding(true)}
+          title="Link a Slack identity"
+          className="bg-transparent border border-dashed border-edge rounded-md cursor-pointer text-ink-3 hover:text-brand-ink hover:border-brand-ink px-1.5"
+          style={{ fontSize: 11, lineHeight: '16px' }}
+        >
+          +
+        </button>
+      ) : user.slack_identities.length === 0 ? (
+        <span className="text-[11px] text-ink-3 italic">not linked</span>
+      ) : null}
+    </div>
   )
 }
 
@@ -362,7 +428,7 @@ export default function Users() {
     { id: 'inactive', label: 'Inactive' },
   ] as const
 
-  const tableHeaders = ['User', 'Role', 'Slack ID', 'Status', 'Last login', 'Created', 'Actions']
+  const tableHeaders = ['User', 'Role', 'Slack IDs', 'Status', 'Last login', 'Created', 'Actions']
 
   return (
     <AdminPageShell title="Users">
@@ -468,8 +534,8 @@ export default function Users() {
                     </td>
                     {/* Role */}
                     <td><RoleBadge user={user} /></td>
-                    {/* Slack ID */}
-                    <td><SlackIdCell user={user} /></td>
+                    {/* Slack IDs */}
+                    <td><SlackIdentitiesCell user={user} /></td>
                     {/* Status */}
                     <td>
                       <span className={`pill ${user.is_active ? 'use' : 'retired'}`}>

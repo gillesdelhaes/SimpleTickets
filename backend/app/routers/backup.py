@@ -28,6 +28,7 @@ from app.models.app_setting import AppSetting
 from app.models.audit_log import AuditLog
 from app.models.category import Category
 from app.models.sla_policy import SLAPolicy
+from app.models.slack_workspace import SlackWorkspace
 from app.models.ticket import Ticket
 from app.models.ticket_attachment import TicketAttachment
 from app.models.ticket_history import TicketHistory
@@ -35,26 +36,31 @@ from app.models.ticket_csat import TicketCSAT
 from app.models.ticket_read_marker import TicketReadMarker
 from app.models.ticket_reply import TicketReply
 from app.models.ticket_status_config import TicketStatusConfig
+from app.models.ticket_watcher import TicketWatcher
 from app.models.user import User
+from app.models.user_slack_identity import UserSlackIdentity
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["backup"])
 
 BACKUP_VERSION = 1
 
-# Secrets are excluded from backups. Slack creds + jwt_secret are re-entered
+# Secrets are excluded from backups. jwt_secret is re-generated/re-encrypted
 # after restore; app_secret_key is the master Fernet key and must never travel
 # in a backup — bootstrap manages it per-instance, and leaking it would expose
-# the key that decrypts every other stored secret.
-_SECRET_KEYS = frozenset({
-    "slack_bot_token", "slack_app_token", "slack_signing_secret", "jwt_secret",
-    "app_secret_key",
-})
+# the key that decrypts every other stored secret. Slack workspace tokens are
+# handled separately below (blanked per-row, not a whole-key exclusion).
+_SECRET_KEYS = frozenset({"jwt_secret", "app_secret_key"})
+
+# Slack workspace columns never exported — re-entered per workspace after restore.
+_WORKSPACE_SECRET_COLS = ("bot_token", "app_token", "signing_secret")
 
 # Export in dependency order (referenced tables before referencing tables)
 _EXPORT_MODELS: list[tuple[str, Any]] = [
     ("ticket_statuses", TicketStatusConfig),
+    ("slack_workspaces", SlackWorkspace),
     ("users", User),
+    ("user_slack_identities", UserSlackIdentity),
     ("categories", Category),
     ("sla_policies", SLAPolicy),
     ("tickets", Ticket),
@@ -64,12 +70,15 @@ _EXPORT_MODELS: list[tuple[str, Any]] = [
     ("ticket_csat", TicketCSAT),
     ("audit_log", AuditLog),
     ("ticket_read_markers", TicketReadMarker),
+    ("ticket_watchers", TicketWatcher),
 ]
 
 # Datetime column names per table (used during restore deserialization)
 _DT_COLS: dict[str, set[str]] = {
     "ticket_statuses":     set(),
+    "slack_workspaces":    {"created_at", "updated_at"},
     "users":               {"created_at", "last_login_at"},
+    "user_slack_identities": {"created_at"},
     "categories":          {"created_at"},
     "sla_policies":        set(),
     "tickets":             {
@@ -85,6 +94,7 @@ _DT_COLS: dict[str, set[str]] = {
     "ticket_csat":         {"responded_at"},
     "audit_log":           {"created_at"},
     "ticket_read_markers": {"last_read_at"},
+    "ticket_watchers":     {"created_at"},
     "app_settings":        {"updated_at"},
 }
 
@@ -130,7 +140,12 @@ async def download_backup(
 
     for table_name, model in _EXPORT_MODELS:
         rows = (await session.execute(select(model))).scalars().all()
-        tables[table_name] = [_serialize_row(r) for r in rows]
+        serialized = [_serialize_row(r) for r in rows]
+        if table_name == "slack_workspaces":
+            for row in serialized:
+                for col in _WORKSPACE_SECRET_COLS:
+                    row[col] = ""
+        tables[table_name] = serialized
 
     # App settings — exclude secrets
     settings_rows = (await session.execute(
@@ -257,6 +272,13 @@ async def restore_backup(
                 deserialized = [_deserialize_row(r, table_name) for r in rows]
                 await session.execute(sa_insert(model.__table__), deserialized)
 
+        # Restored workspace rows have blank tokens (exports never carry them)
+        # — deactivate them so the app doesn't try to start bots with no
+        # credentials. An admin re-enters each workspace's tokens and
+        # reactivates it from Settings → Workspaces after the restore.
+        if tables.get("slack_workspaces"):
+            await session.execute(text("UPDATE slack_workspaces SET is_active = false"))
+
         # App settings — never accept secret keys from a backup (exports exclude
         # them, but a hand-edited archive could smuggle them back in).
         app_settings_rows = [
@@ -271,9 +293,6 @@ async def restore_backup(
         #   - bootstrap finds no app_secret_key row on the next restart and
         #     generates a NEW master key, making every secret encrypted by the
         #     still-running process undecryptable;
-        #   - set_setting() re-creates missing token rows with is_secret=False,
-        #     so Slack tokens re-entered after the restore land in plaintext
-        #     (and GET /admin/settings would serve them unmasked);
         #   - with no jwt_secret row, tokens fall back to being signed with the
         #     master key until the next restart.
         # jwt_secret keeps its current value so the restoring admin's session
@@ -287,10 +306,6 @@ async def restore_backup(
             key="jwt_secret", value=encrypt_value(settings_manager.jwt_secret),
             is_secret=True, group_name="app", updated_at=now,
         ))
-        for key in ("slack_bot_token", "slack_app_token", "slack_signing_secret"):
-            session.add(AppSetting(
-                key=key, value=None, is_secret=True, group_name="slack", updated_at=now,
-            ))
 
         # Verify the restored data includes at least one *active* admin — a backup
         # whose only admins are deactivated would lock everyone out just as surely

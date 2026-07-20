@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import api, { apiErrorMessage } from '../../lib/api'
 import { useCategories } from '../../hooks/useCategories'
 import { useSlackUsers } from '../../hooks/useSlackUsers'
+import { useWorkspaceOptions } from '../../hooks/useWorkspaces'
 import type { Priority } from '../../types/ticket'
 
 interface Props {
@@ -22,18 +23,21 @@ export default function CreateTicketModal({ open, onClose }: Props) {
   const qc = useQueryClient()
   const navigate = useNavigate()
   const { data: categories = [] } = useCategories()
-  const { data: slackUsers = [] } = useSlackUsers()
+  const { data: workspaces = [] } = useWorkspaceOptions()
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [priority, setPriority] = useState<Priority>('medium')
   const [categoryId, setCategoryId] = useState<number | null>(null)
+  const [workspaceId, setWorkspaceId] = useState<number | null>(null)
   const [reporterSearch, setReporterSearch] = useState('')
   const [selectedReporter, setSelectedReporter] = useState<{ id: string; name: string } | null>(null)
   const [reporterOpen, setReporterOpen] = useState(false)
   const [files, setFiles] = useState<File[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const { data: slackUsers = [] } = useSlackUsers(workspaceId)
 
   const reporterRef = useRef<HTMLDivElement>(null)
   const titleRef = useRef<HTMLInputElement>(null)
@@ -46,6 +50,7 @@ export default function CreateTicketModal({ open, onClose }: Props) {
       setDescription('')
       setPriority('medium')
       setCategoryId(null)
+      setWorkspaceId(null)
       setReporterSearch('')
       setSelectedReporter(null)
       setReporterOpen(false)
@@ -54,6 +59,21 @@ export default function CreateTicketModal({ open, onClose }: Props) {
       setTimeout(() => titleRef.current?.focus(), 50)
     }
   }, [open])
+
+  // Only one connected workspace? Skip the picker entirely — auto-select it
+  // once the list loads (may resolve after the modal is already open).
+  useEffect(() => {
+    if (open && workspaceId === null && workspaces.length === 1) {
+      setWorkspaceId(workspaces[0].id)
+    }
+  }, [open, workspaceId, workspaces])
+
+  // Reporter list is workspace-scoped — a stale pick from another workspace
+  // must not linger when the workspace selection changes.
+  useEffect(() => {
+    setSelectedReporter(null)
+    setReporterSearch('')
+  }, [workspaceId])
 
   // Close reporter dropdown on outside click
   useEffect(() => {
@@ -97,7 +117,7 @@ export default function CreateTicketModal({ open, onClose }: Props) {
         priority,
         category_id: categoryId,
         ...(selectedReporter
-          ? { slack_reporter_id: selectedReporter.id, slack_reporter_name: selectedReporter.name }
+          ? { slack_reporter_id: selectedReporter.id, slack_reporter_name: selectedReporter.name, workspace_id: workspaceId }
           : {}),
       })
 
@@ -147,24 +167,52 @@ export default function CreateTicketModal({ open, onClose }: Props) {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="px-6 pb-6 overflow-y-auto flex-1">
+          {/* Workspace picker — only surfaced when there's a real choice to make */}
+          {workspaces.length > 1 && (
+            <div className="fieldrow">
+              <label htmlFor="ticket-workspace">Slack workspace</label>
+              <div className="selectwrap">
+                <select
+                  id="ticket-workspace"
+                  className="select"
+                  value={workspaceId ?? ''}
+                  onChange={e => setWorkspaceId(e.target.value ? Number(e.target.value) : null)}
+                >
+                  <option value="">Select a workspace…</option>
+                  {workspaces.map(w => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
           {/* Reporter picker */}
           <div className="fieldrow">
             <label>Reporter <span className="font-normal text-ink-3">(optional — defaults to you)</span></label>
             <div ref={reporterRef} className="relative">
               <div
-                onClick={() => setReporterOpen(o => !o)}
-                className="input flex items-center justify-between cursor-pointer select-none"
-                style={{ color: selectedReporter ? 'var(--ink)' : 'var(--ink-3)' }}
+                onClick={() => { if (workspaceId != null) setReporterOpen(o => !o) }}
+                className="input flex items-center justify-between select-none"
+                style={{
+                  color: selectedReporter ? 'var(--ink)' : 'var(--ink-3)',
+                  cursor: workspaceId != null ? 'pointer' : 'not-allowed',
+                  opacity: workspaceId != null ? 1 : 0.6,
+                }}
               >
                 <span className="text-[13px]">
-                  {selectedReporter ? selectedReporter.name : 'Search Slack users…'}
+                  {selectedReporter
+                    ? selectedReporter.name
+                    : workspaceId == null && workspaces.length > 1
+                      ? 'Choose a workspace first'
+                      : 'Search Slack users…'}
                 </span>
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-ink-3">
                   <path d="M3 5l4 4 4-4" />
                 </svg>
               </div>
 
-              {reporterOpen && (
+              {reporterOpen && workspaceId != null && (
                 <div
                   className="overlay-surface absolute left-0 right-0 z-10 flex flex-col"
                   style={{ top: 'calc(100% + 6px)', maxHeight: 240, borderRadius: 16 }}
@@ -182,7 +230,7 @@ export default function CreateTicketModal({ open, onClose }: Props) {
                   <div className="overflow-y-auto flex-1">
                     {filteredUsers.length === 0 ? (
                       <div className="px-3 py-3 text-[12px] text-ink-3 text-center">
-                        {slackUsers.length === 0 ? 'Slack not configured' : 'No users found'}
+                        {slackUsers.length === 0 ? 'No Slack users found' : 'No users found'}
                       </div>
                     ) : filteredUsers.map(u => (
                       <button
@@ -202,7 +250,7 @@ export default function CreateTicketModal({ open, onClose }: Props) {
                 </div>
               )}
             </div>
-            {slackUsers.length === 0 && (
+            {workspaces.length === 0 && (
               <p className="m-0 text-[11px] text-warn-ink">
                 Slack is not configured — reporter DM will be skipped
               </p>

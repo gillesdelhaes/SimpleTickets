@@ -11,9 +11,12 @@ class TicketCreate(BaseModel):
     description: str
     priority: Priority = Priority.medium
     category_id: Optional[int] = None
-    # When set, the ticket is created on behalf of a Slack user (no DB submitter)
+    # When set, the ticket is created on behalf of a Slack user (no DB submitter).
+    # workspace_id identifies which connected workspace that Slack user belongs
+    # to — required whenever slack_reporter_id is set.
     slack_reporter_id: Optional[str] = None
     slack_reporter_name: Optional[str] = None
+    workspace_id: Optional[int] = None
 
     @field_validator("title")
     @classmethod
@@ -123,6 +126,11 @@ class TicketRead(BaseModel):
     duplicate_of_title: Optional[str] = None
 
     source: str  # 'web' | 'slack'
+
+    # Which connected Slack workspace this ticket originated from (null = no
+    # Slack origin)
+    workspace_id: Optional[int] = None
+    workspace_name: Optional[str] = None
 
     # Slack integration — present when ticket was created from Slack
     slack_channel_id: Optional[str]

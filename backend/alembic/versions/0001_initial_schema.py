@@ -28,7 +28,6 @@ def upgrade() -> None:
         sa.Column("name", sqlmodel.AutoString(), nullable=False),
         sa.Column("role", sa.String(), nullable=False),
         sa.Column("auth_provider", sa.String(), nullable=False),
-        sa.Column("slack_user_id", sqlmodel.AutoString(), nullable=True),
         sa.Column("hashed_password", sqlmodel.AutoString(), nullable=True),
         sa.Column("is_active", sa.Boolean(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
@@ -36,7 +35,43 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_users_email", "users", ["email"], unique=True)
-    op.create_index("ix_users_slack_user_id", "users", ["slack_user_id"], unique=False)
+
+    # ── slack_workspaces ───────────────────────────────────────────────────────
+    op.create_table(
+        "slack_workspaces",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("name", sqlmodel.AutoString(), nullable=False),
+        sa.Column("team_id", sqlmodel.AutoString(), nullable=True),
+        sa.Column("team_name", sqlmodel.AutoString(), nullable=True),
+        sa.Column("bot_token", sa.Text(), nullable=False, server_default=""),
+        sa.Column("app_token", sa.Text(), nullable=False, server_default=""),
+        sa.Column("signing_secret", sa.Text(), nullable=False, server_default=""),
+        sa.Column("trigger_emoji", sqlmodel.AutoString(), nullable=False, server_default="clipboard"),
+        sa.Column("two_way_sync", sa.Boolean(), nullable=False, server_default="true"),
+        sa.Column("sla_escalation_target", sqlmodel.AutoString(), nullable=True),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default="true"),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index("ix_slack_workspaces_team_id", "slack_workspaces", ["team_id"], unique=False)
+
+    # ── user_slack_identities ──────────────────────────────────────────────────
+    op.create_table(
+        "user_slack_identities",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("workspace_id", sa.Integer(), nullable=False),
+        sa.Column("slack_user_id", sqlmodel.AutoString(), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["workspace_id"], ["slack_workspaces.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("user_id", "workspace_id", name="uq_identity_user_workspace"),
+        sa.UniqueConstraint("workspace_id", "slack_user_id", name="uq_identity_workspace_slack_id"),
+    )
+    op.create_index("ix_user_slack_identities_user_id", "user_slack_identities", ["user_id"], unique=False)
+    op.create_index("ix_user_slack_identities_workspace_id", "user_slack_identities", ["workspace_id"], unique=False)
 
     # ── categories ─────────────────────────────────────────────────────────────
     op.create_table(
@@ -99,6 +134,7 @@ def upgrade() -> None:
         sa.Column("sla_paused_seconds", sa.Integer(), nullable=False),
         sa.Column("sla_breach_warned_at", sa.DateTime(), nullable=True),
         sa.Column("source", sa.String(10), nullable=False, server_default="slack"),
+        sa.Column("workspace_id", sa.Integer(), nullable=True),
         sa.Column("slack_channel_id", sqlmodel.AutoString(), nullable=True),
         sa.Column("slack_message_ts", sqlmodel.AutoString(), nullable=True),
         sa.Column("duplicate_of_id", sa.Integer(), nullable=True),
@@ -113,6 +149,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["duplicate_of_id"], ["tickets.id"]),
         sa.ForeignKeyConstraint(["sla_policy_id"], ["sla_policies.id"]),
         sa.ForeignKeyConstraint(["submitter_id"], ["users.id"]),
+        sa.ForeignKeyConstraint(["workspace_id"], ["slack_workspaces.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_tickets_assignee_id", "tickets", ["assignee_id"], unique=False)
@@ -121,6 +158,7 @@ def upgrade() -> None:
     op.create_index("ix_tickets_status", "tickets", ["status"], unique=False)
     op.create_index("ix_tickets_submitter_id", "tickets", ["submitter_id"], unique=False)
     op.create_index("ix_tickets_slack_submitter_id", "tickets", ["slack_submitter_id"], unique=False)
+    op.create_index("ix_tickets_workspace_id", "tickets", ["workspace_id"], unique=False)
 
     # ── ticket_replies ─────────────────────────────────────────────────────────
     op.create_table(
@@ -233,6 +271,21 @@ def upgrade() -> None:
     # Prevent duplicate inserts from Slack at-least-once delivery — partial so NULLs are excluded
     op.execute("CREATE UNIQUE INDEX uq_ticket_csat_dm_ts ON ticket_csat (ticket_id, dm_ts) WHERE dm_ts IS NOT NULL")
 
+    # ── ticket_watchers ───────────────────────────────────────────────────────
+    op.create_table(
+        "ticket_watchers",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("ticket_id", sa.Integer(), nullable=False),
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.ForeignKeyConstraint(["ticket_id"], ["tickets.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("ticket_id", "user_id", name="uq_ticket_watcher"),
+    )
+    op.create_index("ix_ticket_watchers_ticket_id", "ticket_watchers", ["ticket_id"])
+    op.create_index("ix_ticket_watchers_user_id", "ticket_watchers", ["user_id"])
+
     # ── password_reset_tokens ─────────────────────────────────────────────────
     op.create_table(
         "password_reset_tokens",
@@ -315,20 +368,15 @@ def upgrade() -> None:
         [
             {"key": "setup_complete",       "value": None,        "is_secret": False, "group_name": "app",   "updated_at": _now},
             {"key": "app_secret_key",       "value": None,        "is_secret": False, "group_name": "app",   "updated_at": _now},
-            {"key": "slack_bot_token",      "value": None,        "is_secret": True,  "group_name": "slack", "updated_at": _now},
-            {"key": "slack_app_token",      "value": None,        "is_secret": True,  "group_name": "slack", "updated_at": _now},
-            {"key": "slack_signing_secret", "value": None,        "is_secret": True,  "group_name": "slack", "updated_at": _now},
-            {"key": "slack_trigger_emoji",  "value": "clipboard", "is_secret": False, "group_name": "slack", "updated_at": _now},
-            {"key": "slack_two_way_sync",   "value": "true",      "is_secret": False, "group_name": "slack", "updated_at": _now},
             {"key": "timezone",             "value": "UTC",       "is_secret": False, "group_name": "app",   "updated_at": _now},
             {"key": "csat_auto_close_days", "value": "7",         "is_secret": False, "group_name": "app",   "updated_at": _now},
-            {"key": "sla_escalation_target", "value": None,       "is_secret": False, "group_name": "slack", "updated_at": _now},
         ],
     )
 
 
 def downgrade() -> None:
     op.drop_table("password_reset_tokens")
+    op.drop_table("ticket_watchers")
     op.drop_table("ticket_csat")
     op.drop_table("ticket_read_markers")
     op.drop_table("app_settings")
@@ -336,8 +384,10 @@ def downgrade() -> None:
     op.drop_table("ticket_attachments")
     op.drop_table("ticket_history")
     op.drop_table("ticket_replies")
+    op.drop_table("user_slack_identities")
     op.drop_table("tickets")
     op.drop_table("ticket_statuses")
     op.drop_table("sla_policies")
     op.drop_table("categories")
+    op.drop_table("slack_workspaces")
     op.drop_table("users")

@@ -13,6 +13,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useUnreadReplies } from '../hooks/useUnreadReplies'
 import { getAllStatuses, timeAgo, PRIORITY_LABELS, type Priority } from '../types/ticket'
 import { useAppConfig } from '../hooks/useAppConfig'
+import { useWorkspaceOptions } from '../hooks/useWorkspaces'
 import api, { apiErrorMessage } from '../lib/api'
 
 const PAGE_SIZE = 25
@@ -97,6 +98,10 @@ export default function Queue() {
   const { user } = useAuth()
   const { data: appConfig } = useAppConfig()
   const { data: categories } = useCategories()
+  const { data: workspaces } = useWorkspaceOptions()
+  // Only worth a label once there's more than one workspace to disambiguate —
+  // keeps the common single-workspace install decluttered.
+  const showWorkspaceLabel = (workspaces?.length ?? 0) > 1
   const allStatuses = appConfig?.statuses ?? getAllStatuses()
   const statusOrder: Record<string, number> = Object.fromEntries(
     allStatuses.map((s, i) => [s.name, i])
@@ -619,11 +624,13 @@ export default function Queue() {
                         <div className="flex items-center gap-1.5 overflow-hidden">
                           {ticket.channel === 'slack' && (
                             <svg width="12" height="12" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-ink-3 flex-shrink-0" aria-label="Created from Slack">
+                              <title>{ticket.workspace_name ? `Created from Slack — ${ticket.workspace_name}` : 'Created from Slack'}</title>
                               <path d="M15.5 11.5a1.5 1.5 0 0 1-1.5 1.5H5l-3 3V4a1.5 1.5 0 0 1 1.5-1.5h10.5A1.5 1.5 0 0 1 15.5 4z" />
                             </svg>
                           )}
                           {ticket.channel === 'web' && ticket.slack_channel_id && (
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-ink-3 flex-shrink-0" aria-label="Created on the web">
+                              <title>{ticket.workspace_name ? `Created on the web — ${ticket.workspace_name}` : 'Created on the web'}</title>
                               <circle cx="12" cy="12" r="10" />
                               <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
                             </svg>
@@ -632,8 +639,10 @@ export default function Queue() {
                             {ticket.title}
                           </span>
                         </div>
-                        {ticket.category_name && (
-                          <span className="model block mt-px">{ticket.category_name}</span>
+                        {(ticket.category_name || (showWorkspaceLabel && ticket.workspace_name)) && (
+                          <span className="model block mt-px truncate">
+                            {[ticket.category_name, showWorkspaceLabel ? ticket.workspace_name : null].filter(Boolean).join(' · ')}
+                          </span>
                         )}
                       </td>
                       <td>
