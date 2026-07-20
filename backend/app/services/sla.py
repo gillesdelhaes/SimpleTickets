@@ -436,20 +436,6 @@ async def _auto_close_resolved() -> None:
 
             await session.commit()
 
-            # Watcher DMs after the commit — a Slack failure must not roll
-            # back the auto-close itself.
-            from app.slack.service import notify_ticket_watchers
-            for ticket in tickets:
-                try:
-                    await notify_ticket_watchers(
-                        ticket,
-                        (f"👁 *{ticket.display_id}* — {ticket.title}\n"
-                         f"🔒 Auto-closed after {days} day{'s' if days != 1 else ''} "
-                         "with no survey response."),
-                    )
-                except Exception:  # noqa: BLE001
-                    logger.exception("Auto-close watcher notify failed for %s", ticket.display_id)
-
         except Exception as exc:
             logger.error("CSAT auto-close job failed: %s", exc)
             await session.rollback()

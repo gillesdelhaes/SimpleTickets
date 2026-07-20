@@ -263,20 +263,6 @@ async def _handle_csat_response(body: dict, client: Any, workspace_id: int, *, s
             ))
             await session.commit()
 
-            # Watchers hear about the CSAT-driven status change too
-            try:
-                from app.slack.service import notify_ticket_watchers
-                await notify_ticket_watchers(
-                    ticket,
-                    (f"👁 *{ticket.display_id}* — {ticket.title}\n"
-                     + ("✅ Submitter confirmed the fix — ticket closed."
-                        if score else
-                        "↩️ Submitter says it's not resolved — ticket reopened.")),
-                    exclude_slack_ids={slack_user_id} if slack_user_id else frozenset(),
-                )
-            except Exception:  # noqa: BLE001
-                logger.exception("csat_response: watcher notify failed for ticket %d", ticket_id)
-
             # Notify assignee on negative response
             if not score and ticket.assignee_id:
                 from app.slack.service import _get_staff_slack_id
@@ -856,15 +842,6 @@ def register_handlers(app: Any, workspace: SlackWorkspace) -> None:
                 session.add(reply)
                 await session.commit()
                 logger.info("Home reply added to ticket %s by %s", ticket.display_id, author_name)
-
-                from app.slack.service import _reply_preview, notify_ticket_watchers
-                await notify_ticket_watchers(
-                    ticket,
-                    (f"👁 *{ticket.display_id}* — {ticket.title}\n"
-                     f"💬 New reply from {author_name}:\n{_reply_preview(reply_text)}"),
-                    exclude_user_ids={author_id} if author_id is not None else frozenset(),
-                    exclude_slack_ids={slack_user_id} if slack_user_id else frozenset(),
-                )
         except Exception:  # noqa: BLE001
             logger.exception("home_reply_modal: failed to save reply for ticket %d", ticket_id)
 

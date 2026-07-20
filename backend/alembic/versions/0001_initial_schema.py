@@ -271,21 +271,6 @@ def upgrade() -> None:
     # Prevent duplicate inserts from Slack at-least-once delivery — partial so NULLs are excluded
     op.execute("CREATE UNIQUE INDEX uq_ticket_csat_dm_ts ON ticket_csat (ticket_id, dm_ts) WHERE dm_ts IS NOT NULL")
 
-    # ── ticket_watchers ───────────────────────────────────────────────────────
-    op.create_table(
-        "ticket_watchers",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("ticket_id", sa.Integer(), nullable=False),
-        sa.Column("user_id", sa.Integer(), nullable=False),
-        sa.Column("created_at", sa.DateTime(), nullable=False),
-        sa.ForeignKeyConstraint(["ticket_id"], ["tickets.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("ticket_id", "user_id", name="uq_ticket_watcher"),
-    )
-    op.create_index("ix_ticket_watchers_ticket_id", "ticket_watchers", ["ticket_id"])
-    op.create_index("ix_ticket_watchers_user_id", "ticket_watchers", ["user_id"])
-
     # ── password_reset_tokens ─────────────────────────────────────────────────
     op.create_table(
         "password_reset_tokens",
@@ -376,7 +361,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("password_reset_tokens")
-    op.drop_table("ticket_watchers")
     op.drop_table("ticket_csat")
     op.drop_table("ticket_read_markers")
     op.drop_table("app_settings")

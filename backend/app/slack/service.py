@@ -343,64 +343,6 @@ async def send_password_reset_dm(user: User, code: str, session: AsyncSession) -
     return False
 
 
-async def notify_ticket_watchers(
-    ticket: Ticket,
-    text: str,
-    *,
-    exclude_user_ids: "set[int] | frozenset[int]" = frozenset(),
-    exclude_slack_ids: "set[str] | frozenset[str]" = frozenset(),
-) -> None:
-    """
-    DM every active watcher of a ticket (P9). Watching is a portal feature, so
-    this is independent of two-way sync — but still needs the ticket's
-    workspace to resolve a bot client and each watcher's identity in it.
-    Skips watchers with no linked Slack identity in that workspace, the
-    ticket's submitter (they're notified through their own DM flow), and the
-    exclude sets (the acting user / the Slack user who triggered the event).
-    Fire-and-forget.
-    """
-    if ticket.workspace_id is None:
-        return
-
-    from app.slack.bot import get_slack_client
-    client = get_slack_client(ticket.workspace_id)
-    if client is None:
-        return
-
-    from app.models.ticket_watcher import TicketWatcher
-
-    async with AsyncSessionLocal() as session:
-        rows = (await session.execute(
-            select(User.id, UserSlackIdentity.slack_user_id)
-            .join(TicketWatcher, TicketWatcher.user_id == User.id)
-            .join(
-                UserSlackIdentity,
-                (UserSlackIdentity.user_id == User.id)
-                & (UserSlackIdentity.workspace_id == ticket.workspace_id),
-            )
-            .where(
-                TicketWatcher.ticket_id == ticket.id,
-                User.is_active == True,  # noqa: E712
-            )
-        )).all()
-    if not rows:
-        return
-
-    submitter_slack = await _get_submitter_slack_id(ticket)
-    for user_id, slack_id in rows:
-        if user_id in exclude_user_ids or slack_id in exclude_slack_ids or slack_id == submitter_slack:
-            continue
-        try:
-            await client.chat_postMessage(channel=slack_id, text=text)
-        except Exception:  # noqa: BLE001
-            logger.exception("notify_ticket_watchers: failed to DM watcher %s", slack_id)
-
-
-def _reply_preview(body: str, limit: int = 500) -> str:
-    """Trim long reply bodies for watcher DMs."""
-    return body if len(body) <= limit else body[:limit] + "…"
-
-
 
 async def send_csat_dm(ticket: "Ticket") -> None:
     """DM the ticket submitter 👍/👎 when their ticket moves to a sends_csat=True status."""
@@ -548,14 +490,11 @@ async def post_ticket_update_to_slack(
     assignee_name: Optional[str] = None,
     category_name: Optional[str] = None,
     notify_submitter: bool = True,
-    actor_user_id: Optional[int] = None,
 ) -> None:
     """
     Post a single combined update message to the originating Slack thread
-    covering any combination of status, priority, assignee, and category changes,
-    and DM the ticket's watchers. The thread/submitter part silently no-ops if
-    sync is disabled or there's no thread anchor; watcher DMs only need the
-    ticket's workspace bot to be up.
+    covering any combination of status, priority, assignee, and category
+    changes. Silently no-ops if sync is disabled or there's no thread anchor.
     """
     if ticket.workspace_id is None:
         return
@@ -595,13 +534,6 @@ async def post_ticket_update_to_slack(
         return
 
     text = f"🔄 *{ticket.display_id}* updated by {actor_name}\n" + "\n".join(lines)
-
-    # Watchers first — independent of the thread anchor / two-way sync below.
-    await notify_ticket_watchers(
-        ticket,
-        f"👁 *{ticket.display_id}* — {ticket.title}\nUpdated by {actor_name}\n" + "\n".join(lines),
-        exclude_user_ids={actor_user_id} if actor_user_id is not None else frozenset(),
-    )
 
     async with AsyncSessionLocal() as session:
         workspace = await _get_workspace(session, ticket.workspace_id)
@@ -773,19 +705,6 @@ async def handle_slack_thread_message(
             ticket.display_id,
             author_name_fallback if author_id is None else f"id={author_id}",
         )
-
-        # Watcher DMs — exclude whoever wrote the reply (staff by user id,
-        # anyone by their Slack ID).
-        try:
-            await notify_ticket_watchers(
-                ticket,
-                (f"👁 *{ticket.display_id}* — {ticket.title}\n"
-                 f"💬 New reply from {author_name_fallback}:\n{_reply_preview(text or '(no content)')}"),
-                exclude_user_ids={author_id} if author_id is not None else frozenset(),
-                exclude_slack_ids={slack_user_id} if slack_user_id else frozenset(),
-            )
-        except Exception:  # noqa: BLE001
-            logger.exception("Failed to notify watchers for ticket %s", ticket.display_id)
 
         # Download any attached files from the Slack message
         if files:

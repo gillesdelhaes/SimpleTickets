@@ -36,7 +36,6 @@ from app.models.ticket_csat import TicketCSAT
 from app.models.ticket_read_marker import TicketReadMarker
 from app.models.ticket_reply import TicketReply
 from app.models.ticket_status_config import TicketStatusConfig
-from app.models.ticket_watcher import TicketWatcher
 from app.models.user import User
 from app.models.user_slack_identity import UserSlackIdentity
 
@@ -70,7 +69,6 @@ _EXPORT_MODELS: list[tuple[str, Any]] = [
     ("ticket_csat", TicketCSAT),
     ("audit_log", AuditLog),
     ("ticket_read_markers", TicketReadMarker),
-    ("ticket_watchers", TicketWatcher),
 ]
 
 # Datetime column names per table (used during restore deserialization)
@@ -94,7 +92,6 @@ _DT_COLS: dict[str, set[str]] = {
     "ticket_csat":         {"responded_at"},
     "audit_log":           {"created_at"},
     "ticket_read_markers": {"last_read_at"},
-    "ticket_watchers":     {"created_at"},
     "app_settings":        {"updated_at"},
 }
 

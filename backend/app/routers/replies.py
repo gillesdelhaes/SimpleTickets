@@ -141,20 +141,6 @@ async def create_reply(
     await session.commit()
     await session.refresh(reply)
 
-    # Watcher DMs for public replies — a portal feature, so it fires whether or
-    # not the ticket has a Slack thread (unlike the sync block below).
-    if not is_internal:
-        try:
-            from app.slack.service import _reply_preview, notify_ticket_watchers
-            await notify_ticket_watchers(
-                ticket,
-                (f"👁 *{ticket.display_id}* — {ticket.title}\n"
-                 f"💬 New reply from {current_user.name}:\n{_reply_preview(body.body)}"),
-                exclude_user_ids={current_user.id},
-            )
-        except Exception:  # noqa: BLE001
-            logger.exception("Failed to notify watchers for ticket %s", ticket.display_id)
-
     # ── Web → Slack thread sync ──────────────────────────────────────────────
     # Post public replies back to the originating Slack thread. Store the
     # returned Slack ts as reply.slack_ts so inbound dedup works correctly.
@@ -168,7 +154,6 @@ async def create_reply(
                     ticket,
                     {"status": (old_status if isinstance(old_status, str) else old_status.value, reopen_status)},
                     current_user.name,
-                    actor_user_id=current_user.id,
                 )
 
             slack_ts = await post_reply_to_slack(ticket, body.body, current_user.name)

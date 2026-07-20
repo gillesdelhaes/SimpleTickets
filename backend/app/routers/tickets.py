@@ -475,7 +475,6 @@ async def bulk_update_tickets(
                 await post_ticket_update_to_slack(
                     ticket, changes, current_user.name,
                     assignee_name=assignee_name,
-                    actor_user_id=current_user.id,
                 )
             except Exception:  # noqa: BLE001
                 logger.exception("Failed to post bulk update to Slack for ticket %s", ticket.id)
@@ -663,7 +662,6 @@ async def update_ticket(
                 current_user.name,
                 assignee_name=enriched.assignee_name,
                 category_name=enriched.category_name,
-                actor_user_id=current_user.id,
             )
         except Exception:  # noqa: BLE001
             logger.exception("Failed to post field update to Slack for ticket %s", ticket_id)
@@ -754,9 +752,7 @@ async def close_without_survey(
     enriched = items[0]
     try:
         from app.slack.service import post_ticket_update_to_slack
-        await post_ticket_update_to_slack(
-            ticket, changes, current_user.name, actor_user_id=current_user.id
-        )
+        await post_ticket_update_to_slack(ticket, changes, current_user.name)
     except Exception:  # noqa: BLE001
         logger.exception("Failed to post close update to Slack for ticket %s", ticket_id)
 
@@ -913,18 +909,6 @@ async def mark_duplicate(
     except Exception:  # noqa: BLE001
         logger.exception("Failed to send duplicate DM for ticket %s", ticket_id)
 
-    try:
-        from app.slack.service import notify_ticket_watchers
-        await notify_ticket_watchers(
-            ticket,
-            (f"👁 *{ticket.display_id}* — {ticket.title}\n"
-             f"🔗 Marked as duplicate of *{canonical.display_id}* by {current_user.name}"
-             + (" — ticket closed." if "status" in changes else ".")),
-            exclude_user_ids={current_user.id},
-        )
-    except Exception:  # noqa: BLE001
-        logger.exception("Failed to notify watchers for ticket %s", ticket_id)
-
     items, _ = await _fetch_enriched(session, [Ticket.id == ticket_id])
     return items[0]
 
@@ -981,18 +965,6 @@ async def unmark_duplicate(
     )
 
     await session.commit()
-
-    try:
-        from app.slack.service import notify_ticket_watchers
-        await notify_ticket_watchers(
-            ticket,
-            (f"👁 *{ticket.display_id}* — {ticket.title}\n"
-             f"🔗 Duplicate link removed by {current_user.name}"
-             + (" — ticket reopened." if "status" in changes else ".")),
-            exclude_user_ids={current_user.id},
-        )
-    except Exception:  # noqa: BLE001
-        logger.exception("Failed to notify watchers for ticket %s", ticket_id)
 
     items, _ = await _fetch_enriched(session, [Ticket.id == ticket_id])
     return items[0]

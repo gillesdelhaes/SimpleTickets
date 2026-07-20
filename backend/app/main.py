@@ -22,7 +22,7 @@ from app.routers import (
     ticket_statuses,
     tickets,
 )
-from app.routers import setup, settings as settings_router, slack_users, slack_workspaces, watchers
+from app.routers import setup, settings as settings_router, slack_users, slack_workspaces
 from app.services.sla import start_scheduler, stop_scheduler
 
 
@@ -73,4 +73,3 @@ app.include_router(slack_workspaces.public_router, prefix="/api")
 app.include_router(activity.router,        prefix="/api")
 app.include_router(backup.router,          prefix="/api")
 app.include_router(ticket_statuses.router, prefix="/api")
-app.include_router(watchers.router,        prefix="/api")

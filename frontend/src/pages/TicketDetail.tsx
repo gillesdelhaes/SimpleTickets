@@ -1,12 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import AppShell from '../components/layout/AppShell'
 import AuthImage from '../components/AuthImage'
 import SLABadge from '../components/tickets/SLABadge'
 import { parseSLABarRaw } from '../types/ticket'
 import { useMarkDuplicate, useUnmarkDuplicate } from '../hooks/useDuplicate'
-import { useWatchers, useAddWatcher, useRemoveWatcher } from '../hooks/useWatchers'
 import { useTicket } from '../hooks/useTicket'
 import { useReplies, useAddReply, type ReplyRead } from '../hooks/useReplies'
 import { useTicketHistory, type HistoryEvent } from '../hooks/useTicketHistory'
@@ -550,85 +549,6 @@ function DuplicatePickerRow({ ticket }: { ticket: TicketRead }) {
   )
 }
 
-// ── Watchers row ───────────────────────────────────────────────────────────────
-
-function WatchersRow({ ticketId, currentUserId }: { ticketId: number; currentUserId: number }) {
-  const { data: watchers = [] } = useWatchers(ticketId)
-  const addWatcher = useAddWatcher(ticketId)
-  const removeWatcher = useRemoveWatcher(ticketId)
-
-  // Staff list for the CC dropdown — same tech-accessible endpoint Queue uses
-  const { data: staff } = useQuery<{ id: number; name: string }[]>({
-    queryKey: ['assignees'],
-    queryFn: async () => (await api.get<{ id: number; name: string }[]>('/reports/assignees')).data,
-    staleTime: 5 * 60_000,
-  })
-
-  const amWatching = watchers.some(w => w.user_id === currentUserId)
-  const watcherIds = new Set(watchers.map(w => w.user_id))
-  const addable = (staff ?? []).filter(s => !watcherIds.has(s.id))
-  const busy = addWatcher.isPending || removeWatcher.isPending
-
-  return (
-    <MetaRow label="Watchers">
-      <div className="flex flex-col gap-1.5">
-        {watchers.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {watchers.map(w => (
-              <span
-                key={w.user_id}
-                className="chip"
-                style={{ paddingRight: 8, cursor: 'default' }}
-                title={w.slack_linked ? undefined : "No Slack ID linked in this ticket's workspace — won't receive DMs"}
-              >
-                {w.name}{w.user_id === currentUserId ? ' (you)' : ''}{!w.slack_linked && ' ⚠'}
-                <button
-                  type="button"
-                  onClick={() => removeWatcher.mutate(w.user_id)}
-                  disabled={busy}
-                  aria-label={`Remove watcher ${w.name}`}
-                  className="text-ink-3 hover:text-danger-ink"
-                  style={{ background: 'none', border: 'none', padding: 0, marginLeft: 5, cursor: 'pointer', opacity: 0.7 }}
-                >
-                  <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                    <path d="M1 1l8 8M9 1l-8 8" />
-                  </svg>
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-
-        <button
-          type="button"
-          onClick={() => amWatching ? removeWatcher.mutate(currentUserId) : addWatcher.mutate(currentUserId)}
-          disabled={busy}
-          className="btn ghost sm"
-          style={{ color: 'var(--brand-ink)', justifyContent: 'flex-start' }}
-        >
-          {amWatching ? 'Unwatch' : 'Watch this ticket'}
-        </button>
-
-        {addable.length > 0 && (
-          <div className="selectwrap">
-            <select
-              className="select"
-              value=""
-              disabled={busy}
-              onChange={e => { if (e.target.value) addWatcher.mutate(Number(e.target.value)) }}
-            >
-              <option value="">Add watcher…</option>
-              {addable.map(s => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-          </div>
-        )}
-      </div>
-    </MetaRow>
-  )
-}
-
 // ── Metadata sidebar ───────────────────────────────────────────────────────────
 
 interface MetaSidebarProps {
@@ -798,9 +718,6 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
             <span className="pill use">{ticket.workspace_name}</span>
           </MetaRow>
         )}
-
-        {/* Watchers */}
-        <WatchersRow ticketId={ticket.id} currentUserId={currentUserId} />
 
         {/* Duplicate link */}
         <DuplicatePickerRow ticket={ticket} />
