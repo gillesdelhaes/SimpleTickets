@@ -579,7 +579,7 @@ function WatchersRow({ ticketId, currentUserId }: { ticketId: number; currentUse
                 key={w.user_id}
                 className="chip"
                 style={{ paddingRight: 8, cursor: 'default' }}
-                title={w.slack_linked ? undefined : "No Slack ID linked — won't receive DMs"}
+                title={w.slack_linked ? undefined : "No Slack ID linked in this ticket's workspace — won't receive DMs"}
               >
                 {w.name}{w.user_id === currentUserId ? ' (you)' : ''}{!w.slack_linked && ' ⚠'}
                 <button

@@ -4,7 +4,7 @@ import api from '../lib/api'
 export interface WatcherRead {
   user_id: number
   name: string
-  // false = no Slack ID linked, so this watcher won't receive DMs
+  // false = no Slack ID linked in this ticket's workspace, so this watcher won't receive DMs
   slack_linked: boolean
 }
 

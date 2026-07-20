@@ -5,8 +5,9 @@ GET    /tickets/{id}/watchers            list active watchers
 PUT    /tickets/{id}/watchers/{user_id}  add a watcher (idempotent)
 DELETE /tickets/{id}/watchers/{user_id}  remove a watcher (idempotent)
 
-Watchers receive a Slack DM (if their account has a linked Slack ID) on status
-changes and public replies — see notify_ticket_watchers in slack/service.py.
+Watchers receive a Slack DM (if they have a linked Slack ID in the ticket's
+workspace) on status changes and public replies — see notify_ticket_watchers
+in slack/service.py.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -26,7 +27,7 @@ router = APIRouter(tags=["watchers"])
 class WatcherRead(BaseModel):
     user_id: int
     name: str
-    # False = the watcher has no Slack ID linked, so they won't receive DMs
+    # False = no Slack ID linked in this ticket's workspace, so they won't receive DMs
     slack_linked: bool
 
 
