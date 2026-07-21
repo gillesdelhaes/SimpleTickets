@@ -124,6 +124,7 @@ export default function Queue() {
   const selectedPriorities = searchParams.getAll('priority') as Priority[]
   const assigneeFilter = searchParams.get('assignee') ?? 'all'
   const categoryFilter = searchParams.get('category') ?? 'all'
+  const workspaceFilter = searchParams.get('workspace') ?? 'all'
   const page = parseInt(searchParams.get('page') ?? '0', 10)
 
   // Derive API params — default to non-resolved statuses when no explicit filter is set
@@ -135,6 +136,8 @@ export default function Queue() {
   const unassignedParam = assigneeFilter === 'unassigned'
   const categoryIdParam: number | undefined =
     categoryFilter !== 'all' ? Number(categoryFilter) : undefined
+  const workspaceIdParam: number | undefined =
+    workspaceFilter !== 'all' ? Number(workspaceFilter) : undefined
 
   // Map UI sort column to API sort param (status stays client-side — dynamic ordering)
   const apiSort = sortCol === 'status' ? undefined : sortCol === 'sla' ? 'sla_deadline' : sortCol
@@ -146,6 +149,7 @@ export default function Queue() {
     assignee_id: assigneeIdParam,
     unassigned: unassignedParam,
     category_id: categoryIdParam,
+    workspace_id: workspaceIdParam,
     sort: apiSort,
     sort_dir: apiSortDir,
     limit: PAGE_SIZE,
@@ -193,6 +197,15 @@ export default function Queue() {
     setSearchParams(prev => {
       const next = new URLSearchParams(prev)
       next.set('category', val)
+      next.set('page', '0')
+      return next
+    })
+  }
+
+  function setWorkspace(val: string) {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.set('workspace', val)
       next.set('page', '0')
       return next
     })
@@ -371,6 +384,22 @@ export default function Queue() {
                 label={c.name}
                 active={categoryFilter === String(c.id)}
                 onClick={() => setCategory(String(c.id))}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Only worth a filter once there's more than one workspace to pick from */}
+        {showWorkspaceLabel && workspaces && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <FilterLabel>Workspace</FilterLabel>
+            <FilterChip label="All" active={workspaceFilter === 'all'} onClick={() => setWorkspace('all')} />
+            {workspaces.map(w => (
+              <FilterChip
+                key={w.id}
+                label={w.name}
+                active={workspaceFilter === String(w.id)}
+                onClick={() => setWorkspace(String(w.id))}
               />
             ))}
           </div>

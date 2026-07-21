@@ -285,6 +285,7 @@ async def list_tickets(
     status_filter: list[str] = Query(default=[], alias="status"),
     priority_filter: list[Priority] = Query(default=[], alias="priority"),
     category_id: int | None = Query(default=None),
+    workspace_id: int | None = Query(default=None),
     assignee_id: int | None = Query(default=None),
     unassigned: bool = Query(default=False),
     has_negative_csat: bool = Query(default=False),
@@ -304,6 +305,8 @@ async def list_tickets(
         where.append(Ticket.priority.in_(priority_filter))
     if category_id is not None:
         where.append(Ticket.category_id == category_id)
+    if workspace_id is not None:
+        where.append(Ticket.workspace_id == workspace_id)
     if assignee_id is not None:
         where.append(Ticket.assignee_id == assignee_id)
     if unassigned:
