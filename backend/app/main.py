@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -24,6 +25,19 @@ from app.routers import (
 )
 from app.routers import setup, settings as settings_router, slack_users, slack_workspaces
 from app.services.sla import start_scheduler, stop_scheduler
+
+# No logging was configured anywhere — every logger.info()/logger.warning() call
+# across the app (including "Slack bot connected for workspace X") was silently
+# dropped by Python's default root-logger level (WARNING, no handler). Configure
+# it here, once, before the app starts logging anything.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+# Quiet third-party HTTP client chatter — otherwise every outbound Slack API
+# call logs a request/response line at INFO.
+for _noisy in ("httpx", "httpcore", "aiohttp.client", "apscheduler"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 
 
 @asynccontextmanager
