@@ -5,8 +5,9 @@ Global app configuration (except DATABASE_URL) is stored in the app_settings
 table — Slack workspace credentials live per-row in slack_workspaces instead
 (see models.SlackWorkspace), but reuse encrypt_value/decrypt_value from here.
 Sensitive values are encrypted with Fernet using a key derived from
-APP_SECRET_KEY. The app_secret_key row itself is stored plaintext — it IS
-the encryption key, so encrypting it with itself is circular.
+APP_SECRET_KEY. That master key itself is never stored in the database —
+it's the key that decrypts everything else here, so keeping it in the same
+place would defeat the point. See app/bootstrap.py for where it lives.
 
 Usage:
     from app.services.settings_service import get_setting, set_setting

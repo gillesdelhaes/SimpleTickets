@@ -16,8 +16,8 @@ RUN groupadd --gid 1001 appgroup && \
 WORKDIR /app
 COPY --chown=appuser:appgroup . .
 
-# Attachment storage directory — must be writable by appuser
-RUN mkdir -p /data/attachments && chown -R appuser:appgroup /data
+# Attachment storage + secret key directories — must be writable by appuser
+RUN mkdir -p /data/attachments /data/secret && chown -R appuser:appgroup /data
 
 # Make entrypoint executable
 RUN chmod +x /app/entrypoint.sh

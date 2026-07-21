@@ -32,6 +32,10 @@ services:
         condition: service_healthy
     volumes:
       - attachments:/data/attachments
+      # Master encryption key — deliberately its own volume, separate from
+      # Postgres, so a leaked DB backup/snapshot doesn't also hand over the
+      # key that decrypts every other stored secret. See app/bootstrap.py.
+      - app_secret:/data/secret
     networks:
       - internal
     security_opt:
@@ -79,3 +83,4 @@ networks:
 volumes:
   pgdata:
   attachments:
+  app_secret:

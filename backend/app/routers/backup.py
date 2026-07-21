@@ -285,20 +285,14 @@ async def restore_backup(
             deserialized = [_deserialize_row(r, "app_settings") for r in app_settings_rows]
             await session.execute(sa_insert(AppSetting.__table__), deserialized)
 
-        # Re-seed the per-instance secret rows the truncate wiped and the backup
-        # (deliberately) doesn't carry. Without this:
-        #   - bootstrap finds no app_secret_key row on the next restart and
-        #     generates a NEW master key, making every secret encrypted by the
-        #     still-running process undecryptable;
-        #   - with no jwt_secret row, tokens fall back to being signed with the
-        #     master key until the next restart.
-        # jwt_secret keeps its current value so the restoring admin's session
-        # (and everyone else's) survives the restore.
+        # Re-seed the jwt_secret row the truncate wiped and the backup
+        # (deliberately) doesn't carry. Without it, tokens fall back to being
+        # signed with the master key until the next restart. It keeps its
+        # current value so the restoring admin's session (and everyone
+        # else's) survives the restore.
+        # (app_secret_key itself is never DB-stored — it lives in its own
+        # key file, untouched by restore. See app/bootstrap.py.)
         now = datetime.now(timezone.utc).replace(tzinfo=None)
-        session.add(AppSetting(
-            key="app_secret_key", value=settings.app_secret_key,
-            is_secret=False, group_name="app", updated_at=now,
-        ))
         session.add(AppSetting(
             key="jwt_secret", value=encrypt_value(settings_manager.jwt_secret),
             is_secret=True, group_name="app", updated_at=now,

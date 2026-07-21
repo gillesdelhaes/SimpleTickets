@@ -352,7 +352,6 @@ def upgrade() -> None:
         ),
         [
             {"key": "setup_complete",       "value": None,        "is_secret": False, "group_name": "app",   "updated_at": _now},
-            {"key": "app_secret_key",       "value": None,        "is_secret": False, "group_name": "app",   "updated_at": _now},
             {"key": "timezone",             "value": "UTC",       "is_secret": False, "group_name": "app",   "updated_at": _now},
             {"key": "csat_auto_close_days", "value": "7",         "is_secret": False, "group_name": "app",   "updated_at": _now},
         ],
