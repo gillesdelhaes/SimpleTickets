@@ -4,15 +4,17 @@ from datetime import datetime, timedelta, timezone
 from time import monotonic
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from pydantic import BaseModel
 
 from app.auth.deps import get_current_user
-from app.auth.jwt import create_access_token
+from app.auth.jwt import create_access_token, decode_access_token
 from app.database import get_session
-from app.models import PasswordResetToken, User
+from app.models import PasswordResetToken, RevokedToken, User
 from app.models.user_slack_identity import UserSlackIdentity
 from app.schemas.auth import ForgotPasswordRequest, LoginRequest, ResetPasswordRequest, TokenResponse
 from app.services.audit import write_audit
@@ -20,6 +22,8 @@ from app.services.passwords import hash_password, verify_password
 from app.slack.service import send_password_reset_dm
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+_bearer = HTTPBearer()
 
 # Precomputed bcrypt hash used to equalize login timing when the email doesn't
 # exist (or has no password), so response time doesn't reveal which emails are
@@ -104,6 +108,27 @@ async def login(
     return TokenResponse(
         access_token=create_access_token(user.id, user.email, user.role.value, user.name or "")
     )
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Revoke the presented token's jti so it can't be reused before it
+    would otherwise expire — closes the window a client-side-only logout
+    leaves open (stolen/cached token, shared device)."""
+    try:
+        payload = decode_access_token(credentials.credentials)
+        jti = payload.get("jti")
+        exp = payload.get("exp")
+    except JWTError:
+        return  # already invalid/expired — nothing to revoke
+
+    if jti and exp:
+        expires_at = datetime.fromtimestamp(exp, tz=timezone.utc).replace(tzinfo=None)
+        session.add(RevokedToken(jti=jti, expires_at=expires_at))
+        await session.commit()
 
 
 

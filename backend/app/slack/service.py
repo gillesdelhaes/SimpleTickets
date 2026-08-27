@@ -186,7 +186,58 @@ async def create_ticket_from_slack(
             workspace_id,
             slack_channel_id,
         )
+        await post_ticket_created_notification(ticket, session)
         return ticket
+
+
+async def post_ticket_created_notification(ticket: Ticket, session: AsyncSession) -> None:
+    """
+    Post a visibility announcement to the workspace's configured
+    `ticket_created_target` channel whenever a new ticket is created —
+    regardless of source (Slack DM, /ticket, reaction, message shortcut, or
+    the web UI). No-op if no target is configured.
+
+    Deliberately minimal content: ticket ID, title, priority, category. No
+    requester name and no description — this is a one-way announcement
+    channel, not a second intake surface (see the session-9 rejection of
+    "monitored Slack channels" for intake, which this is not).
+    Fire-and-forget — errors are logged, not raised.
+    """
+    if ticket.workspace_id is None:
+        return
+    workspace = await _get_workspace(session, ticket.workspace_id)
+    if workspace is None or not workspace.ticket_created_target:
+        return
+
+    from app.slack.bot import get_slack_client
+    client = get_slack_client(ticket.workspace_id)
+    if client is None:
+        return
+
+    _PRIORITY_EMOJI = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🔵"}
+    priority_str = ticket.priority.value if hasattr(ticket.priority, "value") else str(ticket.priority)
+    emoji = _PRIORITY_EMOJI.get(priority_str, "⚪")
+
+    category_str = ""
+    if ticket.category_id is not None:
+        category = await session.get(Category, ticket.category_id)
+        if category:
+            category_str = f" · {category.name}"
+
+    text = (
+        f"🎫 *New ticket* — {ticket.display_id}\n"
+        f"{ticket.title}\n"
+        f"Priority: {emoji} {priority_str.capitalize()}{category_str}"
+    )
+
+    try:
+        await client.chat_postMessage(channel=workspace.ticket_created_target, text=text)
+    except Exception:
+        logger.exception(
+            "Failed to post new-ticket announcement for %s to %s",
+            ticket.display_id,
+            workspace.ticket_created_target,
+        )
 
 
 # ── Web → Slack sync ───────────────────────────────────────────────────────────

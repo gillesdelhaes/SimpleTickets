@@ -41,6 +41,12 @@ class SlackWorkspace(SQLModel, table=True):
     # technicians linked to this workspace.
     sla_escalation_target: Optional[str] = Field(default=None)
 
+    # Slack channel ID posted to whenever a new ticket is created in this
+    # workspace (any source: DM, /ticket, reaction, message shortcut, web).
+    # None = no announcement. Deliberately channel-only (no requester name or
+    # description in the message) — visibility, not a second intake surface.
+    ticket_created_target: Optional[str] = Field(default=None)
+
     # Soft on/off switch — disconnects the bot without losing history or
     # credentials. Historical tickets keep pointing at this row either way.
     is_active: bool = Field(default=True)

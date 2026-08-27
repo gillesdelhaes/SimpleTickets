@@ -242,6 +242,7 @@ interface WorkspaceRead {
   trigger_emoji: string
   two_way_sync: boolean
   sla_escalation_target: string | null
+  ticket_created_target: string | null
   is_active: boolean
   online: boolean
 }
@@ -323,6 +324,37 @@ const WORKSPACE_TOKEN_FIELDS: { key: 'bot_token' | 'app_token' | 'signing_secret
   { key: 'signing_secret', label: 'Signing secret',  hint: 'From Basic Information → App Credentials', placeholder: '••••••••' },
 ]
 
+// Sends a real test message to a channel/person ID so a typo or a private
+// channel the bot hasn't been invited to is caught immediately, instead of
+// failing silently in the logs the next time it's actually needed.
+function TestTargetButton({ workspaceId, target }: { workspaceId: number; target: string }) {
+  const [state, setState] = useState<{ ok: boolean; error?: string } | null>(null)
+  const [pending, setPending] = useState(false)
+
+  async function run() {
+    setPending(true); setState(null)
+    try {
+      const result = (await api.post(`/admin/slack-workspaces/${workspaceId}/test-target`, { target })).data
+      setState(result)
+    }
+    catch { setState({ ok: false, error: 'Request failed' }) }
+    finally { setPending(false) }
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <button type="button" className="btn ghost sm" disabled={!target.trim() || pending} onClick={run}>
+        {pending ? 'Sending…' : 'Send test message'}
+      </button>
+      {state && (
+        <span className={`text-[12px] ${state.ok ? 'text-ok-ink' : 'text-danger-ink'}`}>
+          {state.ok ? '✓ Delivered' : `✗ ${state.error}`}
+        </span>
+      )}
+    </div>
+  )
+}
+
 function WorkspaceCard({ workspace, agents }: { workspace: WorkspaceRead; agents: UserRead[] }) {
   const qc = useQueryClient()
   const [expanded, setExpanded] = useState(false)
@@ -334,13 +366,14 @@ function WorkspaceCard({ workspace, agents }: { workspace: WorkspaceRead; agents
   const [testing, setTesting] = useState(false)
   const [saved, setSaved] = useState(false)
   const [escalationModeOverride, setEscalationModeOverride] = useState<'all' | 'person' | 'channel' | null>(null)
+  const [notifyModeOverride, setNotifyModeOverride] = useState<'off' | 'channel' | null>(null)
 
   const patchMutation = useMutation({
     mutationFn: (body: Record<string, unknown>) =>
       api.patch<WorkspaceRead>(`/admin/slack-workspaces/${workspace.id}`, body).then(r => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin-slack-workspaces'] })
-      setEdits({}); setRevealing({}); setEscalationModeOverride(null)
+      setEdits({}); setRevealing({}); setEscalationModeOverride(null); setNotifyModeOverride(null)
       setSaved(true); setTimeout(() => setSaved(false), 2000)
     },
   })
@@ -358,6 +391,14 @@ function WorkspaceCard({ workspace, agents }: { workspace: WorkspaceRead; agents
   const serverEscalationMode: 'all' | 'person' | 'channel' =
     !escalationValue ? 'all' : eligibleAgents.some(a => slackIdFor(a) === escalationValue) ? 'person' : 'channel'
   const escalationMode = escalationModeOverride ?? serverEscalationMode
+
+  const notifyValue = getValue('ticket_created_target', workspace.ticket_created_target ?? '')
+  const notifyMode = notifyModeOverride ?? (notifyValue ? 'channel' : 'off')
+
+  function setNotifyMode(mode: 'off' | 'channel') {
+    setNotifyModeOverride(mode)
+    if (mode === 'off') edit('ticket_created_target', '')
+  }
 
   function setEscalationMode(mode: 'all' | 'person' | 'channel') {
     setEscalationModeOverride(mode)
@@ -557,6 +598,45 @@ function WorkspaceCard({ workspace, agents }: { workspace: WorkspaceRead; agents
                   <p className="text-[12px] text-ink-3 m-0">
                     The channel's ID (not its name) — find it in Slack via the channel name → "View channel details".
                   </p>
+                </>
+              )}
+
+              {escalationMode !== 'all' && escalationValue.trim() && (
+                <TestTargetButton workspaceId={workspace.id} target={escalationValue} />
+              )}
+            </div>
+          </div>
+
+          <div style={{ padding: '14px 22px', display: 'grid', gridTemplateColumns: '220px 1fr', gap: 16, alignItems: 'start' }}>
+            <div>
+              <div className="text-[13.5px] font-semibold text-ink">Announce new tickets to</div>
+              <div className="text-[12px] text-ink-3 mt-0.5">Posts a message (ticket ID, priority, category — no requester name or description) whenever a ticket is created in this workspace</div>
+            </div>
+            <div className="flex flex-col gap-2.5">
+              <div className="selectwrap" style={{ maxWidth: 320 }}>
+                <select
+                  className="select"
+                  value={notifyMode}
+                  onChange={e => setNotifyMode(e.target.value as 'off' | 'channel')}
+                >
+                  <option value="off">Off</option>
+                  <option value="channel">A Slack channel</option>
+                </select>
+              </div>
+
+              {notifyMode === 'channel' && (
+                <>
+                  <input
+                    className="input font-mono"
+                    style={{ maxWidth: 320 }}
+                    value={notifyValue}
+                    onChange={e => edit('ticket_created_target', e.target.value)}
+                    placeholder="C0123456789"
+                  />
+                  <p className="text-[12px] text-ink-3 m-0">
+                    The channel's ID (not its name) — the bot must be invited to it.
+                  </p>
+                  {notifyValue.trim() && <TestTargetButton workspaceId={workspace.id} target={notifyValue} />}
                 </>
               )}
             </div>

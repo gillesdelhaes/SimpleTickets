@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt import decode_access_token
 from app.database import get_session
-from app.models import Role, User
+from app.models import RevokedToken, Role, User
 
 _bearer = HTTPBearer()
 
@@ -18,10 +18,18 @@ async def get_current_user(
     try:
         payload = decode_access_token(credentials.credentials)
         user_id = int(payload["sub"])
+        jti = payload.get("jti")
     except (JWTError, KeyError, ValueError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if jti and await session.get(RevokedToken, jti) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session has been logged out",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

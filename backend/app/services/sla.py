@@ -474,6 +474,15 @@ def start_scheduler() -> None:
         max_instances=1,
         coalesce=True,
     )
+    from app.auth.jwt import prune_revoked_tokens
+    _scheduler.add_job(
+        prune_revoked_tokens,
+        trigger="interval",
+        hours=1,
+        id="prune_revoked_tokens",
+        max_instances=1,
+        coalesce=True,
+    )
     _scheduler.start()
     logger.info("SLA scheduler started — breach check + 15-min warning every 60 s")
 

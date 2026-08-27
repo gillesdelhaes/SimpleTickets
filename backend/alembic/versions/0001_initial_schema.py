@@ -49,6 +49,7 @@ def upgrade() -> None:
         sa.Column("trigger_emoji", sqlmodel.AutoString(), nullable=False, server_default="clipboard"),
         sa.Column("two_way_sync", sa.Boolean(), nullable=False, server_default="true"),
         sa.Column("sla_escalation_target", sqlmodel.AutoString(), nullable=True),
+        sa.Column("ticket_created_target", sqlmodel.AutoString(), nullable=True),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default="true"),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
@@ -285,6 +286,14 @@ def upgrade() -> None:
     )
     op.create_index("ix_password_reset_tokens_user_id", "password_reset_tokens", ["user_id"])
 
+    # ── revoked_tokens ────────────────────────────────────────────────────────
+    op.create_table(
+        "revoked_tokens",
+        sa.Column("jti", sqlmodel.AutoString(), nullable=False),
+        sa.Column("expires_at", sa.DateTime(), nullable=False),
+        sa.PrimaryKeyConstraint("jti"),
+    )
+
     # ── seed: categories ───────────────────────────────────────────────────────
     op.bulk_insert(
         sa.table(
@@ -359,6 +368,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_table("revoked_tokens")
     op.drop_table("password_reset_tokens")
     op.drop_table("ticket_csat")
     op.drop_table("ticket_read_markers")

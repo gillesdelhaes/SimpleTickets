@@ -19,6 +19,7 @@ from app.models.ticket_read_marker import TicketReadMarker  # noqa: F401
 from app.models.ticket_status_config import TicketStatusConfig  # noqa: F401
 from app.models.ticket_csat import TicketCSAT  # noqa: F401
 from app.models.password_reset_token import PasswordResetToken  # noqa: F401
+from app.models.revoked_token import RevokedToken  # noqa: F401
 from app.models.slack_workspace import SlackWorkspace  # noqa: F401
 from app.models.user_slack_identity import UserSlackIdentity  # noqa: F401
 
@@ -39,6 +40,7 @@ __all__ = [
     "TicketStatusConfig",
     "TicketCSAT",
     "PasswordResetToken",
+    "RevokedToken",
     "SlackWorkspace",
     "UserSlackIdentity",
 ]

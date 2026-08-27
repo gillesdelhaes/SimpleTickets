@@ -50,6 +50,7 @@ class WorkspaceRead(BaseModel):
     trigger_emoji: str
     two_way_sync: bool
     sla_escalation_target: Optional[str]
+    ticket_created_target: Optional[str]
     is_active: bool
     online: bool
 
@@ -88,11 +89,16 @@ class WorkspaceUpdate(BaseModel):
     trigger_emoji: Optional[str] = None
     two_way_sync: Optional[bool] = None
     sla_escalation_target: Optional[str] = None
+    ticket_created_target: Optional[str] = None
     is_active: Optional[bool] = None
 
 
 class TestNewRequest(BaseModel):
     bot_token: str
+
+
+class TestTargetRequest(BaseModel):
+    target: str
 
 
 class WorkspaceOption(BaseModel):
@@ -117,6 +123,7 @@ async def _to_read(workspace: SlackWorkspace) -> WorkspaceRead:
         trigger_emoji=workspace.trigger_emoji,
         two_way_sync=workspace.two_way_sync,
         sla_escalation_target=workspace.sla_escalation_target,
+        ticket_created_target=workspace.ticket_created_target,
         is_active=workspace.is_active,
         online=await is_slack_online(workspace.id),
     )
@@ -276,6 +283,12 @@ async def update_workspace(
             changes["sla_escalation_target"] = {"from": workspace.sla_escalation_target, "to": new_target}
             workspace.sla_escalation_target = new_target
 
+    if "ticket_created_target" in provided:
+        new_notify_target = body.ticket_created_target or None
+        if new_notify_target != workspace.ticket_created_target:
+            changes["ticket_created_target"] = {"from": workspace.ticket_created_target, "to": new_notify_target}
+            workspace.ticket_created_target = new_notify_target
+
     if "is_active" in provided and body.is_active is not None:
         if body.is_active != workspace.is_active:
             changes["is_active"] = {"from": workspace.is_active, "to": body.is_active}
@@ -340,6 +353,42 @@ async def test_existing_workspace(
         client = WebClient(token=decrypt_value(workspace.bot_token))
         response = await asyncio.to_thread(client.auth_test)
         return {"ok": True, "team_name": response.get("team"), "bot_name": response.get("user")}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
+
+
+@router.post("/{workspace_id}/test-target")
+async def test_notification_target(
+    workspace_id: int,
+    body: TestTargetRequest,
+    current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """
+    Send a real test message to a channel/user ID before it's relied on for
+    SLA escalations or new-ticket announcements — this is the fix for the
+    known gap where a wrong or private channel ID only ever failed silently
+    in the logs, 15 minutes before a real SLA breach. Tests the raw string
+    passed in, not necessarily what's saved yet, so an admin can validate
+    before hitting Save.
+    """
+    workspace = await session.get(SlackWorkspace, workspace_id)
+    if workspace is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    if not workspace.bot_token:
+        return {"ok": False, "error": "No bot token configured"}
+    target = body.target.strip()
+    if not target:
+        return {"ok": False, "error": "No target given"}
+    try:
+        from slack_sdk import WebClient
+        client = WebClient(token=decrypt_value(workspace.bot_token))
+        await asyncio.to_thread(
+            client.chat_postMessage,
+            channel=target,
+            text="✅ SimpleTickets test message — this target is configured correctly.",
+        )
+        return {"ok": True}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": str(exc)}
 

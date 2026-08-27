@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import api from '../lib/api'
 
 export type UserRole = 'technician' | 'admin'
 
@@ -86,6 +87,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const logout = useCallback(() => {
+    // Best-effort server-side revocation so the token can't be replayed
+    // before it would otherwise expire — always clear local state regardless
+    // of whether the request succeeds (e.g. offline), so the UI never gets
+    // stuck signed in.
+    api.post('/auth/logout').catch(() => {})
     localStorage.removeItem('st_token')
     setToken(null)
     setUser(null)

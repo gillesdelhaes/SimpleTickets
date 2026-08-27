@@ -272,6 +272,13 @@ async def create_ticket(
                 ticket.display_id,
             )
 
+    if workspace_id is not None:
+        try:
+            from app.slack.service import post_ticket_created_notification
+            await post_ticket_created_notification(ticket, session)
+        except Exception:  # noqa: BLE001
+            logger.warning("Failed to post new-ticket announcement for %s", ticket.display_id)
+
     # Return enriched response
     items, _ = await _fetch_enriched(session, [Ticket.id == ticket.id])
     return items[0]
