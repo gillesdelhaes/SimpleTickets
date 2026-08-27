@@ -1,13 +1,16 @@
 services:
   db:
-    image: postgres:16-alpine
+    build: ./db
     restart: unless-stopped
     environment:
       POSTGRES_DB: simpletickets
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Postgres password — generated on first boot, persisted here, shared
+      # read-only with api. Its own volume for the same reason as app_secret
+      # below: never in the same failure domain as the data it protects.
+      - db_secret:/data/db-secret
     networks:
       - internal
     healthcheck:
@@ -25,8 +28,6 @@ services:
   api:
     build: ./backend
     restart: unless-stopped
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:${DB_PASSWORD:-postgres}@db:5432/simpletickets
     depends_on:
       db:
         condition: service_healthy
@@ -36,6 +37,9 @@ services:
       # Postgres, so a leaked DB backup/snapshot doesn't also hand over the
       # key that decrypts every other stored secret. See app/bootstrap.py.
       - app_secret:/data/secret
+      # Same db_secret volume as db, read-only — api reads the generated
+      # password to build DATABASE_URL itself (see backend/entrypoint.sh).
+      - db_secret:/data/db-secret:ro
     networks:
       - internal
     security_opt:
@@ -84,3 +88,4 @@ volumes:
   pgdata:
   attachments:
   app_secret:
+  db_secret:
