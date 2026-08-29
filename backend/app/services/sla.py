@@ -205,15 +205,26 @@ async def apply_sla_status_change(
         ticket.sla_paused_at = now
 
     elif not pauses and ticket.sla_paused_at is not None:
-        # Leaving a pausing status — extend the deadline by the SLA-clock time
-        # spent paused. Under business hours this counts only working time, so a
-        # weekend-long pause doesn't gift 48h of SLA budget.
-        paused_secs = await _elapsed_sla_seconds(ticket.sla_paused_at, now, session)
+        # Leaving a pausing status — recompute the deadline by walking the SLA
+        # budget that was still remaining at pause time forward from *now* (the
+        # resume instant), rather than adding a flat pause-duration offset to
+        # the old deadline. The flat-offset approach broke whenever business
+        # hours are enabled and the pause spans outside them (e.g. an
+        # overnight/weekend pending_user pause): the business time elapsed
+        # during the pause is small, but the old deadline can already be in
+        # the wall-clock past by the time we resume, so adding a small offset
+        # to it still lands in the past — a spurious immediate breach despite
+        # budget remaining. Walking forward from `now` is always correct, and
+        # reduces to exactly the old formula when business hours are disabled
+        # (business time equals wall-clock time in that case).
+        paused_at = ticket.sla_paused_at
+        paused_secs = await _elapsed_sla_seconds(paused_at, now, session)
         ticket.sla_paused_seconds = (ticket.sla_paused_seconds or 0) + paused_secs
         ticket.sla_paused_at = None
 
         if ticket.sla_deadline is not None:
-            ticket.sla_deadline = ticket.sla_deadline + timedelta(seconds=paused_secs)
+            remaining_secs = await _elapsed_sla_seconds(paused_at, ticket.sla_deadline, session)
+            ticket.sla_deadline = await compute_sla_deadline(now, remaining_secs / 60, session)
 
 
 # ── Scheduled breach-detection job ────────────────────────────────────────────
