@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.deps import require_admin
 from app.config import settings, settings_manager
 from app.services.audit import write_audit
+from app.services.rate_limit import RateLimiter
 from app.services.settings_service import encrypt_value
 from app.database import get_session
 from app.models.app_setting import AppSetting
@@ -41,6 +42,12 @@ from app.models.user_slack_identity import UserSlackIdentity
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["backup"])
+
+# The export builds the whole zip in memory before streaming it (see
+# download_backup below) — one call per admin per window keeps repeated or
+# concurrent calls from stacking multiple full in-memory copies inside the
+# 512MB api container. Generous enough for hourly/daily cron use.
+_backup_limiter = RateLimiter(limit=1, window_seconds=60)
 
 BACKUP_VERSION = 1
 
@@ -133,6 +140,7 @@ async def download_backup(
     session: AsyncSession = Depends(get_session),
 ):
     """Stream a zip archive containing all data and attachment files."""
+    _backup_limiter.check(str(admin.id))
     tables: dict[str, list[dict]] = {}
 
     for table_name, model in _EXPORT_MODELS:

@@ -11,11 +11,14 @@ from app.database import get_session
 from app.models import Ticket, TicketHistory, TicketReply, User
 from app.models.ticket_status_config import TicketStatusConfig
 from app.schemas.reply import ReplyCreate, ReplyRead
+from app.services.rate_limit import RateLimiter
 from app.utils import get_ticket_or_404, utcnow
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["replies"])
+
+_reply_limiter = RateLimiter(limit=60, window_seconds=60)
 
 
 def _to_read(reply: TicketReply, author_name: str | None) -> ReplyRead:
@@ -75,6 +78,7 @@ async def create_reply(
     Add a reply to a ticket.
     Replying to a resolved ticket with a public reply re-opens it to in_progress.
     """
+    _reply_limiter.check(str(current_user.id))
     ticket = await get_ticket_or_404(session, ticket_id)
     now = utcnow()
 

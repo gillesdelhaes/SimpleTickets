@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 import aiofiles
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import get_current_user
@@ -30,9 +30,19 @@ from app.config import settings
 from app.database import get_session
 from app.models import TicketAttachment, User
 from app.schemas.attachment import AttachmentRead
+from app.services.rate_limit import RateLimiter
 from app.utils import get_ticket_or_404, utcnow
 
 router = APIRouter(tags=["attachments"])
+
+# 20 uploads/min/user — generous for real usage, bounds a compromised or
+# scripted account from hammering disk writes.
+_upload_limiter = RateLimiter(limit=20, window_seconds=60)
+
+# Total attachment storage across the whole instance. Per-file is already
+# capped at 10MB, but with no aggregate cap one account could otherwise fill
+# the host disk with unlimited uploads over time.
+_MAX_TOTAL_STORAGE_BYTES = 5 * 1024 * 1024 * 1024  # 5 GB
 
 # Allowed MIME types — images, PDFs, common office docs, plain text
 _ALLOWED_MIME_PREFIXES = ("image/",)
@@ -87,9 +97,18 @@ async def upload_attachment(
     Upload a file attachment to a ticket (or to a specific reply).
     Max size: {max_mb} MB. Allowed types: images, PDF, office docs, plain text.
     """
+    _upload_limiter.check(str(current_user.id))
     await get_ticket_or_404(session, ticket_id)
 
     max_bytes = 10 * 1024 * 1024  # 10 MB hard limit
+
+    total_result = await session.execute(select(func.coalesce(func.sum(TicketAttachment.size_bytes), 0)))
+    total_stored = total_result.scalar_one()
+    if total_stored >= _MAX_TOTAL_STORAGE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
+            detail="Attachment storage limit reached — contact an administrator.",
+        )
 
     contents = await file.read(max_bytes + 1)
     if len(contents) > max_bytes:

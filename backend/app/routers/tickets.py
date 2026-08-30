@@ -21,6 +21,7 @@ from app.models.slack_workspace import SlackWorkspace
 from app.models.ticket_status_config import TicketStatusConfig
 from app.schemas.ticket import BulkTicketUpdate, CloseTicketRequest, MarkDuplicateRequest, TicketCreate, TicketListResponse, TicketRead, TicketUpdate
 from app.services.audit import write_audit
+from app.services.rate_limit import RateLimiter
 from app.services.sla import apply_sla_status_change, compute_sla_deadline
 from app.utils import get_ticket_or_404, utcnow
 
@@ -28,6 +29,8 @@ from app.utils import get_ticket_or_404, utcnow
 _HISTORY_DISPLAY_FIELDS = {"status", "assignee_id", "priority", "category_id", "duplicate_of", "csat_response"}
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
+
+_ticket_create_limiter = RateLimiter(limit=30, window_seconds=60)
 
 _PRIORITY_ORDER = case(
     {"critical": 0, "high": 1, "medium": 2, "low": 3},
@@ -186,6 +189,7 @@ async def create_ticket(
       the bot sends them a DM and saves the thread anchor for future sync.
     - SLA deadline is calculated from the matching SLA policy (if any).
     """
+    _ticket_create_limiter.check(str(current_user.id))
     now = utcnow()
 
     # Validate category if provided
