@@ -18,6 +18,19 @@ services:
       - db_secret:/data/db-secret
     networks:
       - internal
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      # postgres's own entrypoint starts as root to chown the data dir, then
+      # de-escalates to the postgres user via gosu — needs these to do that,
+      # nothing broader.
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d simpletickets"]
       interval: 5s
@@ -51,6 +64,8 @@ services:
       - internal
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
     healthcheck:
       test: ["CMD", "python", "-c",
              "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
@@ -71,9 +86,16 @@ services:
     cpus: 0.5
     ports:
       - "3000:80"
+      - "443:443"
     depends_on:
       api:
         condition: service_healthy
+    volumes:
+      # Optional: drop fullchain.pem + privkey.pem in here to serve HTTPS
+      # directly (see README "TLS"). Empty/missing — the default — falls
+      # back to plain HTTP on :80 only; nothing listens on :443 in that
+      # case, so publishing the port above is harmless either way.
+      - ./certs:/etc/nginx/certs:ro
     networks:
       - internal
     read_only: true
@@ -81,8 +103,21 @@ services:
       - /var/cache/nginx
       - /var/run
       - /tmp
+      # nginx-entrypoint.sh writes the chosen (TLS or plain-HTTP) config
+      # here at container start — needs to be writable despite read_only.
+      - /etc/nginx/conf.d
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      # nginx's master process binds port 80/443 and chowns cache/temp dirs
+      # as root, then each worker drops to the nginx user — the full set
+      # that start-as-root-then-de-escalate dance needs, nothing broader.
+      - NET_BIND_SERVICE
+      - CHOWN
+      - SETGID
+      - SETUID
     logging:
       driver: json-file
       options:

@@ -51,6 +51,25 @@ docker compose up -d
 Open **http://localhost:3000** — the setup wizard runs on first launch, creates
 your admin account, and optionally connects Slack. No config files, no env vars.
 
+## TLS
+
+By default this serves plain HTTP on :3000 — fine for `localhost`, **not safe
+to expose on a real network as-is**: login credentials and session tokens
+would travel in cleartext.
+
+Two ways to fix that, pick one:
+
+- **Put this behind a TLS-terminating reverse proxy or load balancer you
+  already run** (very common in a corporate environment) — point it at this
+  container's `:3000`, terminate TLS there, and don't publish `:3000`/`:443`
+  externally yourself.
+- **Or let this container terminate TLS itself**: drop your certificate as
+  `certs/fullchain.pem` and `certs/privkey.pem` next to `docker-compose.yml`,
+  then `docker compose up -d` (or restart the `frontend` service). It's
+  detected automatically — HTTP on :80 starts redirecting to HTTPS on :443,
+  no config file to edit. Remove both files and restart to go back to plain
+  HTTP. `certs/` is gitignored; never commit a real private key.
+
 ## Slack setup
 
 SimpleTickets uses a **private Slack app** in your workspace running over Socket

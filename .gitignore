@@ -47,6 +47,7 @@ data/
 *.key
 *.p12
 secrets/
+certs/
 ROADMAP.md
 BLOCKERS.md
 TODO.md
