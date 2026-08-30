@@ -59,6 +59,24 @@ def slack_escape(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def slack_test_error_message(exc: Exception) -> str:
+    """
+    Turn an exception from a Slack credential/target test into a message
+    safe to return to the client. Slack SDK errors (bad token, invalid
+    channel, network issue reaching slack.com) are Slack's own response
+    text, not app-internal detail, and are genuinely useful for an admin
+    diagnosing their own credentials — passed through as-is. Anything else
+    is an unexpected bug, not something to hand back verbatim; log it
+    server-side and return a generic message instead.
+    """
+    from slack_sdk.errors import SlackClientError
+
+    if isinstance(exc, SlackClientError):
+        return str(exc)
+    logger.exception("Unexpected error during Slack credential/target test")
+    return "Unexpected error — check server logs"
+
+
 # ── Workspace / staff identity lookups ──────────────────────────────────────────
 
 

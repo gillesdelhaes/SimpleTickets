@@ -21,6 +21,7 @@ from app.models.slack_workspace import SlackWorkspace
 from app.models.user import User
 from app.schemas.fields import LooseEmail
 from app.services.passwords import hash_password
+from app.slack.service import slack_test_error_message
 from app.services.settings_service import (
     encrypt_value,
     has_any_admin,
@@ -152,7 +153,7 @@ async def test_slack(
             "bot_name": response.get("user"),
         }
     except Exception as exc:
-        return {"ok": False, "error": str(exc)}
+        return {"ok": False, "error": slack_test_error_message(exc)}
 
 
 # ── POST /setup/slack ──────────────────────────────────────────────────────────

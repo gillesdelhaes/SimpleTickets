@@ -207,6 +207,32 @@ _MAX_RESTORE_BYTES = 500 * 1024 * 1024          # 500 MB uploaded (compressed)
 _MAX_UNCOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB decompressed (zip-bomb guard)
 
 
+def _bounded_unzip_read(zf: zipfile.ZipFile, name: str, budget: list[int]) -> bytes:
+    """
+    Read one zip entry's actual decompressed bytes, enforcing `budget[0]` as
+    a running cap shared across every entry read from this archive.
+
+    Unlike summing zi.file_size from the central directory (a cheap
+    pre-check kept below), this counts real bytes as they come out of the
+    decompressor — a hand-crafted zip can lie about file_size, but can't
+    lie about how much data it actually decompresses to.
+    """
+    chunks = []
+    with zf.open(name) as f:
+        while True:
+            chunk = f.read(1024 * 1024)
+            if not chunk:
+                break
+            budget[0] -= len(chunk)
+            if budget[0] < 0:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    "Backup archive is too large when decompressed",
+                )
+            chunks.append(chunk)
+    return b"".join(chunks)
+
+
 @router.post("/restore", status_code=status.HTTP_200_OK)
 async def restore_backup(
     request: Request,
@@ -243,15 +269,22 @@ async def restore_backup(
     except zipfile.BadZipFile:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid zip file")
 
-    # Zip-bomb guard: reject archives that would balloon on decompression.
+    # Zip-bomb guard, cheap pre-check: reject archives whose *declared* size
+    # already blows the budget, without decompressing anything. This alone
+    # isn't trustworthy (see _bounded_unzip_read) but avoids wasted work for
+    # the common/honest case.
     if sum(zi.file_size for zi in zf.infolist()) > _MAX_UNCOMPRESSED_BYTES:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Backup archive is too large when decompressed")
 
     if "backup.json" not in zf.namelist():
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "zip does not contain backup.json")
 
+    # Real guard: shared budget enforced against actual decompressed bytes
+    # as they're read, below and in the attachment-restore loop further down.
+    decompress_budget = [_MAX_UNCOMPRESSED_BYTES]
+
     try:
-        payload = json.loads(zf.read("backup.json"))
+        payload = json.loads(_bounded_unzip_read(zf, "backup.json", decompress_budget))
     except json.JSONDecodeError:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "backup.json is not valid JSON")
 
@@ -361,7 +394,7 @@ async def restore_backup(
             if not dest.is_relative_to(storage_root):
                 continue  # skip path-traversal attempts
             dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(zf.read(name))
+            dest.write_bytes(_bounded_unzip_read(zf, name, decompress_budget))
             restored_files += 1
 
     spool.close()
