@@ -77,6 +77,7 @@ async def login(
 ) -> TokenResponse:
     """Authenticate with email + password. Returns a Bearer JWT."""
     _check_rate_limit(_client_ip(request))
+    ip = _client_ip(request)
 
     result = await session.execute(
         select(User).where(User.email == body.email.lower())
@@ -89,20 +90,43 @@ async def login(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
+    async def _log_failure(reason: str) -> None:
+        await write_audit(
+            session,
+            actor_id=user.id if user else None,
+            action="user.login_failed",
+            entity_type="user",
+            entity_id=user.id if user else None,
+            payload={"email": body.email.lower(), "reason": reason},
+            ip_address=ip,
+        )
+        await session.commit()
+
     if user is None or not user.hashed_password:
         # Run a verify against a dummy hash so a missing account costs the same
         # ~bcrypt time as a wrong password for a real one (no timing oracle).
         verify_password(body.password, _DUMMY_PASSWORD_HASH)
+        await _log_failure("unknown_account")
         raise _invalid
     if not verify_password(body.password, user.hashed_password):
+        await _log_failure("bad_password")
         raise _invalid
     if not user.is_active:
+        await _log_failure("account_disabled")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is disabled — contact your administrator",
         )
 
     user.last_login_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    await write_audit(
+        session,
+        actor_id=user.id,
+        action="user.login",
+        entity_type="user",
+        entity_id=user.id,
+        ip_address=ip,
+    )
     await session.commit()
 
     return TokenResponse(
@@ -112,6 +136,7 @@ async def login(
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(_bearer),
     session: AsyncSession = Depends(get_session),
 ) -> None:
@@ -122,12 +147,21 @@ async def logout(
         payload = decode_access_token(credentials.credentials)
         jti = payload.get("jti")
         exp = payload.get("exp")
-    except PyJWTError:
+        user_id = int(payload["sub"]) if "sub" in payload else None
+    except (PyJWTError, KeyError, ValueError):
         return  # already invalid/expired — nothing to revoke
 
     if jti and exp:
         expires_at = datetime.fromtimestamp(exp, tz=timezone.utc).replace(tzinfo=None)
         session.add(RevokedToken(jti=jti, expires_at=expires_at))
+        await write_audit(
+            session,
+            actor_id=user_id,
+            action="user.logout",
+            entity_type="user",
+            entity_id=user_id,
+            ip_address=_client_ip(request),
+        )
         await session.commit()
 
 

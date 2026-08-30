@@ -61,9 +61,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="SimpleTickets API",
     version="0.1.0",
-    docs_url="/api/docs",
-    redoc_url="/api/redoc",
-    openapi_url="/api/openapi.json",
+    docs_url="/api/docs" if settings.enable_api_docs else None,
+    redoc_url="/api/redoc" if settings.enable_api_docs else None,
+    openapi_url="/api/openapi.json" if settings.enable_api_docs else None,
     lifespan=lifespan,
 )
 

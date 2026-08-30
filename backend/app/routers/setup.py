@@ -82,6 +82,16 @@ async def setup_admin(
     session: AsyncSession = Depends(_require_setup_incomplete),
 ) -> dict:
     """Create the first admin account."""
+    # Serialize concurrent calls to this endpoint specifically (a Postgres
+    # advisory lock scoped to this transaction, released automatically on
+    # commit/rollback) — without this, two unauthenticated requests racing
+    # during the setup window could both pass the has_any_admin() check
+    # before either commits, and both become admin. Doesn't touch the users
+    # table itself, so legitimate multi-admin creation via the authenticated
+    # admin UI afterward is unaffected.
+    from sqlalchemy import text
+    await session.execute(text("SELECT pg_advisory_xact_lock(hashtext('simpletickets:setup_admin'))"))
+
     # The wizard only ever creates one admin. Refuse once any admin exists so
     # the unauthenticated window (before setup_complete is set) can't be used to
     # add extra admin accounts. Further admins are created from the admin UI.

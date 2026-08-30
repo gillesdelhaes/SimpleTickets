@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     # models.SlackWorkspace) — not here.
     storage_local_path: str = "/data/attachments"
 
+    # Off by default — the interactive API docs enumerate every endpoint,
+    # field name, and enum value unauthenticated. Set ENABLE_API_DOCS=true
+    # to turn them back on for local development.
+    enable_api_docs: bool = False
+
 
 settings = Settings()
 
