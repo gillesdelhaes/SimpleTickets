@@ -22,6 +22,7 @@ from app.models import Category, Ticket, TicketCSAT, TicketHistory, TicketReply
 from app.models.enums import Priority
 from app.models.slack_workspace import SlackWorkspace
 from app.models.ticket_status_config import TicketStatusConfig
+from app.services.rate_limit import RateLimiter
 from app.slack.service import (
     _download_slack_files,
     build_home_view,
@@ -30,9 +31,16 @@ from app.slack.service import (
     handle_slack_thread_message,
     post_reply_to_slack,
     post_ticket_update_to_slack,
+    slack_escape,
 )
 
 logger = logging.getLogger(__name__)
+
+# Bounds ticket creation and thread-reply flooding from a single Slack user —
+# any workspace member can DM the bot with no SimpleTickets account, so this
+# is the one place inbound Slack messages funnel through regardless of
+# whether they end up creating a ticket or syncing a reply.
+_message_limiter = RateLimiter(limit=20, window_seconds=60)
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -445,6 +453,10 @@ def register_handlers(app: Any, workspace: SlackWorkspace) -> None:
         thread_ts: str = event.get("thread_ts", "")
         event_files: list[dict] = event.get("files", [])
 
+        if slack_user_id and not _message_limiter.allow(slack_user_id):
+            logger.warning("Rate-limited inbound Slack message from user %s", slack_user_id)
+            return
+
         # Slack doesn't always populate channel_type on threaded DM replies,
         # so detect DM channels by ID prefix as a fallback.
         is_dm = channel_type == "im" or channel_id.startswith("D")
@@ -556,7 +568,7 @@ def register_handlers(app: Any, workspace: SlackWorkspace) -> None:
                     channel=channel_id,
                     text=(
                         f"📋 Ticket *{ticket.display_id}* has been submitted.\n"
-                        f"*{ticket.title}*\n"
+                        f"*{slack_escape(ticket.title)}*\n"
                         f"Our team will get back to you shortly. Reply here to add a comment."
                     ),
                 )
@@ -694,7 +706,7 @@ def register_handlers(app: Any, workspace: SlackWorkspace) -> None:
                     channel=slack_user_id,
                     text=(
                         f"📋 Ticket *{ticket.display_id}* has been submitted.\n"
-                        f"*{ticket.title}*\n"
+                        f"*{slack_escape(ticket.title)}*\n"
                         f"Our team will get back to you shortly. Reply here to add a comment."
                     ),
                 )
@@ -763,7 +775,7 @@ def register_handlers(app: Any, workspace: SlackWorkspace) -> None:
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": f"*{ticket.title}*\nYour reply will be added to the ticket and posted in the support thread.",
+                        "text": f"*{slack_escape(ticket.title)}*\nYour reply will be added to the ticket and posted in the support thread.",
                     },
                 },
                 {
@@ -1163,7 +1175,7 @@ def register_handlers(app: Any, workspace: SlackWorkspace) -> None:
             try:
                 await client.chat_postMessage(
                     channel=triggering_user_id,
-                    text=f"📋 Ticket *{ticket.display_id}* — *{ticket.title}* created (submitted by {author_name}).",
+                    text=f"📋 Ticket *{ticket.display_id}* — *{slack_escape(ticket.title)}* created (submitted by {slack_escape(author_name)}).",
                 )
             except Exception:  # noqa: BLE001
                 logger.exception(

@@ -46,6 +46,19 @@ _PRIORITY_LABELS: dict[str, str] = {
 }
 
 
+def slack_escape(text: str) -> str:
+    """
+    Escape Slack mrkdwn control characters in user-controlled text before
+    interpolating it into a message. Without this, a ticket title or reply
+    body containing `<!channel>`, `<!here>`, `<@Uxxxx>`, or `<https://evil|
+    looks-trusted>` renders as a real channel ping, mention, or clickable
+    link once posted by the bot — and titles are settable by any Slack
+    workspace member (DM/`/ticket`) or any authenticated web user, not just
+    staff. Per Slack's own escaping rules: & first, then < and >.
+    """
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 # ── Workspace / staff identity lookups ──────────────────────────────────────────
 
 
@@ -226,7 +239,7 @@ async def post_ticket_created_notification(ticket: Ticket, session: AsyncSession
 
     text = (
         f"🎫 *New ticket* — {ticket.display_id}\n"
-        f"{ticket.title}\n"
+        f"{slack_escape(ticket.title)}\n"
         f"Priority: {emoji} {priority_str.capitalize()}{category_str}"
     )
 
@@ -269,8 +282,8 @@ async def notify_assignee_dm(ticket: Ticket, assignee_user_id: int, actor_name: 
             channel=assignee_slack_id,
             text=(
                 f"👤 *You've been assigned a ticket*\n"
-                f"*{ticket.display_id}* — {ticket.title}\n"
-                f"Priority: {emoji} {priority_str.capitalize()} · Assigned by {actor_name}"
+                f"*{ticket.display_id}* — {slack_escape(ticket.title)}\n"
+                f"Priority: {emoji} {priority_str.capitalize()} · Assigned by {slack_escape(actor_name)}"
             ),
         )
     except Exception:  # noqa: BLE001
@@ -299,7 +312,7 @@ async def notify_duplicate_dm(ticket: Ticket, canonical: Ticket) -> None:
             channel=submitter_slack_id,
             text=(
                 f"🔗 Your ticket *{ticket.display_id}* has been marked as a duplicate of "
-                f"*{canonical.display_id}* — {canonical.title}\n"
+                f"*{canonical.display_id}* — {slack_escape(canonical.title)}\n"
                 f"It has been closed. If you think this is incorrect, please reply here."
             ),
         )
@@ -328,7 +341,7 @@ async def notify_reporter_dm(ticket: Ticket, slack_user_id: str) -> None:
             channel=slack_user_id,
             text=(
                 f"📋 A ticket has been opened on your behalf.\n"
-                f"*{ticket.display_id}* — {ticket.title}\n"
+                f"*{ticket.display_id}* — {slack_escape(ticket.title)}\n"
                 f"Our team will be in touch shortly. Reply here to add a comment."
             ),
         )
@@ -424,7 +437,7 @@ async def send_csat_dm(ticket: "Ticket") -> None:
                         "type": "mrkdwn",
                         "text": (
                             f"✅ *{ticket.display_id}* has been marked as resolved.\n"
-                            f"_{ticket.title}_\n\nDid we solve your issue?"
+                            f"_{slack_escape(ticket.title)}_\n\nDid we solve your issue?"
                         ),
                     },
                 },
@@ -501,7 +514,7 @@ async def post_reply_to_slack(
         result = await client.chat_postMessage(
             channel=ticket.slack_channel_id,
             thread_ts=ticket.slack_message_ts,
-            text=f"*{author_name}:* {reply_body}",
+            text=f"*{slack_escape(author_name)}:* {slack_escape(reply_body)}",
         )
         ts = result.get("ts")
         logger.debug(
@@ -521,7 +534,7 @@ async def post_reply_to_slack(
                 channel=submitter_slack_id,
                 text=(
                     f"💬 *New reply on {ticket.display_id}*\n"
-                    f"*{author_name}:* {reply_body}\n"
+                    f"*{slack_escape(author_name)}:* {slack_escape(reply_body)}\n"
                     f"_Open your support thread above to reply._"
                 ),
             )
@@ -939,7 +952,7 @@ async def build_home_view(slack_user_id: str, client: Any, workspace_id: int, ta
                     "type": "mrkdwn",
                     "text": (
                         f"{status_emoji} *{status_label}*  ·  {priority_emoji} {priority_str.capitalize()}\n"
-                        f"*{ticket.display_id}* — {ticket.title}"
+                        f"*{ticket.display_id}* — {slack_escape(ticket.title)}"
                     ),
                 },
             }
@@ -1269,9 +1282,9 @@ async def post_sla_warning_to_technicians(
 
     text = (
         f"{headline}\n"
-        f"*{ticket.display_id}* · {ticket.title}\n"
+        f"*{ticket.display_id}* · {slack_escape(ticket.title)}\n"
         f"Priority: {emoji} {priority_str.capitalize()} · "
-        f"Assignee: {assignee_name} · "
+        f"Assignee: {slack_escape(assignee_name)} · "
         f"Deadline: {deadline_str}"
         f"{thread_hint}"
     )
