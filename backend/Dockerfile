@@ -3,8 +3,17 @@ FROM python:3.12-slim AS deps
 
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends libmagic1 && rm -rf /var/lib/apt/lists/*
-COPY pyproject.toml .
-RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir .
+COPY pyproject.toml uv.lock ./
+# Install from the exact versions pinned in uv.lock, not the floor-pinned
+# ranges in pyproject.toml — reproducible builds. `--frozen` uses the lock
+# as committed, no network resolve; regenerate it with `uv lock` after
+# changing dependencies. Deps only (--no-emit-project) so this layer stays
+# cached across source changes; the app itself isn't pip-installed at all,
+# it runs via cwd-relative imports (see WORKDIR below).
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir uv \
+    && uv export --frozen --no-hashes --no-emit-project -o requirements.lock.txt \
+    && pip install --no-cache-dir -r requirements.lock.txt
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
 FROM deps AS runtime
