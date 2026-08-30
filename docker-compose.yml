@@ -2,6 +2,11 @@ services:
   db:
     build: ./db
     restart: unless-stopped
+    # Caps sized for a small single-VM deployment — one team's worth of
+    # tickets, not a multi-tenant SaaS. Raise if the host has room to spare;
+    # the point is stopping one runaway container from starving the others.
+    mem_limit: 512m
+    cpus: 1.0
     environment:
       POSTGRES_DB: simpletickets
       POSTGRES_USER: postgres
@@ -28,6 +33,8 @@ services:
   api:
     build: ./backend
     restart: unless-stopped
+    mem_limit: 512m
+    cpus: 1.0
     depends_on:
       db:
         condition: service_healthy
@@ -60,6 +67,8 @@ services:
   frontend:
     build: ./frontend
     restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.5
     ports:
       - "3000:80"
     depends_on:

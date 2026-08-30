@@ -58,6 +58,57 @@ Mode — no public webhook URL or port forwarding needed. Both the setup wizard 
 **Settings → Slack** include a copy-paste app manifest that configures every
 scope, event, and command automatically; you only paste back three tokens.
 
+## Backups
+
+There are two separate things to back up, and they don't overlap on purpose.
+
+**Data** — tickets, users, settings, attachments — via `Settings → Backup` in
+the admin UI, or the same endpoint from a script: `GET /api/admin/backup`
+(admin-only, streams a zip). `scripts/backup.sh` wraps that for cron:
+
+```bash
+ST_ADMIN_EMAIL=admin@example.com \
+ST_ADMIN_PASSWORD=your-password \
+ST_BACKUP_DIR=/var/backups/simpletickets \
+ST_BACKUP_KEEP=30 \
+sh scripts/backup.sh
+```
+
+Crontab example — nightly at 2am, credentials kept out of the crontab line
+itself via a root-owned, `chmod 600` env file:
+
+```cron
+0 2 * * * . /etc/simpletickets/backup.env && /path/to/simpletickets/scripts/backup.sh >> /var/log/simpletickets-backup.log 2>&1
+```
+
+```bash
+# /etc/simpletickets/backup.env — chmod 600, owned by root
+ST_URL=http://localhost:3000/api
+ST_ADMIN_EMAIL=admin@example.com
+ST_ADMIN_PASSWORD=your-password
+ST_BACKUP_DIR=/var/backups/simpletickets
+ST_BACKUP_KEEP=30
+```
+
+**Secrets** — the master encryption key and the Postgres password — are
+deliberately **excluded** from that backup, so a leaked backup zip alone
+can't decrypt anything. They live in two Docker volumes, `app_secret` and
+`db_secret`, and need their own, separate backup. They rarely change, but
+losing them without a copy permanently orphans every encrypted Slack token
+and the JWT signing key, even with the database fully intact:
+
+```bash
+docker run --rm \
+  -v simpletickets_app_secret:/from/app_secret:ro \
+  -v simpletickets_db_secret:/from/db_secret:ro \
+  -v "$(pwd)":/backup \
+  alpine sh -c "tar czf /backup/simpletickets-secrets-$(date -u +%Y%m%dT%H%M%SZ).tar.gz -C /from ."
+```
+
+Store that somewhere separate from the data backups — keeping both in the
+same place recreates the single-failure-domain problem this split exists to
+avoid. Run it whenever you rotate credentials, and once after first setup.
+
 ## Stack
 
 - **Backend:** Python 3.12 + FastAPI, PostgreSQL 16, SQLModel + Alembic,
