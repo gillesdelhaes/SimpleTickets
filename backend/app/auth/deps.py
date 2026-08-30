@@ -1,6 +1,6 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError
+from jwt import PyJWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt import decode_access_token
@@ -19,7 +19,7 @@ async def get_current_user(
         payload = decode_access_token(credentials.credentials)
         user_id = int(payload["sub"])
         jti = payload.get("jti")
-    except (JWTError, KeyError, ValueError):
+    except (PyJWTError, KeyError, ValueError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",

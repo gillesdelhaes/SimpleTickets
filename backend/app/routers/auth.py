@@ -5,7 +5,7 @@ from time import monotonic
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError
+from jwt import PyJWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -122,7 +122,7 @@ async def logout(
         payload = decode_access_token(credentials.credentials)
         jti = payload.get("jti")
         exp = payload.get("exp")
-    except JWTError:
+    except PyJWTError:
         return  # already invalid/expired — nothing to revoke
 
     if jti and exp:

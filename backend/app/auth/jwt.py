@@ -2,7 +2,7 @@ import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from jose import JWTError, jwt
+import jwt
 
 from app.config import settings_manager
 
@@ -27,7 +27,7 @@ def create_access_token(user_id: int, email: str, role: str, name: str = "") -> 
 
 
 def decode_access_token(token: str) -> dict:
-    """Decode and verify a JWT. Raises jose.JWTError on failure."""
+    """Decode and verify a JWT. Raises jwt.PyJWTError on failure."""
     return jwt.decode(token, settings_manager.jwt_secret, algorithms=[_ALGORITHM])
 
 
