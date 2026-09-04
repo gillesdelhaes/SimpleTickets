@@ -70,6 +70,29 @@ Two ways to fix that, pick one:
   no config file to edit. Remove both files and restart to go back to plain
   HTTP. `certs/` is gitignored; never commit a real private key.
 
+## Sign in with Google (optional)
+
+Staff accounts can be gated behind Google sign-in instead of passwords:
+
+1. In [Google Cloud console](https://console.cloud.google.com/apis/credentials),
+   create an **OAuth client ID** (type *Web application*) and add your
+   SimpleTickets URL as an **authorized JavaScript origin**. No client secret
+   is needed — only the public client ID.
+2. Paste the client ID in **Settings → General → Sign in with Google**. The
+   login page now shows a Google button.
+3. Create staff accounts with sign-in method **Google** (Settings → Users),
+   or use **Convert to Google** on existing ones. Only pre-provisioned
+   accounts whose email matches their Google account can sign in this way —
+   there is no self-signup. Slack identity links are independent and keep
+   working either way.
+
+Google-provider accounts have no password at all, and inherit whatever MFA
+your Google organization enforces. Keep at least one password-based admin as
+a **break-glass account** (the app refuses to convert the last one) so a
+Google outage can't lock you out. An admin can always convert an account back
+by setting a password on it. Note: Google's sign-in button requires HTTPS on
+any non-`localhost` origin, so set up TLS first.
+
 ## Slack setup
 
 SimpleTickets uses a **private Slack app** in your workspace running over Socket

@@ -2,8 +2,9 @@
 Admin Panel API.
 
 Endpoints:
-  POST  /admin/users                                    create local account
-  POST  /admin/users/{id}/set-password                  set a user's password directly
+  POST  /admin/users                                    create account (local or google provider)
+  POST  /admin/users/{id}/set-password                  set a user's password directly (google → converts back to local)
+  POST  /admin/users/{id}/convert-to-google              switch an account to Google sign-in
   GET   /admin/users                                     list all users with filters + pagination
   PATCH /admin/users/{id}                                update role, is_active, name (writes audit entry)
   PUT   /admin/users/{id}/slack-identity/{workspace_id}  link/unlink a per-workspace Slack ID
@@ -92,13 +93,22 @@ async def create_local_user(
     admin: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> UserRead:
-    """Create a local (email + password) account. Admin only."""
+    """Create a staff account. Admin only. auth_provider 'local' signs in
+    with the given password; 'google' has no password and signs in only via
+    the GIS button (the account must match the Google email exactly)."""
     try:
         role = Role(body.role)
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid role '{body.role}'. Valid values: {[r.value for r in Role]}",
+        )
+    try:
+        provider = AuthProvider(body.auth_provider)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid auth_provider '{body.auth_provider}'. Valid values: {[p.value for p in AuthProvider]}",
         )
 
     result = await session.execute(
@@ -113,9 +123,9 @@ async def create_local_user(
     user = User(
         email=body.email.lower(),
         name=body.name,
-        hashed_password=hash_password(body.password),
+        hashed_password=hash_password(body.password) if provider == AuthProvider.local else None,
         role=role,
-        auth_provider=AuthProvider.local,
+        auth_provider=provider,
         is_active=True,
     )
     session.add(user)
@@ -127,7 +137,7 @@ async def create_local_user(
         action="user.created",
         entity_type="user",
         entity_id=user.id,
-        payload={"email": user.email, "role": role.value, "auth_provider": "local"},
+        payload={"email": user.email, "role": role.value, "auth_provider": provider.value},
         ip_address=client_ip(request),
     )
 
@@ -151,28 +161,102 @@ async def set_user_password(
     admin: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> None:
-    """Set a user's password directly. Admin only."""
+    """Set a user's password directly. Admin only. On a Google-provider
+    account this is the deliberate escape hatch back to password sign-in:
+    the provider flips to local (an SSO account must never silently hold a
+    working password), which also re-enables the Slack reset flow."""
     if not body.new_password or len(body.new_password) < 8:
         raise HTTPException(status_code=422, detail="Password must be at least 8 characters")
     user = await session.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
+    converted_from = None
+    if user.auth_provider != AuthProvider.local:
+        converted_from = user.auth_provider.value
+        user.auth_provider = AuthProvider.local
     user.hashed_password = hash_password(body.new_password)
     # Revoke the user's existing sessions — an admin resetting a password
     # (compromised account, offboarding mistake) must also end whatever
     # sessions the old credential is still holding open. Whole-second cutoff
     # so a login in the same second (iat is whole-second) isn't rejected.
     user.tokens_valid_after = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
+    payload: dict = {"email": user.email}
+    if converted_from:
+        payload["auth_provider"] = {"from": converted_from, "to": "local"}
     await write_audit(
         session,
         actor_id=admin.id,
         action="user.password_set",
         entity_type="user",
         entity_id=str(user_id),
-        payload={"email": user.email},
+        payload=payload,
         ip_address=client_ip(request),
     )
     await session.commit()
+
+
+# ── POST /admin/users/{id}/convert-to-google ──────────────────────────────────
+
+
+@router.post("/users/{user_id}/convert-to-google", response_model=UserRead)
+async def convert_user_to_google(
+    user_id: int,
+    request: Request,
+    admin: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> UserRead:
+    """
+    Convert an account to Google sign-in: provider flips to google, the
+    password is removed (password login becomes structurally impossible),
+    and existing sessions are revoked. Slack identities are untouched —
+    they hang off the user row, not the auth provider.
+
+    Break-glass guard: the last active *local* admin cannot be converted.
+    If every admin were SSO-only, a Google outage (or a misconfigured
+    client ID) would lock the instance with no recovery but manual SQL.
+    """
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if user.auth_provider == AuthProvider.google:
+        return await _to_user_read(session, user)
+
+    if user.role == Role.admin and user.is_active:
+        other_local_admins: int = (await session.execute(
+            select(func.count()).select_from(User).where(
+                User.role == Role.admin,
+                User.is_active == True,  # noqa: E712
+                User.auth_provider == AuthProvider.local,
+                User.id != user_id,
+            )
+        )).scalar_one()
+        if other_local_admins == 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Cannot convert the last password-based admin — keep at "
+                    "least one local admin as the break-glass account."
+                ),
+            )
+
+    old_provider = user.auth_provider.value
+    user.auth_provider = AuthProvider.google
+    user.hashed_password = None
+    # Sessions issued under the old credential die with it.
+    user.tokens_valid_after = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
+
+    await write_audit(
+        session,
+        actor_id=admin.id,
+        action="user.auth_provider_changed",
+        entity_type="user",
+        entity_id=str(user_id),
+        payload={"email": user.email, "from": old_provider, "to": "google"},
+        ip_address=client_ip(request),
+    )
+    await session.commit()
+    await session.refresh(user)
+    return await _to_user_read(session, user)
 
 
 # ── GET /admin/users ───────────────────────────────────────────────────────────

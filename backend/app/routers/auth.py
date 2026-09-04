@@ -12,9 +12,10 @@ from sqlmodel import select
 from pydantic import BaseModel
 
 from app.auth.deps import get_current_user
+from app.auth.google import GoogleTokenError, verify_google_id_token
 from app.auth.jwt import create_access_token, decode_access_token
 from app.database import get_session
-from app.models import PasswordResetToken, RevokedToken, User
+from app.models import AuthProvider, PasswordResetToken, RevokedToken, User
 from app.models.user_slack_identity import UserSlackIdentity
 from app.schemas.auth import ForgotPasswordRequest, LoginRequest, ResetPasswordRequest, TokenResponse
 from app.services.audit import write_audit
@@ -162,6 +163,103 @@ async def logout(
 
 
 
+# ── Sign in with Google (GIS) ─────────────────────────────────────────────────
+# Gated model: only accounts an admin pre-provisioned with
+# auth_provider=google can sign in this way — unknown Google identities are
+# rejected, local (break-glass) accounts keep using passwords. The client ID
+# is public by design (it's embedded in the login page), so exposing it
+# unauthenticated leaks nothing.
+
+
+class GoogleLoginRequest(BaseModel):
+    credential: str  # Google ID token from the GIS button
+
+
+@router.get("/google/config")
+async def google_config(session: AsyncSession = Depends(get_session)) -> dict:
+    """Unauthenticated. Tells the login page whether to render the Google
+    button, and with which client ID."""
+    from app.services.settings_service import get_setting
+    client_id = (await get_setting("google_client_id", session)).strip()
+    return {"client_id": client_id or None}
+
+
+@router.post("/google", response_model=TokenResponse)
+async def google_login(
+    body: GoogleLoginRequest,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> TokenResponse:
+    """Authenticate with a Google ID token. Only pre-provisioned
+    auth_provider=google accounts are accepted."""
+    ip = _client_ip(request)
+    _check_rate_limit(ip)
+
+    from app.services.settings_service import get_setting
+    client_id = (await get_setting("google_client_id", session)).strip()
+    if not client_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Google sign-in is not enabled",
+        )
+
+    try:
+        claims = await verify_google_id_token(body.credential, client_id)
+    except GoogleTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Google sign-in failed — please try again",
+        )
+
+    email = str(claims["email"]).lower()
+    user = (await session.execute(
+        select(User).where(User.email == email)
+    )).scalar_one_or_none()
+
+    async def _log_failure(reason: str) -> None:
+        await write_audit(
+            session,
+            actor_id=user.id if user else None,
+            action="user.login_failed",
+            entity_type="user",
+            entity_id=user.id if user else None,
+            payload={"email": email, "reason": reason, "provider": "google"},
+            ip_address=ip,
+        )
+        await session.commit()
+
+    # The caller proved they own this Google account (valid signed token), so
+    # a specific message doesn't enable enumeration the way login errors would.
+    if user is None or user.auth_provider != AuthProvider.google:
+        await _log_failure("no_google_account" if user is None else "not_google_provider")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No SimpleTickets account is linked to this Google identity — ask an administrator",
+        )
+    if not user.is_active:
+        await _log_failure("account_disabled")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is disabled — contact your administrator",
+        )
+
+    user.last_login_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    await write_audit(
+        session,
+        actor_id=user.id,
+        action="user.login",
+        entity_type="user",
+        entity_id=user.id,
+        payload={"provider": "google"},
+        ip_address=ip,
+    )
+    await session.commit()
+
+    return TokenResponse(
+        access_token=create_access_token(user.id, user.email, user.role.value, user.name or "")
+    )
+
+
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
@@ -248,14 +346,19 @@ async def forgot_password(
     result = await session.execute(select(User).where(User.email == body.email.lower()))
     user = result.scalar_one_or_none()
 
+    # Google-provider accounts have no password by design — a reset code
+    # would mint one and quietly re-enable password login for an account
+    # meant to be SSO-only. Same generic response either way.
+    is_local = user is not None and user.auth_provider == AuthProvider.local
+
     has_identity = False
-    if user and user.is_active:
+    if user and user.is_active and is_local:
         identity_row = (await session.execute(
             select(UserSlackIdentity.id).where(UserSlackIdentity.user_id == user.id).limit(1)
         )).scalar_one_or_none()
         has_identity = identity_row is not None
 
-    if user and user.is_active and has_identity:
+    if user and user.is_active and is_local and has_identity:
         now_mono = monotonic()
         if now_mono - _last_code_sent.get(user.id, 0.0) >= _CODE_COOLDOWN_SECONDS:
             code = "".join(secrets.choice(_CODE_ALPHABET) for _ in range(_CODE_LENGTH))
@@ -307,9 +410,10 @@ async def reset_password(
 
     result = await session.execute(select(User).where(User.email == body.email.lower()))
     user = result.scalar_one_or_none()
-    if user is None:
+    if user is None or user.auth_provider != AuthProvider.local:
         # Burn the same bcrypt cost as a real check so timing doesn't reveal
-        # whether the account exists.
+        # whether the account exists. Non-local accounts never have valid
+        # codes (forgot-password refuses to mint them) — reject uniformly.
         verify_password(body.code, _DUMMY_PASSWORD_HASH)
         raise _invalid
 

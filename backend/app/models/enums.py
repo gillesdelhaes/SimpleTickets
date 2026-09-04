@@ -14,4 +14,5 @@ class Priority(str, Enum):
 
 
 class AuthProvider(str, Enum):
-    local = "local"
+    local = "local"    # email + password (the break-glass path)
+    google = "google"  # Sign in with Google (GIS); hashed_password stays NULL

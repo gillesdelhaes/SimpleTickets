@@ -206,7 +206,7 @@ function GeneralTab() {
         </>
       )}
 
-      <SettingRow label="CSAT auto-close" hint="Resolved tickets with no survey response close after this many days" last>
+      <SettingRow label="CSAT auto-close" hint="Resolved tickets with no survey response close after this many days">
         <div className="flex items-center gap-2">
           <input
             type="number"
@@ -219,6 +219,20 @@ function GeneralTab() {
           />
           <span className="text-[13px] text-ink-2">days</span>
         </div>
+      </SettingRow>
+
+      <SettingRow
+        label="Sign in with Google"
+        hint="OAuth client ID from Google Cloud console (public, not a secret). When set, the login page shows a Google button; only accounts created with the Google sign-in method can use it. Clear to disable."
+        last
+      >
+        <input
+          className="input font-mono"
+          style={{ maxWidth: 420, fontSize: 12 }}
+          value={get('google_client_id', '')}
+          onChange={e => set('google_client_id', e.target.value.trim())}
+          placeholder="1234567890-abc123.apps.googleusercontent.com"
+        />
       </SettingRow>
 
       <SaveBar dirty={dirty} pending={mutation.isPending} onSave={() => mutation.mutate(Object.entries(edits).map(([key, value]) => ({ key, value })))} />

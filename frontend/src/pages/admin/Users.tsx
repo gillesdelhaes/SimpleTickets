@@ -8,7 +8,7 @@ import { useWorkspaceOptions } from '../../hooks/useWorkspaces'
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 type UserRole = 'technician' | 'admin'
-type AuthProvider = 'local'
+type AuthProvider = 'local' | 'google'
 
 interface SlackIdentity {
   workspace_id: number
@@ -73,11 +73,16 @@ function CreateUserModal({ onClose }: CreateModalProps) {
   const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [role, setRole] = useState<UserRole>('technician')
+  const [provider, setProvider] = useState<AuthProvider>('local')
   const [error, setError] = useState<string | null>(null)
 
   const mutation = useMutation({
     mutationFn: () =>
-      api.post<UserRead>('/admin/users', { name, email, password, role }).then(r => r.data),
+      api.post<UserRead>('/admin/users', {
+        name, email, role,
+        auth_provider: provider,
+        ...(provider === 'local' ? { password } : {}),
+      }).then(r => r.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
       onClose()
@@ -90,7 +95,7 @@ function CreateUserModal({ onClose }: CreateModalProps) {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
-    if (!name.trim() || !email.trim() || !password.trim()) {
+    if (!name.trim() || !email.trim() || (provider === 'local' && !password.trim())) {
       setError('All fields are required.')
       return
     }
@@ -100,9 +105,13 @@ function CreateUserModal({ onClose }: CreateModalProps) {
   return (
     <>
       <div className="scrim open" style={{ zIndex: 200 }} onClick={onClose} />
-      <div role="dialog" aria-modal="true" aria-label="Create local account" className="modal open" style={{ zIndex: 201, width: 'min(420px, 94vw)' }}>
-        <h2>Create local account</h2>
-        <p className="sub">Local accounts sign in with email and password.</p>
+      <div role="dialog" aria-modal="true" aria-label="Create account" className="modal open" style={{ zIndex: 201, width: 'min(420px, 94vw)' }}>
+        <h2>Create account</h2>
+        <p className="sub">
+          {provider === 'local'
+            ? 'Local accounts sign in with email and password.'
+            : 'Google accounts sign in with the Google button — no password. The email must match their Google account exactly.'}
+        </p>
         <form onSubmit={handleSubmit}>
           <div className="fieldrow">
             <label htmlFor="new-user-name">Full name</label>
@@ -113,26 +122,37 @@ function CreateUserModal({ onClose }: CreateModalProps) {
             <input id="new-user-email" className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@example.com" />
           </div>
           <div className="fieldrow">
-            <label htmlFor="new-user-password">Password</label>
-            <div className="relative">
-              <input
-                id="new-user-password"
-                className="input"
-                type={showPw ? 'text' : 'password'}
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="Min. 8 characters"
-                style={{ paddingRight: 52 }}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPw(!showPw)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 bg-transparent border-0 cursor-pointer text-ink-3 hover:text-ink text-[11px] font-semibold"
-              >
-                {showPw ? 'Hide' : 'Show'}
-              </button>
+            <label htmlFor="new-user-provider">Sign-in method</label>
+            <div className="selectwrap">
+              <select id="new-user-provider" className="select" value={provider} onChange={e => setProvider(e.target.value as AuthProvider)}>
+                <option value="local">Password</option>
+                <option value="google">Sign in with Google</option>
+              </select>
             </div>
           </div>
+          {provider === 'local' && (
+            <div className="fieldrow">
+              <label htmlFor="new-user-password">Password</label>
+              <div className="relative">
+                <input
+                  id="new-user-password"
+                  className="input"
+                  type={showPw ? 'text' : 'password'}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="Min. 8 characters"
+                  style={{ paddingRight: 52 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPw(!showPw)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 bg-transparent border-0 cursor-pointer text-ink-3 hover:text-ink text-[11px] font-semibold"
+                >
+                  {showPw ? 'Hide' : 'Show'}
+                </button>
+              </div>
+            </div>
+          )}
           <div className="fieldrow">
             <label htmlFor="new-user-role">Role</label>
             <div className="selectwrap">
@@ -390,6 +410,32 @@ export default function Users() {
     },
   })
 
+  const convertToGoogle = useMutation({
+    mutationFn: (id: number) =>
+      api.post<UserRead>(`/admin/users/${id}/convert-to-google`).then(r => r.data),
+    onSuccess: updated => {
+      queryClient.setQueryData<UserListResponse>(
+        ['admin-users', { debouncedSearch, roleFilter, activeFilter, page }],
+        old => old ? { ...old, items: old.items.map(u => u.id === updated.id ? updated : u) } : old
+      )
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+    },
+    onError: (err: unknown) => {
+      // e.g. 409 converting the last password-based (break-glass) admin
+      window.alert(apiErrorMessage(err, 'Failed to convert the account.'))
+    },
+  })
+
+  function handleConvertToGoogle(user: UserRead) {
+    const ok = window.confirm(
+      `Convert ${user.name} to Google sign-in?\n\n` +
+      'Their password is removed, active sessions are signed out, and they ' +
+      `sign in with the Google button using ${user.email}. Slack links are kept. ` +
+      '"Set password" converts back later if needed.'
+    )
+    if (ok) convertToGoogle.mutate(user.id)
+  }
+
   const [setPasswordFor, setSetPasswordFor] = useState<number | null>(null)
   const [newPassword, setNewPassword] = useState('')
   const [setPasswordState, setSetPasswordState] = useState<'idle' | 'saving' | 'ok' | 'error'>('idle')
@@ -399,6 +445,9 @@ export default function Users() {
     setSetPasswordState('saving')
     try {
       await api.post(`/admin/users/${userId}/set-password`, { new_password: newPassword })
+      // A google-provider account converts back to local on set-password —
+      // refetch so the provider badge and actions update.
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
       setSetPasswordState('ok')
       setTimeout(() => {
         setSetPasswordFor(null)
@@ -527,7 +576,18 @@ export default function Users() {
                           {initials(user.name)}
                         </div>
                         <div>
-                          <div className="name" style={{ fontSize: 13 }}>{user.name}</div>
+                          <div className="name flex items-center gap-1.5" style={{ fontSize: 13 }}>
+                            {user.name}
+                            {user.auth_provider === 'google' && (
+                              <span
+                                className="chip"
+                                title="Signs in with Google — no password on this account"
+                                style={{ padding: '1px 7px', fontSize: 9.5, fontWeight: 700, letterSpacing: '0.03em' }}
+                              >
+                                GOOGLE
+                              </span>
+                            )}
+                          </div>
                           <div className="model">{user.email}</div>
                         </div>
                       </div>
@@ -569,7 +629,22 @@ export default function Users() {
                         >
                           Set password
                         </button>
+                        {user.auth_provider === 'local' && (
+                          <button
+                            onClick={() => handleConvertToGoogle(user)}
+                            disabled={convertToGoogle.isPending}
+                            className="btn ghost sm"
+                            style={{ padding: '4px 11px', fontSize: 11.5 }}
+                          >
+                            Convert to Google
+                          </button>
+                        )}
                       </div>
+                      {setPasswordFor === user.id && user.auth_provider === 'google' && (
+                        <div className="mt-2 text-[11px] text-ink-3" style={{ maxWidth: 260, whiteSpace: 'normal' }}>
+                          Setting a password converts this account back to password sign-in.
+                        </div>
+                      )}
                       {setPasswordFor === user.id && (
                         <div className="mt-2 flex items-center gap-1.5">
                           <input

@@ -1,7 +1,61 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import api, { apiErrorMessage } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
+
+// ── Sign in with Google (GIS) ──────────────────────────────────────────────────
+// Rendered only when an admin has configured a Google client ID (fetched from
+// the unauthenticated /auth/google/config endpoint — client IDs are public).
+// The GIS button hands us a signed ID token; the backend verifies it and only
+// admits pre-provisioned auth_provider=google accounts.
+
+interface GisCredentialResponse { credential: string }
+
+function GoogleSignInButton({ clientId, onCredential }: { clientId: string; onCredential: (credential: string) => void }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  // Keep the callback in a ref so the GIS init effect never re-runs (a
+  // re-run would render a second button into the container).
+  const callbackRef = useRef(onCredential)
+  callbackRef.current = onCredential
+
+  useEffect(() => {
+    let cancelled = false
+
+    function init() {
+      const gis = (window as unknown as {
+        google?: { accounts?: { id?: {
+          initialize: (config: object) => void
+          renderButton: (el: HTMLElement, options: object) => void
+        } } }
+      }).google?.accounts?.id
+      if (cancelled || !gis || !containerRef.current) return
+      gis.initialize({
+        client_id: clientId,
+        callback: (resp: GisCredentialResponse) => callbackRef.current(resp.credential),
+      })
+      containerRef.current.innerHTML = ''
+      gis.renderButton(containerRef.current, { theme: 'outline', size: 'large', width: 300, text: 'signin_with' })
+    }
+
+    const existing = document.getElementById('gsi-client-script') as HTMLScriptElement | null
+    if ((window as unknown as { google?: unknown }).google) {
+      init()
+    } else if (existing) {
+      existing.addEventListener('load', init)
+    } else {
+      const script = document.createElement('script')
+      script.src = 'https://accounts.google.com/gsi/client'
+      script.async = true
+      script.defer = true
+      script.id = 'gsi-client-script'
+      script.addEventListener('load', init)
+      document.head.appendChild(script)
+    }
+    return () => { cancelled = true }
+  }, [clientId])
+
+  return <div ref={containerRef} style={{ display: 'flex', justifyContent: 'center', minHeight: 44 }} />
+}
 
 export default function Login() {
   const { login, user } = useAuth()
@@ -13,6 +67,7 @@ export default function Login() {
   const [showPw, setShowPw] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [googleClientId, setGoogleClientId] = useState<string | null>(null)
   const justReset = Boolean((location.state as { passwordReset?: boolean } | null)?.passwordReset)
 
   // Already authenticated — go home
@@ -21,6 +76,25 @@ export default function Login() {
       navigate('/dashboard', { replace: true })
     }
   }, [user, navigate])
+
+  useEffect(() => {
+    api.get<{ client_id: string | null }>('/auth/google/config')
+      .then(res => setGoogleClientId(res.data.client_id))
+      .catch(() => {}) // no button on failure — password login always works
+  }, [])
+
+  async function handleGoogleCredential(credential: string) {
+    setError('')
+    setLoading(true)
+    try {
+      const res = await api.post<{ access_token: string }>('/auth/google', { credential })
+      login(res.data.access_token)
+    } catch (err: unknown) {
+      setError(apiErrorMessage(err, 'Google sign-in failed — please try again'))
+    } finally {
+      setLoading(false)
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -71,6 +145,19 @@ export default function Login() {
         <form className="login-card" onSubmit={handleSubmit}>
           <h1>Welcome back</h1>
           <p className="sub">Sign in to your SimpleTickets workspace.</p>
+
+          {googleClientId && (
+            <>
+              <GoogleSignInButton clientId={googleClientId} onCredential={handleGoogleCredential} />
+              <div className="flex items-center gap-3" style={{ margin: '18px 0' }} aria-hidden="true">
+                <div style={{ flex: 1, height: 1, background: 'var(--track)' }} />
+                <span className="text-[11px] font-semibold text-ink-3" style={{ letterSpacing: '0.04em' }}>
+                  OR SIGN IN WITH PASSWORD
+                </span>
+                <div style={{ flex: 1, height: 1, background: 'var(--track)' }} />
+              </div>
+            </>
+          )}
 
           <div className="fieldrow">
             <label htmlFor="email">Email</label>

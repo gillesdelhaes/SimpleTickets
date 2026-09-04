@@ -33,6 +33,9 @@ _WRITABLE_KEYS = {
     "business_hours_end",
     "business_days",
     "csat_auto_close_days",
+    # OAuth *client* ID for Sign in with Google — public by design (it ships
+    # to every browser on the login page), so not a secret row.
+    "google_client_id",
 }
 
 # Keys the GET endpoint may return. Deliberately excludes internal secrets
