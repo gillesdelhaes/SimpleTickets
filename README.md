@@ -51,24 +51,58 @@ docker compose up -d
 Open **http://localhost:3000** — the setup wizard runs on first launch, creates
 your admin account, and optionally connects Slack. No config files, no env vars.
 
-## TLS
+## Deploying to production
 
 By default this serves plain HTTP on :3000 — fine for `localhost`, **not safe
 to expose on a real network as-is**: login credentials and session tokens
-would travel in cleartext.
+would travel in cleartext. Pick one of the two TLS modes.
 
-Two ways to fix that, pick one:
+**Mode A — behind a TLS-terminating reverse proxy / load balancer you already
+run** (the usual corporate setup):
 
-- **Put this behind a TLS-terminating reverse proxy or load balancer you
-  already run** (very common in a corporate environment) — point it at this
-  container's `:3000`, terminate TLS there, and don't publish `:3000`/`:443`
-  externally yourself.
-- **Or let this container terminate TLS itself**: drop your certificate as
-  `certs/fullchain.pem` and `certs/privkey.pem` next to `docker-compose.yml`,
-  then `docker compose up -d` (or restart the `frontend` service). It's
-  detected automatically — HTTP on :80 starts redirecting to HTTPS on :443,
-  no config file to edit. Remove both files and restart to go back to plain
-  HTTP. `certs/` is gitignored; never commit a real private key.
+1. `docker compose up -d` on the host.
+2. Point your proxy at this host's `:3000` (plain HTTP upstream) and
+   terminate TLS with your own certificates at the proxy.
+3. Don't expose `:3000`/`:443` beyond the proxy. Use `GET /api/health` as
+   the health check.
+
+**Mode B — let the container terminate TLS itself:**
+
+1. Drop your certificate as `certs/fullchain.pem` and `certs/privkey.pem`
+   next to `docker-compose.yml` (internal-CA certs are fine).
+2. `docker compose up -d` (or restart the `frontend` service). It's detected
+   automatically — HTTP on :80 redirects to HTTPS on :443, no config to edit.
+3. To renew: replace the two files, restart `frontend`. Remove both and
+   restart to go back to plain HTTP. `certs/` is gitignored; never commit a
+   real private key.
+
+Either way, complete the **setup wizard immediately after first boot** — the
+setup endpoints are open until the first admin account exists.
+
+### Behind a VPN / private network
+
+SimpleTickets needs **no inbound connectivity from the internet** — Slack
+runs over Socket Mode (outbound WebSocket, no webhook URL) and Google
+sign-in only ever talks outward, so a VPN-only deployment works unchanged.
+The docker host just needs **direct outbound HTTPS (443)** to:
+
+| Destination | Why |
+|---|---|
+| `slack.com`, `wss-*.slack.com`, `files.slack.com` | Slack API, Socket Mode, file sync |
+| `www.googleapis.com` | Google signing keys (only if Google sign-in is used) |
+
+(Users' browsers also load `accounts.google.com` for the sign-in button. A
+mandatory corporate HTTP proxy or TLS-intercepting firewall on that egress
+path is not supported out of the box.)
+
+For Google sign-in on an internal host, use a VPN-only subdomain of a real
+domain you own (e.g. `tickets.internal.example.com`) — Google's console
+rejects non-public TLDs like `.corp`/`.local` as origins, but a private
+split-horizon DNS name under a public domain works: Google never needs to
+reach the server, only your browsers do.
+
+Data lives in four Docker volumes (`pgdata`, `attachments`, `app_secret`,
+`db_secret`) — see **Backups** below before going live.
 
 ## Sign in with Google (optional)
 
