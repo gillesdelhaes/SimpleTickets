@@ -1566,7 +1566,10 @@ function AccountTab() {
     setStatus('saving')
     setErrorMsg('')
     try {
-      await api.post('/auth/change-password', { current_password: current, new_password: next })
+      const res = await api.post('/auth/change-password', { current_password: current, new_password: next })
+      // The change revokes every token issued before it (other devices, stolen
+      // sessions) — swap in the fresh one so this session isn't logged out too.
+      if (res.data?.access_token) localStorage.setItem('st_token', res.data.access_token)
       setStatus('ok')
       setCurrent(''); setNext(''); setConfirm('')
       setTimeout(() => setStatus('idle'), 3000)

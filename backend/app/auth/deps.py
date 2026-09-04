@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWTError
@@ -19,6 +21,7 @@ async def get_current_user(
         payload = decode_access_token(credentials.credentials)
         user_id = int(payload["sub"])
         jti = payload.get("jti")
+        iat = payload.get("iat")
     except (PyJWTError, KeyError, ValueError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -39,6 +42,20 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User no longer exists",
         )
+    # Tokens issued before the user's last password change/reset are dead —
+    # a stolen session must not survive the reset that was meant to kill it.
+    # A token with no iat can't be placed relative to the cutoff: reject it.
+    if user.tokens_valid_after is not None:
+        issued_at = (
+            datetime.fromtimestamp(iat, tz=timezone.utc).replace(tzinfo=None)
+            if iat is not None else None
+        )
+        if issued_at is None or issued_at < user.tokens_valid_after:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session expired — please log in again",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

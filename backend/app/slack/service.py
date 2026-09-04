@@ -615,7 +615,7 @@ async def post_ticket_update_to_slack(
     if not lines:
         return
 
-    text = f"🔄 *{ticket.display_id}* updated by {actor_name}\n" + "\n".join(lines)
+    text = f"🔄 *{ticket.display_id}* updated by {slack_escape(actor_name)}\n" + "\n".join(lines)
 
     async with AsyncSessionLocal() as session:
         workspace = await _get_workspace(session, ticket.workspace_id)
@@ -1075,9 +1075,22 @@ async def _download_slack_files(
         return
 
     async with AsyncSessionLocal() as session:
+        # Same aggregate cap as web uploads — without it this path was a way
+        # around the storage quota (any workspace member can DM files).
+        # One query up front, then a running total as the batch is written.
+        from app.services.storage_quota import MAX_TOTAL_ATTACHMENT_BYTES, total_attachment_bytes
+        stored_bytes = await total_attachment_bytes(session)
+
         for file_info in files:
             slack_file_id = file_info.get("id")
             if not slack_file_id:
+                continue
+
+            if stored_bytes >= MAX_TOTAL_ATTACHMENT_BYTES:
+                logger.warning(
+                    "Attachment storage quota reached — skipping Slack file %s for ticket %d",
+                    slack_file_id, ticket_id,
+                )
                 continue
 
             # Dedup: skip if already downloaded for this ticket
@@ -1144,6 +1157,7 @@ async def _download_slack_files(
                 slack_file_id=slack_file_id,
                 created_at=utcnow(),
             ))
+            stored_bytes += len(content)
 
         await session.commit()
     logger.info("Downloaded %d Slack file(s) for ticket %d", len(files), ticket_id)

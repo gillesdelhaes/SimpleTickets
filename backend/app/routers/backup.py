@@ -24,6 +24,7 @@ from app.config import settings, settings_manager
 from app.services.audit import write_audit
 from app.services.rate_limit import RateLimiter
 from app.services.settings_service import encrypt_value
+from app.utils import client_ip
 from app.database import get_session
 from app.models.app_setting import AppSetting
 from app.models.audit_log import AuditLog
@@ -82,7 +83,7 @@ _EXPORT_MODELS: list[tuple[str, Any]] = [
 _DT_COLS: dict[str, set[str]] = {
     "ticket_statuses":     set(),
     "slack_workspaces":    {"created_at", "updated_at"},
-    "users":               {"created_at", "last_login_at"},
+    "users":               {"created_at", "last_login_at", "tokens_valid_after"},
     "user_slack_identities": {"created_at"},
     "categories":          {"created_at"},
     "sla_policies":        set(),
@@ -186,7 +187,7 @@ async def download_backup(
         action="backup.downloaded",
         entity_type="backup",
         payload={"bytes": len(zip_bytes), "attachments": len(att_list)},
-        ip_address=request.client.host if request.client else None,
+        ip_address=client_ip(request),
     )
     await session.commit()
 
@@ -410,7 +411,7 @@ async def restore_backup(
         action="backup.restored",
         entity_type="backup",
         payload={"restored_files": restored_files, "by": admin.email},
-        ip_address=request.client.host if request.client else None,
+        ip_address=client_ip(request),
     )
     await session.commit()
 

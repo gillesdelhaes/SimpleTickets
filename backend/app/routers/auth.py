@@ -20,6 +20,7 @@ from app.schemas.auth import ForgotPasswordRequest, LoginRequest, ResetPasswordR
 from app.services.audit import write_audit
 from app.services.passwords import hash_password, verify_password
 from app.slack.service import send_password_reset_dm
+from app.utils import client_ip
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -40,14 +41,9 @@ _MAX_TRACKED_IPS = 10_000  # bound memory: rotating/spoofed IPs can't grow the m
 
 
 def _client_ip(request: Request) -> str:
-    # Behind nginx the TCP peer is always the proxy, so we need X-Real-IP (set from
-    # $remote_addr) for per-client limiting. api:8000 is not published and only the
-    # proxy is on its network, so a spoofed header requires already being inside the
-    # internal network. Take a single trimmed token and fall back to the TCP peer.
-    header = (request.headers.get("X-Real-IP") or "").split(",")[0].strip()
-    if header:
-        return header[:64]
-    return request.client.host if request.client else "unknown"
+    # Shared X-Real-IP-aware resolution (see app.utils.client_ip); the limiter
+    # needs a non-null key, hence the "unknown" fallback.
+    return client_ip(request) or "unknown"
 
 
 def _check_rate_limit(ip: str) -> None:
@@ -171,21 +167,31 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 
-@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/change-password", response_model=TokenResponse)
 async def change_password(
     body: ChangePasswordRequest,
     request: Request,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
-) -> None:
-    """Change the authenticated user's own password."""
+) -> TokenResponse:
+    """Change the authenticated user's own password. Revokes every existing
+    session (tokens issued before this instant) and returns a fresh token so
+    the caller's own session carries on — any other/stolen token dies here."""
     _check_rate_limit(_client_ip(request))
     if not body.new_password or len(body.new_password) < 8:
         raise HTTPException(status_code=422, detail="New password must be at least 8 characters")
     if not current_user.hashed_password or not verify_password(body.current_password, current_user.hashed_password):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
     current_user.hashed_password = hash_password(body.new_password)
+    # Truncate to the second: JWT iat is whole-second, so a sub-second cutoff
+    # would reject the very token issued below.
+    current_user.tokens_valid_after = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
     await session.commit()
+    return TokenResponse(
+        access_token=create_access_token(
+            current_user.id, current_user.email, current_user.role.value, current_user.name or ""
+        )
+    )
 
 
 # ── Password reset via Slack DM ────────────────────────────────────────────────
@@ -326,6 +332,9 @@ async def reset_password(
 
     matched.used_at = now
     user.hashed_password = hash_password(body.new_password)
+    # Kill every outstanding session — the reset exists precisely because the
+    # old credential (and possibly a session using it) can't be trusted.
+    user.tokens_valid_after = now.replace(microsecond=0)
 
     await write_audit(
         session,

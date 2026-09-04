@@ -9,6 +9,7 @@ Endpoints:
   PUT   /admin/users/{id}/slack-identity/{workspace_id}  link/unlink a per-workspace Slack ID
   GET   /admin/audit                                     paginated, filterable audit log
 """
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -27,6 +28,7 @@ from app.schemas.auth import CreateLocalUserRequest
 from app.schemas.user import SlackIdentityRead, SlackIdentityUpdate, UserAdminUpdate, UserListResponse, UserRead
 from app.services.audit import write_audit
 from app.services.passwords import hash_password
+from app.utils import client_ip
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -126,7 +128,7 @@ async def create_local_user(
         entity_type="user",
         entity_id=user.id,
         payload={"email": user.email, "role": role.value, "auth_provider": "local"},
-        ip_address=request.client.host if request.client else None,
+        ip_address=client_ip(request),
     )
 
     await session.commit()
@@ -156,6 +158,11 @@ async def set_user_password(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     user.hashed_password = hash_password(body.new_password)
+    # Revoke the user's existing sessions — an admin resetting a password
+    # (compromised account, offboarding mistake) must also end whatever
+    # sessions the old credential is still holding open. Whole-second cutoff
+    # so a login in the same second (iat is whole-second) isn't rejected.
+    user.tokens_valid_after = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
     await write_audit(
         session,
         actor_id=admin.id,
@@ -163,7 +170,7 @@ async def set_user_password(
         entity_type="user",
         entity_id=str(user_id),
         payload={"email": user.email},
-        ip_address=request.client.host if request.client else None,
+        ip_address=client_ip(request),
     )
     await session.commit()
 
@@ -257,7 +264,7 @@ async def update_user(
             )
 
     changes: dict = {}
-    ip = request.client.host if request.client else None
+    ip = client_ip(request)
 
     if "name" in provided and body.name is not None:
         if user.name != body.name:
@@ -404,7 +411,7 @@ async def set_slack_identity(
             "email": user.email,
             "slack_identity": {"workspace": workspace.name, "from": old_sid, "to": new_sid},
         },
-        ip_address=request.client.host if request.client else None,
+        ip_address=client_ip(request),
     )
     await session.commit()
     return await _to_user_read(session, user)

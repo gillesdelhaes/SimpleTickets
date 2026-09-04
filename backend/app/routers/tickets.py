@@ -23,7 +23,7 @@ from app.schemas.ticket import BulkTicketUpdate, CloseTicketRequest, MarkDuplica
 from app.services.audit import write_audit
 from app.services.rate_limit import RateLimiter
 from app.services.sla import apply_sla_status_change, compute_sla_deadline
-from app.utils import get_ticket_or_404, utcnow
+from app.utils import client_ip, get_ticket_or_404, utcnow
 
 # Fields worth surfacing in the timeline
 _HISTORY_DISPLAY_FIELDS = {"status", "assignee_id", "priority", "category_id", "duplicate_of", "csat_response"}
@@ -756,7 +756,7 @@ async def close_without_survey(
         entity_type="ticket",
         entity_id=str(ticket_id),
         payload={"reason": body.reason, "from_status": old_status},
-        ip_address=request.client.host if request.client else None,
+        ip_address=client_ip(request),
     )
 
     await session.commit()
@@ -910,7 +910,7 @@ async def mark_duplicate(
             "duplicate_of": canonical.display_id,
             "closed": "status" in changes,
         },
-        ip_address=request.client.host if request.client else None,
+        ip_address=client_ip(request),
     )
 
     await session.commit()
@@ -975,7 +975,7 @@ async def unmark_duplicate(
             "was_duplicate_of": f"TKT-{old_dup_id:04d}",
             "reopened": "status" in changes,
         },
-        ip_address=request.client.host if request.client else None,
+        ip_address=client_ip(request),
     )
 
     await session.commit()

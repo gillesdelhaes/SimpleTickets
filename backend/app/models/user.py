@@ -34,3 +34,6 @@ class User(SQLModel, table=True):
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=utcnow)
     last_login_at: Optional[datetime] = Field(default=None)
+    # Tokens issued (iat) before this instant are rejected — set on any
+    # password change/reset so a stolen session doesn't survive it.
+    tokens_valid_after: Optional[datetime] = Field(default=None)

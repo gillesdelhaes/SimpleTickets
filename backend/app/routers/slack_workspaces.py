@@ -30,6 +30,7 @@ from app.models.user import User
 from app.services.audit import write_audit
 from app.services.settings_service import decrypt_value, encrypt_value
 from app.slack.service import slack_test_error_message
+from app.utils import client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -205,7 +206,7 @@ async def create_workspace(
         entity_type="slack_workspace",
         entity_id=str(workspace.id),
         payload={"name": workspace.name, "team_name": team_name},
-        ip_address=request.client.host if request.client else None,
+        ip_address=client_ip(request),
     )
     await session.commit()
     await session.refresh(workspace)
@@ -307,7 +308,7 @@ async def update_workspace(
         entity_type="slack_workspace",
         entity_id=str(workspace_id),
         payload={"keys": sorted(changes.keys())},
-        ip_address=request.client.host if request.client else None,
+        ip_address=client_ip(request),
     )
     await session.commit()
     await session.refresh(workspace)

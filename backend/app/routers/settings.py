@@ -20,6 +20,7 @@ from app.models.app_setting import AppSetting
 from app.models.user import User
 from app.services.audit import write_audit
 from app.services.settings_service import set_setting
+from app.utils import client_ip
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin/settings", tags=["admin"])
@@ -119,7 +120,7 @@ async def update_settings(
             action="settings.updated",
             entity_type="settings",
             payload={"keys": sorted({s.key for s in body.settings})},
-            ip_address=request.client.host if request.client else None,
+            ip_address=client_ip(request),
         )
         await session.commit()
     except Exception:
