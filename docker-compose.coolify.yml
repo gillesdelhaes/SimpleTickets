@@ -75,6 +75,8 @@ services:
       - "80"
     environment:
       SERVICE_FQDN_FRONTEND_80: ${SERVICE_FQDN_FRONTEND_80}
+    labels:
+      - coolify.traefik.middlewares=oauth2-auth@docker
     depends_on:
       api:
         condition: service_healthy
