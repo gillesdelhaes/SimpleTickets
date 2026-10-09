@@ -1,0 +1,106 @@
+# Coolify-oriented stack: TLS is terminated by Coolify's Traefik proxy
+# (DEPLOYMENT.md Mode A). Differences from docker-compose.yml:
+# - no custom `internal` network (Traefik must share Coolify's stack network)
+# - no ./certs bind (frontend serves plain HTTP on :80 behind the proxy)
+# - SERVICE_FQDN_FRONTEND_80 tells Coolify to route the public domain to :80
+services:
+  db:
+    build: ./db
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 1.0
+    environment:
+      POSTGRES_DB: simpletickets
+      POSTGRES_USER: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - db_secret:/data/db-secret
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d simpletickets"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 1.0
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - attachments:/data/attachments
+      - app_secret:/data/secret
+      - db_secret:/data/db-secret:ro
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.5
+    expose:
+      - "80"
+    environment:
+      SERVICE_FQDN_FRONTEND_80: ${SERVICE_FQDN_FRONTEND_80}
+    depends_on:
+      api:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
+      - /etc/nginx/conf.d
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+      - CHOWN
+      - SETGID
+      - SETUID
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  pgdata:
+  attachments:
+  app_secret:
+  db_secret:
