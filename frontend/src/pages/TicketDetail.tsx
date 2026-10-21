@@ -563,6 +563,11 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
   const { data: agents } = useAgents()
   const [savedField, setSavedField] = useState<string | null>(null)
   const [patchError, setPatchError] = useState<string | null>(null)
+  const { data: appConfig } = useAppConfig()
+  const categoryRef = useRef<HTMLSelectElement>(null)
+  const [flashCategory, setFlashCategory] = useState(false)
+  // Resolving requires a category whenever any exist (enforced by the API too)
+  const needsCategory = !ticket.category_id && (categories?.length ?? 0) > 0
 
   const patchMutation = useMutation({
     mutationFn: (update: Partial<TicketRead>) =>
@@ -581,6 +586,18 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
   })
 
   function patch(field: string, value: unknown) {
+    if (field === 'status' && needsCategory) {
+      const statuses = appConfig?.statuses ?? getAllStatuses()
+      if (statuses.find(s => s.name === value)?.is_resolved_state) {
+        setPatchError('Set a category before resolving this ticket.')
+        categoryRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        categoryRef.current?.focus({ preventScroll: true })
+        setFlashCategory(false)
+        requestAnimationFrame(() => setFlashCategory(true))
+        return
+      }
+    }
+    if (field === 'category_id' && value) setPatchError(null)
     patchMutation.mutate({ [field]: value })
   }
 
@@ -679,16 +696,21 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
           <div className="relative">
             <div className="selectwrap">
               <select
-                className="select"
+                ref={categoryRef}
+                className={`select${needsCategory ? ' needs-attention' : ''}${needsCategory && flashCategory ? ' flash' : ''}`}
                 value={ticket.category_id ?? ''}
                 onChange={e => patch('category_id', e.target.value ? Number(e.target.value) : null)}
+                onAnimationEnd={() => setFlashCategory(false)}
               >
-                <option value="">No category</option>
+                <option value="">{needsCategory ? '⚠ Pick a category' : 'No category'}</option>
                 {categories?.map(c => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
             </div>
+            {needsCategory && (
+              <span className="block mt-1 text-[11px] text-warn-ink">Required before resolving</span>
+            )}
             <SavedFlash show={savedField === 'category_id'} />
           </div>
         </MetaRow>

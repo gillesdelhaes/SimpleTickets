@@ -47,6 +47,18 @@ async def _get_resolved_status_names(session: AsyncSession) -> set[str]:
     return {row[0] for row in result.all()} or {"resolved", "closed"}
 
 
+async def _categories_configured(session: AsyncSession) -> bool:
+    """True if at least one active category exists. Resolving requires a
+    category only then — otherwise there would be nothing to pick."""
+    result = await session.execute(
+        select(Category.id).where(Category.is_archived == False).limit(1)  # noqa: E712
+    )
+    return result.scalar_one_or_none() is not None
+
+
+_CATEGORY_REQUIRED = "Set a category before resolving this ticket."
+
+
 async def _get_default_status(session: AsyncSession) -> str:
     """Return the slug of the is_default status, falling back to 'open'."""
     result = await session.execute(
@@ -426,6 +438,22 @@ async def bulk_update_tickets(
                 ),
             )
 
+    if body.status is not None and body.status in resolved_names:
+        uncategorized = [
+            t.display_id for t in tickets
+            if t.category_id is None and t.status != body.status
+        ]
+        if uncategorized and await _categories_configured(session):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Set a category before resolving — "
+                    f"{len(uncategorized)} selected ticket(s) have none: "
+                    + ", ".join(uncategorized[:10])
+                    + ("…" if len(uncategorized) > 10 else "")
+                ),
+            )
+
     updated = 0
     # (ticket, changes, entered_csat) for post-commit Slack/CSAT side effects
     changed: list[tuple[Ticket, dict, bool]] = []
@@ -616,6 +644,15 @@ async def update_ticket(
                         "Technicians can't close a ticket directly — set it to Resolved "
                         "(which sends the CSAT survey), or use Close without survey."
                     ),
+                )
+            # Every resolved ticket must carry a category (for reporting). The
+            # category in this same request is already applied above. The
+            # spam/no-survey escape hatch, POST /close, is exempt.
+            if (status_cfg.is_resolved_state and ticket.category_id is None
+                    and await _categories_configured(session)):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=_CATEGORY_REQUIRED,
                 )
             resolved_names = await _get_resolved_status_names(session)
             changes["status"] = (ticket.status, body.status)

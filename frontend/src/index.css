@@ -109,6 +109,24 @@
   animation: fadeUp 0.2s ease-out;
 }
 
+/* Empty required field (e.g. ticket category): amber outline that pulses a
+   few times on load, and flashes harder when an action is blocked on it. */
+@keyframes attnPulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--warn-bg); }
+  50% { box-shadow: 0 0 0 5px var(--warn-bg); }
+}
+
+.select.needs-attention {
+  border-color: var(--warn-ink);
+  color: var(--warn-ink);
+  font-weight: 600;
+  animation: attnPulse 1.6s ease-in-out 3;
+}
+
+.select.needs-attention.flash {
+  animation: attnPulse 0.45s ease-in-out 4;
+}
+
 .animate-spin {
   animation: spin 1s linear infinite;
 }
