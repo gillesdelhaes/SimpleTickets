@@ -338,42 +338,54 @@ async def notify_duplicate_dm(ticket: Ticket, canonical: Ticket) -> None:
         logger.exception("notify_duplicate_dm: failed to DM %s", submitter_slack_id)
 
 
-async def notify_reporter_dm(ticket: Ticket, slack_user_id: str) -> None:
+async def anchor_ticket_in_dm(ticket: Ticket, slack_user_id: str, text: str) -> bool:
     """
-    Send a DM to a Slack user when a ticket is opened on their behalf via the web portal.
+    Post `text` to the user's DM with the bot (using the Slack user ID as the
+    channel) and re-anchor the ticket on that message, so all later replies
+    and status updates thread there instead of wherever the ticket came from.
 
-    Posts the confirmation to the user's DM channel (using the Slack user ID as
-    the channel), then saves the returned channel_id + ts on the ticket so all
-    future web-portal replies and status updates thread back to the user.
+    Returns True if the ticket was re-anchored.
     """
-    if ticket.workspace_id is None:
-        return
+    if ticket.workspace_id is None or not slack_user_id:
+        return False
 
     from app.slack.bot import get_slack_client
     client = get_slack_client(ticket.workspace_id)
     if client is None:
-        return
+        return False
 
     try:
-        result = await client.chat_postMessage(
-            channel=slack_user_id,
-            text=(
-                f"📋 A ticket has been opened on your behalf.\n"
-                f"*{ticket.display_id}* — {slack_escape(ticket.title)}\n"
-                f"Our team will be in touch shortly. Reply here to add a comment."
-            ),
-        )
-        dm_channel_id: Optional[str] = result.get("channel")
-        message_ts: Optional[str] = result.get("ts")
-        if dm_channel_id and message_ts:
-            async with AsyncSessionLocal() as session:
-                t = await session.get(Ticket, ticket.id)
-                if t:
-                    t.slack_channel_id = dm_channel_id
-                    t.slack_message_ts = message_ts
-                    await session.commit()
+        result = await client.chat_postMessage(channel=slack_user_id, text=text)
     except Exception:  # noqa: BLE001
-        logger.exception("notify_reporter_dm: failed to DM user %s", slack_user_id)
+        logger.exception("anchor_ticket_in_dm: failed to DM user %s", slack_user_id)
+        return False
+
+    dm_channel_id: Optional[str] = result.get("channel")
+    message_ts: Optional[str] = result.get("ts")
+    if not (dm_channel_id and message_ts):
+        return False
+    async with AsyncSessionLocal() as session:
+        t = await session.get(Ticket, ticket.id)
+        if t is None:
+            return False
+        t.slack_channel_id = dm_channel_id
+        t.slack_message_ts = message_ts
+        await session.commit()
+    return True
+
+
+async def notify_reporter_dm(ticket: Ticket, slack_user_id: str) -> None:
+    """
+    Send a DM to a Slack user when a ticket is opened on their behalf via the
+    web portal, and thread all future replies and status updates there.
+    """
+    await anchor_ticket_in_dm(
+        ticket,
+        slack_user_id,
+        f"📋 A ticket has been opened on your behalf.\n"
+        f"*{ticket.display_id}* — {slack_escape(ticket.title)}\n"
+        f"Our team will be in touch shortly. Reply here to add a comment.",
+    )
 
 
 async def send_password_reset_dm(user: User, code: str, session: AsyncSession) -> bool:
@@ -427,7 +439,9 @@ async def send_password_reset_dm(user: User, code: str, session: AsyncSession) -
 
 
 async def send_csat_dm(ticket: "Ticket") -> None:
-    """DM the ticket submitter 👍/👎 when their ticket moves to a sends_csat=True status."""
+    """Ask the ticket submitter 👍/👎 when their ticket moves to a sends_csat=True
+    status. Posted in the ticket's thread when it lives in their DM with the
+    bot (@mentioning them, like other thread updates), else as a plain DM."""
     slack_user_id = await _get_submitter_slack_id(ticket)
     if not slack_user_id or ticket.workspace_id is None:
         return
@@ -444,10 +458,17 @@ async def send_csat_dm(ticket: "Ticket") -> None:
     except (ValueError, TypeError):
         days = 7
 
+    in_dm_thread = bool(
+        ticket.slack_channel_id and ticket.slack_message_ts
+        and ticket.slack_channel_id.startswith("D")
+    )
+    mention = f"\n<@{slack_user_id}>" if in_dm_thread else ""
+
     try:
         await client.chat_postMessage(
-            channel=slack_user_id,
-            text=f"Your ticket {ticket.display_id} has been resolved. Did we help?",
+            channel=ticket.slack_channel_id if in_dm_thread else slack_user_id,
+            thread_ts=ticket.slack_message_ts if in_dm_thread else None,
+            text=f"Your ticket {ticket.display_id} has been resolved. Did we help?{mention}",
             blocks=[
                 {
                     "type": "section",
@@ -455,7 +476,7 @@ async def send_csat_dm(ticket: "Ticket") -> None:
                         "type": "mrkdwn",
                         "text": (
                             f"✅ *{ticket.display_id}* has been marked as resolved.\n"
-                            f"_{slack_escape(ticket.title)}_\n\nDid we solve your issue?"
+                            f"_{slack_escape(ticket.title)}_\n\nDid we solve your issue?{mention}"
                         ),
                     },
                 },
@@ -496,6 +517,57 @@ async def send_csat_dm(ticket: "Ticket") -> None:
     except Exception:  # noqa: BLE001
         logger.exception("send_csat_dm: failed to DM %s", slack_user_id)
 
+async def _post_thread_notification(
+    client: Any,
+    ticket: Ticket,
+    text: str,
+    *,
+    notify_submitter: bool,
+    dm_header: Optional[str] = None,
+) -> Optional[str]:
+    """
+    Post `text` in the ticket's thread so the submitter is notified once.
+
+    - Thread lives in the submitter's DM with the bot (every ticket created
+      from Slack today): post in the thread only, @mentioning the submitter.
+      The mention is what notifies them, since they don't follow a thread
+      that starts with a bot message. Anything more (a separate DM, or a
+      reply_broadcast) shows up as a second copy in the same chat.
+    - Thread lives in a channel (older tickets, or the submitter couldn't be
+      DMed): post in the thread, then DM the submitter the same text with a
+      link to the thread (the channel thread is easy to miss).
+
+    Returns the thread message ts (used as reply.slack_ts for deduplication).
+    """
+    in_dm = ticket.slack_channel_id.startswith("D")
+    submitter_slack_id = await _get_submitter_slack_id(ticket) if notify_submitter else None
+    thread_text = f"{text}\n<@{submitter_slack_id}>" if in_dm and submitter_slack_id else text
+    ts: Optional[str] = None
+    try:
+        result = await client.chat_postMessage(
+            channel=ticket.slack_channel_id,
+            thread_ts=ticket.slack_message_ts,
+            text=thread_text,
+        )
+        ts = result.get("ts")
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to post to Slack thread for ticket %s", ticket.display_id)
+
+    if in_dm or not submitter_slack_id:
+        return ts
+    try:
+        link = await client.chat_getPermalink(
+            channel=ticket.slack_channel_id, message_ts=ticket.slack_message_ts,
+        )
+        dm = "\n".join(filter(None, [
+            dm_header, text, f"<{link['permalink']}|Open the thread> to reply.",
+        ]))
+        await client.chat_postMessage(channel=submitter_slack_id, text=dm)
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to send notification DM for ticket %s", ticket.display_id)
+    return ts
+
+
 async def post_reply_to_slack(
     ticket: Ticket,
     reply_body: str,
@@ -503,8 +575,8 @@ async def post_reply_to_slack(
     notify_submitter: bool = True,
 ) -> Optional[str]:
     """
-    Post a web portal reply to the originating Slack thread, then DM the
-    submitter at the top level so they get an unread notification.
+    Post a web portal reply to the ticket's Slack thread, making sure the
+    submitter gets exactly one notification (see `_post_thread_notification`).
 
     Pass notify_submitter=False when the reply was authored by the submitter
     themselves (e.g. via the App Home reply modal) to avoid a self-notification.
@@ -527,41 +599,13 @@ async def post_reply_to_slack(
     if client is None:
         return None
 
-    ts: Optional[str] = None
-    try:
-        result = await client.chat_postMessage(
-            channel=ticket.slack_channel_id,
-            thread_ts=ticket.slack_message_ts,
-            text=f"*{slack_escape(author_name)}:* {slack_escape(reply_body)}",
-        )
-        ts = result.get("ts")
-        logger.debug(
-            "Synced web reply to Slack thread %s (ticket %s, ts=%s)",
-            ticket.slack_message_ts, ticket.display_id, ts,
-        )
-    except Exception:  # noqa: BLE001
-        logger.exception(
-            "Failed to post reply to Slack thread for ticket %s", ticket.display_id
-        )
-
-    # Top-level DM so the submitter sees an unread notification
-    submitter_slack_id = await _get_submitter_slack_id(ticket)
-    if notify_submitter and submitter_slack_id:
-        try:
-            await client.chat_postMessage(
-                channel=submitter_slack_id,
-                text=(
-                    f"💬 *New reply on {ticket.display_id}*\n"
-                    f"*{slack_escape(author_name)}:* {slack_escape(reply_body)}\n"
-                    f"_Open your support thread above to reply._"
-                ),
-            )
-        except Exception:  # noqa: BLE001
-            logger.exception(
-                "Failed to send reply notification DM for ticket %s", ticket.display_id
-            )
-
-    return ts
+    return await _post_thread_notification(
+        client,
+        ticket,
+        f"*{slack_escape(author_name)}:* {slack_escape(reply_body)}",
+        notify_submitter=notify_submitter,
+        dm_header=f"💬 *New reply on {ticket.display_id}*",
+    )
 
 
 async def post_ticket_update_to_slack(
@@ -624,30 +668,12 @@ async def post_ticket_update_to_slack(
     if not (ticket.slack_channel_id and ticket.slack_message_ts):
         return
 
-    try:
-        await client.chat_postMessage(
-            channel=ticket.slack_channel_id,
-            thread_ts=ticket.slack_message_ts,
-            text=text,
-        )
-        logger.debug("Posted field update to Slack thread for ticket %s", ticket.display_id)
-    except Exception:  # noqa: BLE001
-        logger.exception(
-            "Failed to post field update to Slack for ticket %s", ticket.display_id
-        )
-
-    # Top-level DM so the submitter sees an unread notification
-    submitter_slack_id = await _get_submitter_slack_id(ticket)
-    if notify_submitter and submitter_slack_id:
-        try:
-            await client.chat_postMessage(
-                channel=submitter_slack_id,
-                text=text,
-            )
-        except Exception:  # noqa: BLE001
-            logger.exception(
-                "Failed to send update notification DM for ticket %s", ticket.display_id
-            )
+    await _post_thread_notification(
+        client,
+        ticket,
+        text,
+        notify_submitter=notify_submitter,
+    )
 
 
 # ── Slack → Web sync ───────────────────────────────────────────────────────────

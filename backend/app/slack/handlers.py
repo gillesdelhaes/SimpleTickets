@@ -25,6 +25,7 @@ from app.models.ticket_status_config import TicketStatusConfig
 from app.services.rate_limit import RateLimiter
 from app.slack.service import (
     _download_slack_files,
+    anchor_ticket_in_dm,
     build_home_view,
     create_ticket_from_slack,
     get_user_by_slack_id,
@@ -43,6 +44,32 @@ logger = logging.getLogger(__name__)
 _message_limiter = RateLimiter(limit=20, window_seconds=60)
 
 # ── helpers ────────────────────────────────────────────────────────────────────
+
+async def _move_ticket_to_dm(
+    client: Any, ticket: Ticket, author_slack_id: str, channel_id: str, message_ts: str,
+) -> bool:
+    """
+    For a ticket made from a channel message (emoji reaction or message
+    shortcut): open a fresh thread in the author's DM with the bot, the same
+    place /ticket tickets live, so follow-up doesn't take over a thread in the
+    middle of a channel conversation. Returns False if the author couldn't be
+    DMed, in which case the ticket stays anchored on the channel message.
+    """
+    if not author_slack_id:
+        return False
+    try:
+        link = await client.chat_getPermalink(channel=channel_id, message_ts=message_ts)
+        origin = f"<{link['permalink']}|your message> in <#{channel_id}>"
+    except Exception:  # noqa: BLE001
+        origin = f"your message in <#{channel_id}>"
+    return await anchor_ticket_in_dm(
+        ticket,
+        author_slack_id,
+        f"📋 Ticket *{ticket.display_id}* has been opened from {origin}.\n"
+        f"*{slack_escape(ticket.title)}*\n"
+        f"Our team will get back to you shortly. Reply here to add a comment.",
+    )
+
 
 
 async def _fetch_categories() -> list[dict]:
@@ -415,12 +442,17 @@ def register_handlers(app: Any, workspace: SlackWorkspace) -> None:
             except Exception:  # noqa: BLE001
                 logger.exception("reaction_added: failed to download files for %s", ticket.display_id)
 
-        # ── Post thread confirmation ───────────────────────────────────────
+        # ── Move follow-up to the author's DM, leave a pointer in the channel ──
+        moved = await _move_ticket_to_dm(client, ticket, author_slack_id, channel_id, message_ts)
+        follow_up = (
+            f"Follow-up continues in a direct message with {slack_escape(submitter_name)}."
+            if moved else "Our team will follow up shortly."
+        )
         try:
             await client.chat_postMessage(
                 channel=channel_id,
                 thread_ts=message_ts,
-                text=f"✅ Ticket *{ticket.display_id}* created. Our team will follow up shortly.",
+                text=f"✅ Ticket *{ticket.display_id}* created. {follow_up}",
             )
         except Exception:  # noqa: BLE001
             logger.exception("reaction_added: failed to post thread reply for %s", ticket.display_id)
@@ -1157,13 +1189,19 @@ def register_handlers(app: Any, workspace: SlackWorkspace) -> None:
                     pass
             return
 
-        # Post confirmation in the original message thread so everyone in that channel can see it
+        # Move follow-up to the author's DM, and leave a pointer in the
+        # original message thread so everyone in that channel can see it
         if channel_id and message_ts:
+            moved = await _move_ticket_to_dm(client, ticket, author_slack_id, channel_id, message_ts)
+            follow_up = (
+                f"Follow-up continues in a direct message with {slack_escape(author_name)}."
+                if moved else "Our team will follow up shortly."
+            )
             try:
                 await client.chat_postMessage(
                     channel=channel_id,
                     thread_ts=message_ts,
-                    text=f"✅ Ticket *{ticket.display_id}* has been created. Our team will follow up shortly.",
+                    text=f"✅ Ticket *{ticket.display_id}* has been created. {follow_up}",
                 )
             except Exception:  # noqa: BLE001
                 logger.exception(
@@ -1171,7 +1209,8 @@ def register_handlers(app: Any, workspace: SlackWorkspace) -> None:
                 )
 
         # DM the tech who triggered the shortcut with a quick confirmation
-        if triggering_user_id:
+        # (unless they're the author, who already got the ticket DM above)
+        if triggering_user_id and triggering_user_id != author_slack_id:
             try:
                 await client.chat_postMessage(
                     channel=triggering_user_id,
