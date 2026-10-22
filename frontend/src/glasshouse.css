@@ -24,7 +24,9 @@
 
 /* ── 2. Theme tokens ────────────────────────────────────────────────────── */
 :root[data-theme="dark"] {
+  color-scheme:dark;  /* native popups (select menus, datalists, pickers, scrollbars) render dark */
   --bg:#0A0C10;
+  --menu-bg:#171A21;  /* opaque: native option lists can't show glass */
   --ink:#F2F4F8; --ink-2:#9AA3B2; --ink-3:#5E6675;
   --glass:rgba(23,26,33,.55);        /* tier 1: page panels        */
   --glass-strong:rgba(23,26,33,.86); /* tier 2: overlays           */
@@ -44,7 +46,9 @@
   --danger-ink:#F87171; --danger-bg:rgba(239,68,68,.13);
 }
 :root[data-theme="light"] {
+  color-scheme:light;
   --bg:#E9EBEF;
+  --menu-bg:#FFFFFF;
   --ink:#171A20; --ink-2:#5B6270; --ink-3:#9299A6;
   --glass:rgba(255,255,255,.55);
   --glass-strong:rgba(255,255,255,.90);
@@ -218,6 +222,12 @@ main{flex:1; min-width:0; padding:24px 28px 40px}
 .input::placeholder{color:var(--ink-3)}
 .input:focus,.select:focus{border-color:color-mix(in oklab, var(--b1) 55%, transparent);
   box-shadow:0 0 0 3px color-mix(in oklab, var(--b1) 18%, transparent)}
+/* Native option lists: some platforms (Linux GTK, Firefox) ignore color-scheme
+   and draw the menu with the system theme while the options inherit our --ink,
+   giving light-on-light text in dark mode. Pin both colors on every select —
+   not just .select, since some dropdowns style themselves inline. */
+select option, select optgroup{background-color:var(--menu-bg); color:var(--ink)}
+select option:disabled{color:var(--ink-3)}
 .selectwrap{position:relative}
 .selectwrap::after{content:"▾"; position:absolute; right:13px; top:50%; transform:translateY(-50%);
   font-size:11px; color:var(--ink-3); pointer-events:none}
