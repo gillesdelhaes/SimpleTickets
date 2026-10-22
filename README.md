@@ -106,4 +106,4 @@ alone can't decrypt anything). Commands and cron examples:
 
 ## License
 
-AGPL-3.0
+MIT — see [LICENSE](LICENSE).
