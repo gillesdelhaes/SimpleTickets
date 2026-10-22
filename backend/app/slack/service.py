@@ -517,6 +517,78 @@ async def send_csat_dm(ticket: "Ticket") -> None:
     except Exception:  # noqa: BLE001
         logger.exception("send_csat_dm: failed to DM %s", slack_user_id)
 
+# ── Slack ID link confirmation (My account) ────────────────────────────────────
+
+
+async def send_link_confirmation_dm(
+    client: Any, *, slack_user_id: str, token: str, user: User,
+) -> tuple[str, str]:
+    """DM a Slack account asking whether it really belongs to `user`, with
+    👍/👎 buttons carrying the request token. Returns (channel, ts) of the
+    message so it can be edited later. Raises on Slack errors."""
+    who = f"*{slack_escape(user.name)}* ({slack_escape(user.email)})"
+    text = f"{user.name} wants to link this Slack account to their SimpleTickets account. Is this you?"
+    result = await client.chat_postMessage(
+        channel=slack_user_id,
+        text=text,
+        blocks=[
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": (
+                        f"🔗 {who} wants to link this Slack account to their SimpleTickets account.\n\n"
+                        "Once linked, SimpleTickets sends ticket notifications and password-reset "
+                        "codes for that account here. *Is this you?*"
+                    ),
+                },
+            },
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "👍 Yes, that's me"},
+                        "style": "primary",
+                        "action_id": "slack_link_confirm",
+                        "value": token,
+                    },
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "👎 Not me"},
+                        "style": "danger",
+                        "action_id": "slack_link_decline",
+                        "value": token,
+                    },
+                ],
+            },
+            {
+                "type": "context",
+                "elements": [{
+                    "type": "mrkdwn",
+                    "text": "Didn't expect this? Click *Not me* — nothing is linked unless you confirm. The request expires in 24 hours.",
+                }],
+            },
+        ],
+    )
+    return result["channel"], result["ts"]
+
+
+async def close_link_dm(client: Any, channel: Optional[str], ts: Optional[str], text: str) -> None:
+    """Replace a link confirmation DM's buttons with a final status line.
+    Best-effort: a failure only leaves stale buttons, which are harmless
+    because their token no longer matches any request."""
+    if not channel or not ts or client is None:
+        return
+    try:
+        await client.chat_update(
+            channel=channel, ts=ts, text=text,
+            blocks=[{"type": "section", "text": {"type": "mrkdwn", "text": text}}],
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("close_link_dm: failed to update message %s in %s", ts, channel)
+
+
 async def _post_thread_notification(
     client: Any,
     ticket: Ticket,

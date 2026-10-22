@@ -45,6 +45,9 @@
   background: transparent;
   border: 0;
 }
+.sidebar.collapsed .side-foot-link {
+  flex: 0 0 auto;
+}
 .collapse-toggle {
   margin-top: 10px;
   width: 100%;

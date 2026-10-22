@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Navigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import AppShell from '../../components/layout/AppShell'
 import { useAuth } from '../../contexts/AuthContext'
@@ -9,7 +9,7 @@ import { useAgents, type UserRead } from '../../hooks/useAgents'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Tab = 'general' | 'workspaces' | 'categories' | 'sla' | 'statuses' | 'backup' | 'account'
+type Tab = 'general' | 'workspaces' | 'categories' | 'sla' | 'statuses' | 'backup'
 
 const ADMIN_TABS: { id: Tab; label: string }[] = [
   { id: 'general', label: 'General' },
@@ -18,11 +18,6 @@ const ADMIN_TABS: { id: Tab; label: string }[] = [
   { id: 'sla', label: 'SLA policies' },
   { id: 'statuses', label: 'Statuses' },
   { id: 'backup', label: 'Backup & restore' },
-  { id: 'account', label: 'My account' },
-]
-
-const USER_TABS: { id: Tab; label: string }[] = [
-  { id: 'account', label: 'My account' },
 ]
 
 type Priority = 'low' | 'medium' | 'high' | 'critical'
@@ -387,6 +382,7 @@ function WorkspaceCard({ workspace, agents }: { workspace: WorkspaceRead; agents
       api.patch<WorkspaceRead>(`/admin/slack-workspaces/${workspace.id}`, body).then(r => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin-slack-workspaces'] })
+      qc.invalidateQueries({ queryKey: ['slack-workspace-options'] })
       setEdits({}); setRevealing({}); setEscalationModeOverride(null); setNotifyModeOverride(null)
       setSaved(true); setTimeout(() => setSaved(false), 2000)
     },
@@ -688,7 +684,12 @@ function AddWorkspaceForm({ onDone, onCancel }: { onDone: () => void; onCancel: 
       trigger_emoji: triggerEmoji.trim() || 'clipboard',
       two_way_sync: twoWaySync,
     }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-slack-workspaces'] }); onDone() },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-slack-workspaces'] })
+      // The lightweight list (My account, Users, ticket modal) caches for 5 min.
+      qc.invalidateQueries({ queryKey: ['slack-workspace-options'] })
+      onDone()
+    },
     onError: (err: any) => setError(apiErrorMessage(err, 'Failed to connect workspace')),
   })
 
@@ -1560,154 +1561,21 @@ function Spin() {
   return <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="animate-spin"><path d="M7 1a6 6 0 1 1-4.24 1.76" /></svg>
 }
 
-// ── Account tab ────────────────────────────────────────────────────────────────
-
-function AccountTab() {
-  const [current, setCurrent] = useState('')
-  const [next, setNext] = useState('')
-  const [confirm, setConfirm] = useState('')
-  const [showCurrent, setShowCurrent] = useState(false)
-  const [showNext, setShowNext] = useState(false)
-  const [status, setStatus] = useState<'idle' | 'saving' | 'ok' | 'error'>('idle')
-  const [errorMsg, setErrorMsg] = useState('')
-
-  const mismatch = next.length > 0 && confirm.length > 0 && next !== confirm
-  const canSubmit = current.length > 0 && next.length >= 8 && next === confirm && status !== 'saving'
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!canSubmit) return
-    setStatus('saving')
-    setErrorMsg('')
-    try {
-      const res = await api.post('/auth/change-password', { current_password: current, new_password: next })
-      // The change revokes every token issued before it (other devices, stolen
-      // sessions) — swap in the fresh one so this session isn't logged out too.
-      if (res.data?.access_token) localStorage.setItem('st_token', res.data.access_token)
-      setStatus('ok')
-      setCurrent(''); setNext(''); setConfirm('')
-      setTimeout(() => setStatus('idle'), 3000)
-    } catch (err: unknown) {
-      setErrorMsg(apiErrorMessage(err, 'Something went wrong'))
-      setStatus('error')
-    }
-  }
-
-  const eyeIcon = (visible: boolean) => (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      {visible
-        ? <><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" /><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" /><line x1="1" y1="1" x2="23" y2="23" /></>
-        : <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></>
-      }
-    </svg>
-  )
-
-  return (
-    <div style={{ maxWidth: 420 }}>
-      <Card>
-        <CardHeader><SectionLabel>Change password</SectionLabel></CardHeader>
-        <form onSubmit={handleSubmit}>
-          <div style={{ padding: '18px 22px' }}>
-            <div className="fieldrow">
-              <label htmlFor="pw-current">Current password</label>
-              <div className="relative">
-                <input
-                  id="pw-current"
-                  className="input"
-                  type={showCurrent ? 'text' : 'password'}
-                  value={current}
-                  onChange={e => setCurrent(e.target.value)}
-                  autoComplete="current-password"
-                  style={{ paddingRight: 40 }}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowCurrent(v => !v)}
-                  aria-label={showCurrent ? 'Hide password' : 'Show password'}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 bg-transparent border-0 cursor-pointer text-ink-3 hover:text-ink flex p-0.5"
-                >
-                  {eyeIcon(showCurrent)}
-                </button>
-              </div>
-            </div>
-
-            <div className="fieldrow">
-              <label htmlFor="pw-next">New password <span className="font-normal text-ink-3">(min 8 characters)</span></label>
-              <div className="relative">
-                <input
-                  id="pw-next"
-                  className="input"
-                  type={showNext ? 'text' : 'password'}
-                  value={next}
-                  onChange={e => setNext(e.target.value)}
-                  autoComplete="new-password"
-                  style={{ paddingRight: 40 }}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowNext(v => !v)}
-                  aria-label={showNext ? 'Hide password' : 'Show password'}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 bg-transparent border-0 cursor-pointer text-ink-3 hover:text-ink flex p-0.5"
-                >
-                  {eyeIcon(showNext)}
-                </button>
-              </div>
-            </div>
-
-            <div className="fieldrow">
-              <label htmlFor="pw-confirm">Confirm new password</label>
-              <input
-                id="pw-confirm"
-                className="input"
-                type="password"
-                value={confirm}
-                onChange={e => setConfirm(e.target.value)}
-                autoComplete="new-password"
-                style={mismatch ? { borderColor: 'var(--danger-ink)' } : undefined}
-              />
-              {mismatch && <span className="text-[12px] text-danger-ink">Passwords don't match</span>}
-            </div>
-
-            {status === 'error' && (
-              <div className="rounded-control px-3 py-2 mb-3.5 text-[13px] text-danger-ink" style={{ background: 'var(--danger-bg)' }}>
-                {errorMsg}
-              </div>
-            )}
-            {status === 'ok' && (
-              <div className="rounded-control px-3 py-2 mb-3.5 text-[13px]" style={{ background: 'var(--brand-tint)', color: 'var(--brand-ink)' }}>
-                Password updated successfully.
-              </div>
-            )}
-
-            <button
-              type="submit"
-              className="btn"
-              disabled={!canSubmit}
-              style={!canSubmit ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
-            >
-              {status === 'saving' && <Spin />}
-              Update password
-            </button>
-          </div>
-        </form>
-      </Card>
-    </div>
-  )
-}
-
 // ── Main page ──────────────────────────────────────────────────────────────────
 
 export default function Settings() {
   const { user } = useAuth()
-  const isAdmin = user?.role === 'admin'
-  const tabs = isAdmin ? ADMIN_TABS : USER_TABS
-  const defaultTab: Tab = isAdmin ? 'general' : 'account'
-
   const [searchParams, setSearchParams] = useSearchParams()
-  // Validate the tab against what this role can actually see — otherwise a deep
-  // link like ?tab=general for a non-admin (or a bogus value) renders nothing.
+
+  // Settings is admin-only; technicians used to reach "My account" here, and
+  // a few banners still link here — send them to the account page instead.
+  if (user?.role !== 'admin') return <Navigate to="/account" replace />
+
+  // Validate the tab — a bogus or stale deep link (e.g. the old ?tab=account)
+  // would otherwise render nothing.
   const rawTab = searchParams.get('tab')
-  const tab: Tab = tabs.some(t => t.id === rawTab) ? (rawTab as Tab) : defaultTab
+  if (rawTab === 'account') return <Navigate to="/account" replace />
+  const tab: Tab = ADMIN_TABS.some(t => t.id === rawTab) ? (rawTab as Tab) : 'general'
   function setTab(t: Tab) { setSearchParams({ tab: t }, { replace: true }) }
 
   return (
@@ -1715,20 +1583,19 @@ export default function Settings() {
       <div style={{ maxWidth: 1100 }}>
         {/* Tab bar */}
         <div className="flex gap-1.5 mb-5 flex-wrap">
-          {tabs.map(t => (
+          {ADMIN_TABS.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} className={`chip${tab === t.id ? ' on' : ''}`}>
               {t.label}
             </button>
           ))}
         </div>
 
-        {isAdmin && tab === 'general'    && <GeneralTab />}
-        {isAdmin && tab === 'workspaces' && <WorkspacesTab />}
-        {isAdmin && tab === 'categories' && <CategoriesTab />}
-        {isAdmin && tab === 'sla'        && <SLATab />}
-        {isAdmin && tab === 'statuses'   && <StatusesTab />}
-        {isAdmin && tab === 'backup'     && <BackupTab />}
-        {tab === 'account' && <AccountTab />}
+        {tab === 'general'    && <GeneralTab />}
+        {tab === 'workspaces' && <WorkspacesTab />}
+        {tab === 'categories' && <CategoriesTab />}
+        {tab === 'sla'        && <SLATab />}
+        {tab === 'statuses'   && <StatusesTab />}
+        {tab === 'backup'     && <BackupTab />}
       </div>
     </AppShell>
   )

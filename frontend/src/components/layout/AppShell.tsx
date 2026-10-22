@@ -266,17 +266,6 @@ export default function AppShell({ title, children }: AppShellProps) {
               </NavLink>
             ))}
 
-            {!isAdmin && (
-              <NavLink
-                to="/admin/settings"
-                className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-                title={sidebarCollapsed ? 'My account' : undefined}
-              >
-                <IconSettings />
-                <span>My account</span>
-              </NavLink>
-            )}
-
             {isAdmin && (
               <>
                 <div className="nav-sep">Admin</div>
@@ -295,12 +284,19 @@ export default function AppShell({ title, children }: AppShellProps) {
             )}
           </nav>
 
-          <div className="side-foot">
-            <div className="avatar">{avatarInitial}</div>
-            <div className="who">
-              <b>{user?.name ?? user?.email}</b>
-              <span>{roleLabel}</span>
-            </div>
+          <div className={`side-foot${location.pathname === '/account' ? ' active' : ''}`}>
+            <Link
+              to="/account"
+              className="side-foot-link"
+              title={sidebarCollapsed ? 'My account' : 'My account — password & Slack IDs'}
+              aria-label="My account"
+            >
+              <div className="avatar">{avatarInitial}</div>
+              <div className="who">
+                <b>{user?.name ?? user?.email}</b>
+                <span>{roleLabel}</span>
+              </div>
+            </Link>
             <button
               onClick={logout}
               aria-label="Sign out"

@@ -157,6 +157,12 @@ kbd{font-family:'JetBrains Mono',monospace; font-size:10.5px;
 .side-foot .who{line-height:1.2; min-width:0}
 .side-foot .who b{display:block; font-size:12.5px; font-weight:600}
 .side-foot .who span{font-size:11px; color:var(--ink-3)}
+.side-foot-link{display:flex; align-items:center; gap:10px; flex:1; min-width:0;
+  color:inherit; text-decoration:none; border-radius:10px; margin:-4px; padding:4px}
+.side-foot-link:hover{background:var(--row-hover)}
+.side-foot-link:hover .who span{color:var(--brand-ink)}
+.side-foot-link:focus-visible{outline:2px solid var(--brand-ink); outline-offset:2px}
+.side-foot.active{border-color:var(--brand-ink)}
 
 /* ── 7. Main & topbar ───────────────────────────────────────────────────── */
 main{flex:1; min-width:0; padding:24px 28px 40px}
@@ -478,6 +484,7 @@ td .who.none{color:var(--ink-3); font-size:12.5px}
   .sidebar .wordmark,.nav-item span,.nav-sep,.side-foot .who{display:none}
   .nav-item{justify-content:center; padding:11px}
   .side-foot{justify-content:center; background:transparent; border:0}
+  .side-foot-link{flex:0 0 auto}
   .search{display:none}
   .formgrid{grid-template-columns:1fr}
 }

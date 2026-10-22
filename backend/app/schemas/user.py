@@ -57,3 +57,15 @@ class SlackIdentityUpdate(BaseModel):
 class UserListResponse(BaseModel):
     items: list[UserRead]
     total: int
+
+
+class PendingSlackLinkRead(BaseModel):
+    """A self-service Slack link waiting for 👍 in the confirmation DM."""
+    workspace_id: int
+    slack_user_id: str
+    expires_at: datetime
+
+
+class AccountRead(UserRead):
+    """GET /account — the caller's own profile plus pending Slack links."""
+    pending_slack_links: list[PendingSlackLinkRead] = []

@@ -23,12 +23,12 @@ from app.auth.deps import require_admin
 from app.database import get_session
 from app.models import AuditLog, AuthProvider, Role, Ticket, User
 from app.models.slack_workspace import SlackWorkspace
-from app.models.user_slack_identity import UserSlackIdentity
 from app.schemas.audit import AuditLogRead, AuditLogResponse
 from app.schemas.auth import CreateLocalUserRequest
 from app.schemas.user import SlackIdentityRead, SlackIdentityUpdate, UserAdminUpdate, UserListResponse, UserRead
 from app.services.audit import write_audit
 from app.services.passwords import hash_password
+from app.services.slack_identity import load_identities, set_identity
 from app.utils import client_ip
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -38,35 +38,13 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 async def _to_user_read(session: AsyncSession, user: User) -> UserRead:
-    identities = await _load_identities(session, [user.id])
+    identities = await load_identities(session, [user.id])
     return _build_user_read(user, identities.get(user.id, []))
 
 
 async def _to_user_reads(session: AsyncSession, users: list[User]) -> list[UserRead]:
-    identities = await _load_identities(session, [u.id for u in users])
+    identities = await load_identities(session, [u.id for u in users])
     return [_build_user_read(u, identities.get(u.id, [])) for u in users]
-
-
-async def _load_identities(session: AsyncSession, user_ids: list[int]) -> dict[int, list[SlackIdentityRead]]:
-    if not user_ids:
-        return {}
-    rows = (await session.execute(
-        select(
-            UserSlackIdentity.user_id,
-            UserSlackIdentity.workspace_id,
-            SlackWorkspace.name,
-            UserSlackIdentity.slack_user_id,
-        )
-        .join(SlackWorkspace, SlackWorkspace.id == UserSlackIdentity.workspace_id)
-        .where(UserSlackIdentity.user_id.in_(user_ids))
-        .order_by(SlackWorkspace.name)
-    )).all()
-    by_user: dict[int, list[SlackIdentityRead]] = {}
-    for user_id, workspace_id, workspace_name, slack_user_id in rows:
-        by_user.setdefault(user_id, []).append(
-            SlackIdentityRead(workspace_id=workspace_id, workspace_name=workspace_name, slack_user_id=slack_user_id)
-        )
-    return by_user
 
 
 def _build_user_read(user: User, identities: list[SlackIdentityRead]) -> UserRead:
@@ -452,52 +430,10 @@ async def set_slack_identity(
     if workspace is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
 
-    new_sid = body.slack_user_id.strip() if body.slack_user_id else None
-
-    existing = (await session.execute(
-        select(UserSlackIdentity).where(
-            UserSlackIdentity.user_id == user_id,
-            UserSlackIdentity.workspace_id == workspace_id,
-        )
-    )).scalar_one_or_none()
-    old_sid = existing.slack_user_id if existing else None
-
-    if old_sid == new_sid:
-        return await _to_user_read(session, user)
-
-    if new_sid is None:
-        await session.delete(existing)
-    else:
-        conflict = (await session.execute(
-            select(UserSlackIdentity).where(
-                UserSlackIdentity.workspace_id == workspace_id,
-                UserSlackIdentity.slack_user_id == new_sid,
-                UserSlackIdentity.user_id != user_id,
-            )
-        )).scalar_one_or_none()
-        if conflict is not None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f'That Slack ID is already linked to another user in "{workspace.name}"',
-            )
-        if existing is not None:
-            existing.slack_user_id = new_sid
-        else:
-            session.add(UserSlackIdentity(user_id=user_id, workspace_id=workspace_id, slack_user_id=new_sid))
-
-    await write_audit(
-        session,
-        actor_id=admin.id,
-        action="user.updated",
-        entity_type="user",
-        entity_id=user_id,
-        payload={
-            "email": user.email,
-            "slack_identity": {"workspace": workspace.name, "from": old_sid, "to": new_sid},
-        },
-        ip_address=client_ip(request),
+    await set_identity(
+        session, user=user, workspace=workspace, slack_user_id=body.slack_user_id,
+        actor=admin, ip_address=client_ip(request),
     )
-    await session.commit()
     return await _to_user_read(session, user)
 
 

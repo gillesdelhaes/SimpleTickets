@@ -13,6 +13,7 @@ import AdminSettings from './pages/admin/Settings'
 import AdminAudit from './pages/admin/Audit'
 import Search from './pages/Search'
 import Reports from './pages/Reports'
+import Account from './pages/Account'
 import SetupWizard from './pages/setup/SetupWizard'
 
 export default function App() {
@@ -35,8 +36,10 @@ export default function App() {
             <Route path="/reports" element={<Reports />} />
           </Route>
 
-          {/* ── Settings: all logged-in users (admin tabs hidden for non-admins) ── */}
+          {/* ── My account: every staff member (password, own Slack IDs) ── */}
           <Route element={<ProtectedRoute roles={['technician', 'admin']} />}>
+            <Route path="/account" element={<Account />} />
+            {/* Admin-only; non-admins are redirected to /account by the page */}
             <Route path="/admin/settings" element={<AdminSettings />} />
           </Route>
 

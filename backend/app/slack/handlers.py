@@ -339,6 +339,41 @@ async def _handle_csat_response(body: dict, client: Any, workspace_id: int, *, s
             logger.warning("csat_response: failed to replace buttons for ticket %d — buttons may remain active", ticket_id)
 
 
+# ── Slack ID link confirmation helper ─────────────────────────────────────────
+
+_LINK_OUTCOME_TEXT = {
+    "linked": "✅ Linked — this Slack account is now connected to *{name}*'s SimpleTickets account.",
+    "declined": "🚫 Not linked. If you didn't expect this request, let your IT admin know.",
+    "expired": "⌛ This link request has expired. Start again from *My account* in SimpleTickets.",
+    "conflict": "⚠️ Not linked — this Slack account is already connected to another SimpleTickets user. Ask your IT admin.",
+    "invalid": "This link request is no longer valid.",
+}
+
+
+async def _handle_link_response(body: dict, client: Any, workspace_id: int, *, approve: bool) -> None:
+    from app.services.slack_identity import resolve_link_request
+    from app.slack.service import close_link_dm
+
+    responder: str = body.get("user", {}).get("id", "")
+    token: str = (body.get("actions") or [{}])[0].get("value", "")
+    try:
+        async with AsyncSessionLocal() as session:
+            outcome, user = await resolve_link_request(
+                session, token=token, workspace_id=workspace_id,
+                responder_slack_id=responder, approve=approve,
+            )
+    except Exception:  # noqa: BLE001
+        logger.exception("slack_link_response: failed for responder %s", responder)
+        return
+    if outcome == "invalid":
+        logger.warning("slack_link_response: invalid/foreign click by %s in workspace %d", responder, workspace_id)
+
+    text = _LINK_OUTCOME_TEXT[outcome].format(name=slack_escape(user.name) if user else "")
+    await close_link_dm(
+        client, body.get("channel", {}).get("id"), body.get("message", {}).get("ts"), text,
+    )
+
+
 # ── handler registration ───────────────────────────────────────────────────────
 
 def register_handlers(app: Any, workspace: SlackWorkspace) -> None:
@@ -1020,6 +1055,18 @@ def register_handlers(app: Any, workspace: SlackWorkspace) -> None:
     async def handle_csat_negative(ack: Any, body: dict, client: Any) -> None:
         await ack()
         await _handle_csat_response(body, client, workspace_id, score=False)
+
+    # ── Slack ID link confirmation 👍 / 👎 (My account) ─────────────────────────
+
+    @app.action("slack_link_confirm")
+    async def handle_slack_link_confirm(ack: Any, body: dict, client: Any) -> None:
+        await ack()
+        await _handle_link_response(body, client, workspace_id, approve=True)
+
+    @app.action("slack_link_decline")
+    async def handle_slack_link_decline(ack: Any, body: dict, client: Any) -> None:
+        await ack()
+        await _handle_link_response(body, client, workspace_id, approve=False)
 
     # ── Message shortcut: Create ticket from any message ──────────────────────
 
