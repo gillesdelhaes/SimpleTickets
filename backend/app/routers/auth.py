@@ -279,11 +279,30 @@ async def change_password(
     if not body.new_password or len(body.new_password) < 8:
         raise HTTPException(status_code=422, detail="New password must be at least 8 characters")
     if not current_user.hashed_password or not verify_password(body.current_password, current_user.hashed_password):
+        await write_audit(
+            session,
+            actor_id=current_user.id,
+            action="user.password_change_failed",
+            entity_type="user",
+            entity_id=current_user.id,
+            payload={"email": current_user.email, "reason": "wrong current password"},
+            ip_address=_client_ip(request),
+        )
+        await session.commit()
         raise HTTPException(status_code=400, detail="Current password is incorrect")
     current_user.hashed_password = hash_password(body.new_password)
     # Truncate to the second: JWT iat is whole-second, so a sub-second cutoff
     # would reject the very token issued below.
     current_user.tokens_valid_after = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
+    await write_audit(
+        session,
+        actor_id=current_user.id,
+        action="user.password_changed",
+        entity_type="user",
+        entity_id=current_user.id,
+        payload={"email": current_user.email, "other_sessions_revoked": True},
+        ip_address=_client_ip(request),
+    )
     await session.commit()
     return TokenResponse(
         access_token=create_access_token(

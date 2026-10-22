@@ -29,6 +29,7 @@ from app.services.slack_identity import (
     load_identities,
     set_identity,
 )
+from app.services.audit import write_audit
 from app.slack.bot import get_slack_client
 from app.slack.service import close_link_dm, send_link_confirmation_dm
 from app.utils import client_ip
@@ -59,14 +60,25 @@ async def _active_workspace(session: AsyncSession, workspace_id: int) -> SlackWo
     return workspace
 
 
-async def _drop_request(session: AsyncSession, user: User, workspace_id: int, dm_text: str) -> None:
-    """Delete the user's pending request for a workspace (if any) and retire
-    its DM's buttons. Caller commits."""
-    req = await get_request(session, user.id, workspace_id)
+async def _drop_request(
+    session: AsyncSession, user: User, workspace: SlackWorkspace, dm_text: str, ip_address: str | None,
+) -> None:
+    """Delete the user's pending request for a workspace (if any), retire
+    its DM's buttons and audit the cancellation. Caller commits."""
+    req = await get_request(session, user.id, workspace.id)
     if req is None:
         return
-    await close_link_dm(get_slack_client(workspace_id), req.slack_channel_id, req.slack_message_ts, dm_text)
+    await close_link_dm(get_slack_client(workspace.id), req.slack_channel_id, req.slack_message_ts, dm_text)
     await session.delete(req)
+    await write_audit(
+        session,
+        actor_id=user.id,
+        action="user.slack_link_cancelled",
+        entity_type="user",
+        entity_id=user.id,
+        payload={"email": user.email, "workspace": workspace.name, "slack_user_id": req.slack_user_id},
+        ip_address=ip_address,
+    )
 
 
 @router.get("", response_model=AccountRead)
@@ -95,7 +107,7 @@ async def set_my_slack_identity(
     new_sid = (body.slack_user_id or "").strip()
 
     if not new_sid:
-        await _drop_request(session, current_user, workspace_id, "🚫 Link request cancelled.")
+        await _drop_request(session, current_user, workspace, "🚫 Link request cancelled.", client_ip(request))
         await set_identity(
             session, user=current_user, workspace=workspace, slack_user_id=None,
             actor=current_user, ip_address=client_ip(request),
@@ -152,9 +164,13 @@ async def set_my_slack_identity(
 @router.delete("/slack-link-request/{workspace_id}", response_model=AccountRead)
 async def cancel_my_slack_link_request(
     workspace_id: int,
+    request: Request,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> AccountRead:
-    await _drop_request(session, current_user, workspace_id, "🚫 Link request cancelled.")
+    workspace = await session.get(SlackWorkspace, workspace_id)
+    if workspace is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    await _drop_request(session, current_user, workspace, "🚫 Link request cancelled.", client_ip(request))
     await session.commit()
     return await _account_read(session, current_user)

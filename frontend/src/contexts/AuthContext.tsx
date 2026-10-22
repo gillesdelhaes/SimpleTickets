@@ -90,8 +90,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Best-effort server-side revocation so the token can't be replayed
     // before it would otherwise expire — always clear local state regardless
     // of whether the request succeeds (e.g. offline), so the UI never gets
-    // stuck signed in.
-    api.post('/auth/logout').catch(() => {})
+    // stuck signed in. The token is attached here explicitly: axios runs
+    // request interceptors asynchronously, so by the time the shared one
+    // reads localStorage the removeItem below has already happened — the
+    // request used to go out unauthenticated, so the server never revoked
+    // the token nor audited the logout.
+    const current = localStorage.getItem('st_token')
+    if (current) {
+      api.post('/auth/logout', null, { headers: { Authorization: `Bearer ${current}` } }).catch(() => {})
+    }
     localStorage.removeItem('st_token')
     setToken(null)
     setUser(null)

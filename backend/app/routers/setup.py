@@ -10,7 +10,7 @@ GET  /api/setup/status       — unauthenticated; used by frontend to gate the w
 """
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +20,7 @@ from app.models.enums import AuthProvider, Role
 from app.models.slack_workspace import SlackWorkspace
 from app.models.user import User
 from app.schemas.fields import LooseEmail
+from app.utils import client_ip
 from app.services.passwords import hash_password
 from app.slack.service import slack_test_error_message
 from app.services.settings_service import (
@@ -210,6 +211,7 @@ async def setup_slack(
 
 @router.post("/complete")
 async def setup_complete(
+    request: Request,
     session: AsyncSession = Depends(_require_setup_incomplete),
 ) -> dict:
     """
@@ -223,6 +225,22 @@ async def setup_complete(
         )
 
     await set_setting("setup_complete", "true", session)
+
+    # First audit entry of every instance: who set it up and with what.
+    from sqlmodel import select
+    from app.services.audit import write_audit
+    admin = (await session.execute(
+        select(User).where(User.role == Role.admin).order_by(User.id).limit(1)
+    )).scalar_one()
+    workspaces = (await session.execute(select(SlackWorkspace.name).order_by(SlackWorkspace.id))).scalars().all()
+    await write_audit(
+        session,
+        actor_id=admin.id,
+        action="instance.initialized",
+        entity_type="instance",
+        payload={"admin_email": admin.email, "slack_workspaces": list(workspaces)},
+        ip_address=client_ip(request),
+    )
     await session.commit()
 
     # Warm the settings cache then start Slack (fire-and-forget; don't block the response)

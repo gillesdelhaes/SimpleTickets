@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -7,6 +7,8 @@ from app.auth.deps import get_current_user, require_admin
 from app.database import get_session
 from app.models import Category, User
 from app.schemas.category import CategoryCreate, CategoryRead, CategoryUpdate
+from app.services.audit import write_audit
+from app.utils import client_ip
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -28,7 +30,8 @@ async def list_categories(
 @router.post("", response_model=CategoryRead, status_code=status.HTTP_201_CREATED)
 async def create_category(
     body: CategoryCreate,
-    _admin: User = Depends(require_admin),
+    request: Request,
+    admin: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> Category:
     """Create a new category. Admin only."""
@@ -44,6 +47,16 @@ async def create_category(
 
     category = Category(name=body.name)
     session.add(category)
+    await session.flush()
+    await write_audit(
+        session,
+        actor_id=admin.id,
+        action="category.created",
+        entity_type="category",
+        entity_id=category.id,
+        payload={"name": category.name},
+        ip_address=client_ip(request),
+    )
     await session.commit()
     await session.refresh(category)
     return category
@@ -53,7 +66,8 @@ async def create_category(
 async def update_category(
     category_id: int,
     body: CategoryUpdate,
-    _admin: User = Depends(require_admin),
+    request: Request,
+    admin: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> Category:
     """Rename or archive/unarchive a category. Admin only."""
@@ -72,10 +86,29 @@ async def update_category(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"A category named '{body.name}' already exists",
             )
+
+    changes: dict = {}
+    if body.name is not None and body.name != category.name:
+        changes["name"] = {"from": category.name, "to": body.name}
         category.name = body.name
 
-    if body.is_archived is not None:
+    if body.is_archived is not None and body.is_archived != category.is_archived:
+        changes["archived"] = {"from": category.is_archived, "to": body.is_archived}
         category.is_archived = body.is_archived
+
+    if changes:
+        action = "category.updated"
+        if list(changes) == ["archived"]:
+            action = "category.archived" if category.is_archived else "category.unarchived"
+        await write_audit(
+            session,
+            actor_id=admin.id,
+            action=action,
+            entity_type="category",
+            entity_id=category.id,
+            payload={"name": category.name, "changes": changes},
+            ip_address=client_ip(request),
+        )
 
     await session.commit()
     await session.refresh(category)

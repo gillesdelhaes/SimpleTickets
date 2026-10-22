@@ -110,17 +110,16 @@ async def set_identity(
         else:
             session.add(UserSlackIdentity(user_id=user.id, workspace_id=workspace.id, slack_user_id=new_sid))
 
+    payload: dict = {"email": user.email, "workspace": workspace.name, "slack_user_id": new_sid or old_sid}
+    if new_sid and old_sid:
+        payload["previous_slack_user_id"] = old_sid
     await write_audit(
         session,
         actor_id=actor.id,
-        action="user.updated",
+        action="user.slack_linked" if new_sid else "user.slack_unlinked",
         entity_type="user",
         entity_id=user.id,
-        payload={
-            "email": user.email,
-            "slack_identity": {"workspace": workspace.name, "from": old_sid, "to": new_sid},
-            **(audit_extra or {}),
-        },
+        payload={**payload, **(audit_extra or {})},
         ip_address=ip_address,
     )
     await session.commit()
