@@ -5,12 +5,15 @@ import { useQuery } from '@tanstack/react-query'
 import {
   BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell, PieChart, Pie, Legend,
+  ResponsiveContainer, Cell, PieChart, Pie, Legend, LabelList,
 } from 'recharts'
 import AppShell from '../components/layout/AppShell'
-import { parseUTC } from '../types/ticket'
+import { getAllStatuses, parseUTC, statusColor, statusLabel } from '../types/ticket'
 import { useAuth } from '../contexts/AuthContext'
 import api from '../lib/api'
+import { useAppConfig } from '../hooks/useAppConfig'
+import { useCategories } from '../hooks/useCategories'
+import { CATEGORY_PALETTE, HueGradientDefs, colorDistance, harmonize, hueGradientBar, isNeutral, useThemeAttr, type Theme } from '../lib/chartPalette'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -57,6 +60,133 @@ interface SlaBreachedRow {
 // ── Chart styling (Glasshouse §10: brand gradient series, track grid, ink ticks) ──
 
 const TICK_STYLE = { fontSize: 10, fill: 'var(--ink-3)', fontFamily: "'JetBrains Mono', monospace" }
+
+// Colorful mode: each bar gets its own color (category, priority, status,
+// channel) as a hue gradient within that color. Off, every bar wears the brand
+// gradient. On by default — the brand gradient's two colors per bar were
+// reported as reading like they meant something.
+const COLORFUL_KEY = 'reports-colorful'
+
+function loadColorful(): boolean {
+  try {
+    const v = localStorage.getItem(COLORFUL_KEY)
+    if (v === '0') return false
+  } catch { /* storage unavailable */ }
+  return true
+}
+
+/** Palette icon; when colorful, its paint dots show the first category colors. */
+function PaletteIcon({ dots }: { dots: string[] | null }) {
+  const spots: [number, number][] = [[13.5, 6.5], [17.5, 10.5], [8.5, 7.5], [6.5, 12.5]]
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.65-.75 1.65-1.69 0-.44-.18-.84-.44-1.13-.29-.29-.44-.65-.44-1.13a1.64 1.64 0 0 1 1.67-1.67h2c3.05 0 5.55-2.5 5.55-5.55C21.97 6.01 17.46 2 12 2z" />
+      {spots.map(([cx, cy], i) => (
+        <circle key={i} cx={cx} cy={cy} r={dots ? 1.9 : 1} fill={dots ? dots[i] : 'currentColor'} stroke="none" />
+      ))}
+    </svg>
+  )
+}
+
+/**
+ * Chart color per status: its configured hue, re-toned to sit with the
+ * palette. A gray-configured status (e.g. Closed) gets a real color instead —
+ * the palette slot farthest from every other status's color in both themes — so the chart
+ * never shows a gray bar. Computed over all configured statuses (not just the
+ * ones in the current data) so a status keeps its color across date ranges.
+ */
+function statusColors(statuses: { name: string; color: string }[], theme: Theme): Map<string, string> {
+  const themes: Theme[] = ['dark', 'light']
+  // Chromatic statuses keep their hue; remember both themes' versions so a
+  // gray status's pick is the same palette slot in either theme.
+  const taken = new Map<string, Record<Theme, string>>()
+  for (const s of statuses) {
+    if (!isNeutral(s.color)) taken.set(s.name, { dark: harmonize(s.color, 'dark'), light: harmonize(s.color, 'light') })
+  }
+  for (const s of statuses) {
+    if (taken.has(s.name)) continue
+    const others = [...taken.values()]
+    let best = { slot: CATEGORY_PALETTE[0], d: -1 }
+    for (const slot of CATEGORY_PALETTE) {
+      const d = Math.min(...others.flatMap(o => themes.map(t => colorDistance(slot[t], o[t]))), Infinity)
+      if (d > best.d) best = { slot, d }
+    }
+    taken.set(s.name, { dark: best.slot.dark, light: best.slot.light })
+  }
+  return new Map([...taken].map(([name, c]) => [name, c[theme]]))
+}
+
+/** Urgency reuses the status tones (red/amber); Medium takes the palette's first hue. */
+function priorityFill(key: string, hues: string[]): string {
+  const fills: Record<string, string> = {
+    critical: 'var(--danger-ink)',
+    high: 'var(--warn-ink)',
+    medium: hues[0],
+    low: 'var(--ink-3)',
+  }
+  return fills[key] ?? 'var(--ink-3)'
+}
+
+/**
+ * Category hue keyed by the category's identity (its position in the
+ * category list by id), so a category keeps its color whatever its rank or
+ * the date range. Categories past the palette's length, and "Uncategorised",
+ * fall back to gray.
+ */
+function categoryHue(name: string, categories: { id: number; name: string }[] | undefined, hues: string[]): string {
+  const ordered = [...(categories ?? [])].sort((a, b) => a.id - b.id)
+  const i = ordered.findIndex(c => c.name === name)
+  return i >= 0 && i < hues.length ? hues[i] : 'var(--ink-3)'
+}
+
+/** Solid hue for one bar (the gradient mode ignores it and uses the brand fill). */
+function barColor(
+  chart: 'priority' | 'status' | 'category',
+  key: string,
+  theme: Theme,
+  hues: string[],
+  statusMap: Map<string, string>,
+  categories?: { id: number; name: string }[],
+): string {
+  if (chart === 'priority') return priorityFill(key, hues)
+  if (chart === 'status') return statusMap.get(key) ?? harmonize(statusColor(key), theme)
+  return categoryHue(key, categories, hues)
+}
+
+function gradientFill(chart: 'priority' | 'status' | 'category'): string {
+  return chart === 'category' ? 'url(#ghGradH)' : 'url(#ghGradV)'
+}
+
+/** X-axis tick that wraps multi-word labels ("Pending User") onto two lines. */
+function WrappedTick({ x = 0, y = 0, payload }: { x?: number; y?: number; payload?: { value: string } }) {
+  const words = statusLabel(payload?.value ?? '').split(' ')
+  return (
+    <text x={x} y={y + 10} textAnchor="middle" style={TICK_STYLE}>
+      {words.map((w, i) => <tspan key={i} x={x} dy={i === 0 ? 0 : 11}>{w}</tspan>)}
+    </text>
+  )
+}
+
+// Value at the end of each bar — identity never rests on color alone
+const VALUE_LABEL = { fontSize: 11, fill: 'var(--ink-2)', fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }
+
+/** Gradient definitions shared by every chart on the page (referenced by id). */
+function ChartGradients() {
+  return (
+    <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden>
+      <defs>
+        <linearGradient id="ghGradV" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="var(--b1)" />
+          <stop offset="100%" stopColor="var(--b2)" />
+        </linearGradient>
+        <linearGradient id="ghGradH" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="var(--b2)" />
+          <stop offset="100%" stopColor="var(--b1)" />
+        </linearGradient>
+      </defs>
+    </svg>
+  )
+}
 
 // ── Date range helpers ─────────────────────────────────────────────────────────
 
@@ -180,6 +310,23 @@ export default function Reports() {
   const [range, setRange] = useState<Range>('30d')
   const [assigneeId, setAssigneeId] = useState<number | null>(null)
   const [exporting, setExporting] = useState(false)
+  // Subscribed so status bars repaint once configured status colors load
+  const { data: appConfig } = useAppConfig()
+  const { data: categories } = useCategories()
+  const [colorful, setColorfulState] = useState(loadColorful)
+  const theme = useThemeAttr()
+  const hues = CATEGORY_PALETTE.map(c => c[theme])
+  const statusMap = statusColors(appConfig?.statuses ?? getAllStatuses(), theme)
+  // Channels: violet for Slack, sapphire for Web
+  const channelFill = (source: string) =>
+    source === 'slack' ? hues[3] : source === 'web' ? hues[0] : 'var(--ink-3)'
+  const fillFor = (chart: 'priority' | 'status' | 'category', key: string) =>
+    colorful ? barColor(chart, key, theme, hues, statusMap, categories) : gradientFill(chart)
+
+  function toggleColorful() {
+    setColorfulState(!colorful)
+    try { localStorage.setItem(COLORFUL_KEY, colorful ? '0' : '1') } catch { /* storage unavailable */ }
+  }
 
   const params: Record<string, string> = {
     ...rangeParams(range),
@@ -231,6 +378,14 @@ export default function Reports() {
 
   return (
     <AppShell title="Reports">
+      <ChartGradients />
+      {colorful && (
+        <HueGradientDefs theme={theme} colors={[
+          ...(byPriority.data ?? []).map(d => fillFor('priority', d.priority)),
+          ...(byStatus.data ?? []).map(d => fillFor('status', d.status)),
+          ...(byCategory.data ?? []).map(d => fillFor('category', d.category)),
+        ]} />
+      )}
       {/* ── Toolbar: date range + technician filter + export ── */}
       <div className="flex items-center gap-2 mb-5 flex-wrap">
         {(['7d', '30d', '90d'] as Range[]).map(r => (
@@ -280,6 +435,17 @@ export default function Reports() {
         )}
 
         <div className="flex-1" />
+
+        <button
+          onClick={toggleColorful}
+          className={`chip${colorful ? ' on' : ''}`}
+          aria-pressed={colorful}
+          aria-label="Colorful charts"
+          title={colorful ? 'Each bar has its own color — click for the brand gradient' : 'Give each bar its own color'}
+          style={{ display: 'inline-flex', alignItems: 'center', padding: '6px 9px' }}
+        >
+          <PaletteIcon dots={colorful ? hues.slice(0, 4) : null} />
+        </button>
 
         {isAdmin && (
           <button
@@ -338,18 +504,6 @@ export default function Reports() {
           {volume.isLoading ? <Skeleton height={220} /> : (
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={volume.data ?? []} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
-                <defs>
-                  <linearGradient id="ghGradV" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--b1)" />
-                    <stop offset="100%" stopColor="var(--b2)" />
-                  </linearGradient>
-                </defs>
-                <defs>
-                  <linearGradient id="ghGradH" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor="var(--b2)" />
-                    <stop offset="100%" stopColor="var(--b1)" />
-                  </linearGradient>
-                </defs>
                 <CartesianGrid stroke="var(--track)" vertical={false} />
                 <XAxis
                   dataKey="date"
@@ -362,8 +516,8 @@ export default function Reports() {
                 <YAxis tick={TICK_STYLE} allowDecimals={false} axisLine={false} tickLine={false} />
                 <Tooltip content={<ChartTooltip />} />
                 <Line
-                  type="monotone" dataKey="count" stroke="var(--b1)"
-                  strokeWidth={2} dot={false} activeDot={{ r: 4, fill: 'var(--b1)', stroke: 'none' }}
+                  type="monotone" dataKey="count" stroke={colorful ? hues[0] : 'var(--b1)'}
+                  strokeWidth={2} dot={false} activeDot={{ r: 4, fill: colorful ? hues[0] : 'var(--b1)', stroke: 'none' }}
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -376,24 +530,17 @@ export default function Reports() {
         <Section title="By priority">
           {byPriority.isLoading ? <Skeleton /> : (
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={byPriority.data ?? []} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
-                <defs>
-                  <linearGradient id="ghGradV" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--b1)" />
-                    <stop offset="100%" stopColor="var(--b2)" />
-                  </linearGradient>
-                </defs>
-                <defs>
-                  <linearGradient id="ghGradH" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor="var(--b2)" />
-                    <stop offset="100%" stopColor="var(--b1)" />
-                  </linearGradient>
-                </defs>
+              <BarChart data={byPriority.data ?? []} margin={{ top: 20, right: 8, bottom: 0, left: -16 }}>
                 <CartesianGrid stroke="var(--track)" vertical={false} />
                 <XAxis dataKey="priority" tick={TICK_STYLE} axisLine={false} tickLine={false} />
                 <YAxis tick={TICK_STYLE} allowDecimals={false} axisLine={false} tickLine={false} />
                 <Tooltip content={<ChartTooltip />} cursor={{ fill: 'var(--row-hover)' }} />
-                <Bar dataKey="count" fill="url(#ghGradV)" radius={[7, 7, 2, 2]} />
+                <Bar dataKey="count" radius={[4, 4, 0, 0]} shape={colorful ? hueGradientBar(false) : undefined}>
+                  {(byPriority.data ?? []).map(d => (
+                    <Cell key={d.priority} fill={fillFor('priority', d.priority)} />
+                  ))}
+                  <LabelList dataKey="count" position="top" style={VALUE_LABEL} />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           )}
@@ -402,30 +549,24 @@ export default function Reports() {
         <Section title="By status">
           {byStatus.isLoading ? <Skeleton /> : (
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={byStatus.data ?? []} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
-                <defs>
-                  <linearGradient id="ghGradV" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--b1)" />
-                    <stop offset="100%" stopColor="var(--b2)" />
-                  </linearGradient>
-                </defs>
-                <defs>
-                  <linearGradient id="ghGradH" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor="var(--b2)" />
-                    <stop offset="100%" stopColor="var(--b1)" />
-                  </linearGradient>
-                </defs>
+              <BarChart data={byStatus.data ?? []} margin={{ top: 20, right: 8, bottom: 0, left: -16 }}>
                 <CartesianGrid stroke="var(--track)" vertical={false} />
                 <XAxis
                   dataKey="status"
-                  tick={TICK_STYLE}
-                  tickFormatter={v => v.replace('_', ' ')}
+                  tick={<WrappedTick />}
+                  interval={0}
+                  height={34}
                   axisLine={false}
                   tickLine={false}
                 />
                 <YAxis tick={TICK_STYLE} allowDecimals={false} axisLine={false} tickLine={false} />
                 <Tooltip content={<ChartTooltip />} cursor={{ fill: 'var(--row-hover)' }} />
-                <Bar dataKey="count" fill="url(#ghGradV)" radius={[7, 7, 2, 2]} />
+                <Bar dataKey="count" radius={[4, 4, 0, 0]} shape={colorful ? hueGradientBar(false) : undefined}>
+                  {(byStatus.data ?? []).map(d => (
+                    <Cell key={d.status} fill={fillFor('status', d.status)} />
+                  ))}
+                  <LabelList dataKey="count" position="top" style={VALUE_LABEL} />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           )}
@@ -440,20 +581,8 @@ export default function Reports() {
               <BarChart
                 data={byCategory.data ?? []}
                 layout="vertical"
-                margin={{ top: 4, right: 16, bottom: 0, left: 100 }}
+                margin={{ top: 4, right: 40, bottom: 0, left: 100 }}
               >
-                <defs>
-                  <linearGradient id="ghGradV" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--b1)" />
-                    <stop offset="100%" stopColor="var(--b2)" />
-                  </linearGradient>
-                </defs>
-                <defs>
-                  <linearGradient id="ghGradH" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor="var(--b2)" />
-                    <stop offset="100%" stopColor="var(--b1)" />
-                  </linearGradient>
-                </defs>
                 <CartesianGrid stroke="var(--track)" horizontal={false} />
                 <XAxis type="number" tick={TICK_STYLE} allowDecimals={false} axisLine={false} tickLine={false} />
                 <YAxis
@@ -464,7 +593,12 @@ export default function Reports() {
                   tickLine={false}
                 />
                 <Tooltip content={<ChartTooltip />} cursor={{ fill: 'var(--row-hover)' }} />
-                <Bar dataKey="count" fill="url(#ghGradH)" radius={[2, 7, 7, 2]} />
+                <Bar dataKey="count" radius={[0, 4, 4, 0]} shape={colorful ? hueGradientBar(true) : undefined}>
+                  {(byCategory.data ?? []).map(d => (
+                    <Cell key={d.category} fill={fillFor('category', d.category)} />
+                  ))}
+                  <LabelList dataKey="count" position="right" style={VALUE_LABEL} />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           )}
@@ -474,18 +608,6 @@ export default function Reports() {
           {bySource.isLoading ? <Skeleton height={180} /> : (
             <ResponsiveContainer width="100%" height={180}>
               <PieChart>
-                <defs>
-                  <linearGradient id="ghGradV" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--b1)" />
-                    <stop offset="100%" stopColor="var(--b2)" />
-                  </linearGradient>
-                </defs>
-                <defs>
-                  <linearGradient id="ghGradH" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor="var(--b2)" />
-                    <stop offset="100%" stopColor="var(--b1)" />
-                  </linearGradient>
-                </defs>
                 <Pie
                   data={bySource.data ?? []}
                   dataKey="count"
@@ -497,9 +619,13 @@ export default function Reports() {
                   paddingAngle={3}
                   stroke="none"
                 >
-                  {/* First series brand gradient, second ink-3 (§10 multi-series rule) */}
                   {(bySource.data ?? []).map((entry, i) => (
-                    <Cell key={entry.source} fill={i === 0 ? 'url(#ghGradV)' : 'var(--ink-3)'} />
+                    <Cell
+                      key={entry.source}
+                      fill={colorful
+                        ? channelFill(entry.source)
+                        : (i === 0 ? 'url(#ghGradV)' : 'var(--ink-3)')}
+                    />
                   ))}
                 </Pie>
                 <Tooltip
@@ -515,8 +641,11 @@ export default function Reports() {
                   }}
                 />
                 <Legend
-                  formatter={(value) => (
-                    <span className="text-[12px] text-ink-2 capitalize">{value}</span>
+                  formatter={(value, entry: any) => (
+                    <span className="text-[12px] text-ink-2 capitalize">
+                      {value}{' '}
+                      <span className="font-mono font-semibold text-ink">{entry?.payload?.count ?? ''}</span>
+                    </span>
                   )}
                 />
               </PieChart>
