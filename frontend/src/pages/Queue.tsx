@@ -6,6 +6,7 @@ import StatusBadge from '../components/tickets/StatusBadge'
 import PriorityBadge from '../components/tickets/PriorityBadge'
 import SLABadge from '../components/tickets/SLABadge'
 import CreateTicketModal from '../components/tickets/CreateTicketModal'
+import FilterMenu, { MenuCheck, MenuDivider, MenuOption } from '../components/tickets/FilterMenu'
 import { useTickets } from '../hooks/useTickets'
 import { useCategories } from '../hooks/useCategories'
 import { useSavedQueueViews } from '../hooks/useSavedQueueViews'
@@ -19,30 +20,6 @@ import api, { apiErrorMessage } from '../lib/api'
 const PAGE_SIZE = 25
 
 const ALL_PRIORITIES: Priority[] = ['critical', 'high', 'medium', 'low']
-
-// ── Filter chips ───────────────────────────────────────────────────────────────
-
-interface ChipProps {
-  label: string
-  active: boolean
-  onClick: () => void
-}
-
-function FilterChip({ label, active, onClick }: ChipProps) {
-  return (
-    <button type="button" onClick={onClick} className={`chip${active ? ' on' : ''}`}>
-      {label}
-    </button>
-  )
-}
-
-function FilterLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-ink-3 mr-1 whitespace-nowrap">
-      {children}
-    </span>
-  )
-}
 
 // ── Pagination ─────────────────────────────────────────────────────────────────
 
@@ -211,6 +188,27 @@ export default function Queue() {
     })
   }
 
+  function clearFilters() {
+    setSearchParams(new URLSearchParams())
+  }
+
+  // ── Filter summaries (trigger labels) ────────────────────────────────────────
+
+  const statusLabel = (n: string) => allStatuses.find(s => s.name === n)?.label ?? n
+  const statusSummary =
+    selectedStatuses.length === 0 ? 'Active'
+      : selectedStatuses.length === 1 ? statusLabel(selectedStatuses[0])
+        : `${statusLabel(selectedStatuses[0])} +${selectedStatuses.length - 1}`
+  const prioritySummary =
+    selectedPriorities.length === 0 ? 'All'
+      : selectedPriorities.length === 1 ? PRIORITY_LABELS[selectedPriorities[0]]
+        : `${PRIORITY_LABELS[selectedPriorities[0]]} +${selectedPriorities.length - 1}`
+  const categoryName = categories?.find(c => String(c.id) === categoryFilter)?.name
+  const workspaceName = workspaces?.find(w => String(w.id) === workspaceFilter)?.name
+  const filtersActive =
+    selectedStatuses.length > 0 || selectedPriorities.length > 0 ||
+    assigneeFilter !== 'all' || categoryFilter !== 'all' || workspaceFilter !== 'all'
+
   // ── Saved views ────────────────────────────────────────────────────────────
 
   function currentFilterQuery(): string {
@@ -218,6 +216,8 @@ export default function Queue() {
     q.delete('page')
     return q.toString()
   }
+
+  const activeView = savedViews.find(v => v.query === currentFilterQuery())
 
   function applyView(query: string) {
     setSearchParams(new URLSearchParams(query))
@@ -323,131 +323,143 @@ export default function Queue() {
     <AppShell title="Queue">
       <CreateTicketModal open={createOpen} onClose={() => setCreateOpen(false)} />
 
-      {/* Filter bar */}
-      <div className="panel px-5 py-4 mb-3.5 flex flex-col gap-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <FilterLabel>Status</FilterLabel>
-          <FilterChip
-            label="Active"
-            active={selectedStatuses.length === 0}
-            onClick={() => setParam('status', [])}
-          />
-          {allStatuses.map(s => (
-            <FilterChip
-              key={s.name}
-              label={s.label}
-              active={selectedStatuses.includes(s.name)}
-              onClick={() => toggleStatus(s.name)}
-            />
-          ))}
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          <FilterLabel>Priority</FilterLabel>
-          <FilterChip
-            label="All"
-            active={selectedPriorities.length === 0}
-            onClick={() => setParam('priority', [])}
-          />
-          {ALL_PRIORITIES.map(p => (
-            <FilterChip
-              key={p}
-              label={PRIORITY_LABELS[p]}
-              active={selectedPriorities.includes(p)}
-              onClick={() => togglePriority(p)}
-            />
-          ))}
-
-          <span className="ml-3" />
-          <FilterLabel>Assignee</FilterLabel>
+      {/* Filter bar — one compact row: assignee toggle + dropdowns */}
+      <div className="panel px-4 py-3 mb-3.5 flex items-center gap-1.5 flex-wrap" style={{ overflow: 'visible', position: 'relative', zIndex: 5 }}>
+        <div className="seg" role="group" aria-label="Assignee" style={{ marginRight: 4 }}>
           {[
             { val: 'all', label: 'All' },
             { val: 'mine', label: 'Mine' },
             { val: 'unassigned', label: 'Unassigned' },
           ].map(({ val, label }) => (
-            <FilterChip
+            <button
               key={val}
-              label={label}
-              active={assigneeFilter === val}
+              type="button"
+              className={assigneeFilter === val ? 'on' : undefined}
+              aria-pressed={assigneeFilter === val}
               onClick={() => setAssignee(val)}
-            />
+            >
+              {label}
+            </button>
           ))}
         </div>
 
+        <FilterMenu label="Status" value={statusSummary} active={selectedStatuses.length > 0}>
+          {() => (
+            <>
+              <MenuOption label="Active (all open tickets)" selected={selectedStatuses.length === 0} onClick={() => setParam('status', [])} />
+              <MenuDivider />
+              {allStatuses.map(s => (
+                <MenuCheck key={s.name} label={s.label} checked={selectedStatuses.includes(s.name)} onClick={() => toggleStatus(s.name)} />
+              ))}
+            </>
+          )}
+        </FilterMenu>
+
+        <FilterMenu label="Priority" value={prioritySummary} active={selectedPriorities.length > 0} width={190}>
+          {() => (
+            <>
+              <MenuOption label="All priorities" selected={selectedPriorities.length === 0} onClick={() => setParam('priority', [])} />
+              <MenuDivider />
+              {ALL_PRIORITIES.map(p => (
+                <MenuCheck key={p} label={PRIORITY_LABELS[p]} checked={selectedPriorities.includes(p)} onClick={() => togglePriority(p)} />
+              ))}
+            </>
+          )}
+        </FilterMenu>
+
         {categories && categories.length > 0 && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <FilterLabel>Category</FilterLabel>
-            <FilterChip label="All" active={categoryFilter === 'all'} onClick={() => setCategory('all')} />
-            {categories.map(c => (
-              <FilterChip
-                key={c.id}
-                label={c.name}
-                active={categoryFilter === String(c.id)}
-                onClick={() => setCategory(String(c.id))}
-              />
-            ))}
-          </div>
+          <FilterMenu label="Category" value={categoryName ?? 'All'} active={categoryFilter !== 'all'}>
+            {close => (
+              <>
+                <MenuOption label="All categories" selected={categoryFilter === 'all'} onClick={() => { setCategory('all'); close() }} />
+                <MenuDivider />
+                {categories.map(c => (
+                  <MenuOption
+                    key={c.id}
+                    label={c.name}
+                    selected={categoryFilter === String(c.id)}
+                    onClick={() => { setCategory(String(c.id)); close() }}
+                  />
+                ))}
+              </>
+            )}
+          </FilterMenu>
         )}
 
         {/* Only worth a filter once there's more than one workspace to pick from */}
         {showWorkspaceLabel && workspaces && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <FilterLabel>Workspace</FilterLabel>
-            <FilterChip label="All" active={workspaceFilter === 'all'} onClick={() => setWorkspace('all')} />
-            {workspaces.map(w => (
-              <FilterChip
-                key={w.id}
-                label={w.name}
-                active={workspaceFilter === String(w.id)}
-                onClick={() => setWorkspace(String(w.id))}
-              />
-            ))}
-          </div>
+          <FilterMenu label="Workspace" value={workspaceName ?? 'All'} active={workspaceFilter !== 'all'}>
+            {close => (
+              <>
+                <MenuOption label="All workspaces" selected={workspaceFilter === 'all'} onClick={() => { setWorkspace('all'); close() }} />
+                <MenuDivider />
+                {workspaces.map(w => (
+                  <MenuOption
+                    key={w.id}
+                    label={w.name}
+                    selected={workspaceFilter === String(w.id)}
+                    onClick={() => { setWorkspace(String(w.id)); close() }}
+                  />
+                ))}
+              </>
+            )}
+          </FilterMenu>
         )}
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <FilterLabel>Views</FilterLabel>
-          {savedViews.map(v => (
-            <span key={v.id} className={`chip${currentFilterQuery() === v.query ? ' on' : ''}`} style={{ paddingRight: 8 }}>
-              <button
-                type="button"
-                onClick={() => applyView(v.query)}
-                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'inherit', font: 'inherit' }}
-              >
-                {v.name}
-              </button>
-              <button
-                type="button"
-                onClick={() => deleteView(v.id)}
-                aria-label={`Delete view ${v.name}`}
-                className="text-ink-3 hover:text-danger-ink"
-                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', opacity: 0.7 }}
-              >
-                <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                  <path d="M1 1l8 8M9 1l-8 8" />
-                </svg>
-              </button>
-            </span>
-          ))}
+        {filtersActive && (
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="bg-transparent border-0 cursor-pointer text-[12.5px] font-semibold text-ink-3 hover:text-ink px-1.5"
+          >
+            Clear
+          </button>
+        )}
 
-          {namingView ? (
-            <form onSubmit={handleSaveView} className="flex items-center gap-1.5">
-              <input
-                className="input"
-                style={{ width: 170, padding: '5px 11px', fontSize: 12.5 }}
-                autoFocus
-                value={newViewName}
-                onChange={e => setNewViewName(e.target.value)}
-                placeholder="View name…"
-                onKeyDown={e => { if (e.key === 'Escape') { setNamingView(false); setNewViewName('') } }}
-              />
-              <button type="submit" className="btn ghost sm" disabled={!newViewName.trim()}>Save</button>
-              <button type="button" className="btn ghost sm" onClick={() => { setNamingView(false); setNewViewName('') }}>Cancel</button>
-            </form>
-          ) : (
-            <FilterChip label="+ Save current filters" active={false} onClick={() => setNamingView(true)} />
+        <span className="ml-auto" />
+        <FilterMenu label="Views" value={activeView?.name} active={!!activeView} align="right" width={250}>
+          {close => (
+            <>
+              {savedViews.length === 0 && (
+                <p className="m-0 px-2.5 py-2 text-[12.5px] text-ink-3">Save the current filters to get back to them in one click.</p>
+              )}
+              {savedViews.map(v => (
+                <div key={v.id} className="flex items-center">
+                  <div className="flex-1 min-w-0">
+                    <MenuOption label={v.name} selected={activeView?.id === v.id} onClick={() => { applyView(v.query); close() }} />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => deleteView(v.id)}
+                    aria-label={`Delete view ${v.name}`}
+                    className="text-ink-3 hover:text-danger-ink bg-transparent border-0 cursor-pointer flex px-2 py-1.5"
+                  >
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                      <path d="M1 1l8 8M9 1l-8 8" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+              <MenuDivider />
+              {namingView ? (
+                <form onSubmit={e => { handleSaveView(e); close() }} className="flex items-center gap-1.5 p-1">
+                  <input
+                    className="input"
+                    style={{ padding: '6px 10px', fontSize: 12.5 }}
+                    autoFocus
+                    value={newViewName}
+                    onChange={e => setNewViewName(e.target.value)}
+                    placeholder="View name…"
+                    onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); setNamingView(false); setNewViewName('') } }}
+                  />
+                  <button type="submit" className="btn sm" disabled={!newViewName.trim()}>Save</button>
+                </form>
+              ) : (
+                <MenuOption label="+ Save current filters…" selected={false} onClick={() => setNamingView(true)} />
+              )}
+            </>
           )}
-        </div>
+        </FilterMenu>
       </div>
 
       {/* Bulk action bar */}

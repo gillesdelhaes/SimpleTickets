@@ -133,3 +133,26 @@
 .animate-spin {
   animation: spin 1s linear infinite;
 }
+
+/* Segmented toggle (Queue assignee filter): one pill, the picked option filled */
+.seg {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: var(--r-pill);
+  background: var(--field);
+  border: 1px solid var(--edge);
+}
+.seg button {
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: var(--r-pill);
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.seg button:hover { color: var(--ink); }
+.seg button.on { background: var(--brand-grad); color: #fff; }
