@@ -102,17 +102,41 @@ function formatDuration(ms: number): string {
   return `${mins}m`
 }
 
-export type SLABarResult = { pct: number; label: string; color: string; breached: boolean }
+export type SLABarResult = {
+  pct: number
+  label: string
+  color: string
+  breached: boolean
+  /** Ticket is resolved — the clock stopped, so the result no longer moves. */
+  frozen?: boolean
+}
+
+/** Whether a status is a resolved/closed state (the SLA clock stops there). */
+export function isResolvedStatus(status: string): boolean {
+  return _statusMap.get(status)?.is_resolved_state ?? false
+}
 
 export function parseSLABarRaw(
   deadline: string | null,
   created_at: string,
   preBreached = false,
+  /** Set for resolved tickets: the clock is judged at this moment (resolved_at),
+   *  never against "now" — otherwise a closed ticket drifts into "Overdue". Pass
+   *  null for a resolved ticket with no recorded resolution time. */
+  stoppedAt?: string | null,
 ): SLABarResult | null {
   if (!deadline || !created_at) return null
 
   if (preBreached) {
-    return { pct: 0, label: 'Breached', color: '#EF4444', breached: true }
+    return { pct: 0, label: 'Breached', color: '#EF4444', breached: true, frozen: stoppedAt !== undefined }
+  }
+
+  if (stoppedAt !== undefined) {
+    const dl = new Date(deadline + 'Z').getTime()
+    const missed = stoppedAt !== null && new Date(stoppedAt + 'Z').getTime() > dl
+    return missed
+      ? { pct: 0, label: 'Breached', color: '#EF4444', breached: true, frozen: true }
+      : { pct: 1, label: 'Met', color: '#10B981', breached: false, frozen: true }
   }
 
   const now = Date.now()
@@ -132,6 +156,9 @@ export function parseSLABarRaw(
 
 export function parseSLABar(ticket: TicketRead): SLABarResult | null {
   const statusConfig = _statusMap.get(ticket.status)
+  if (statusConfig?.is_resolved_state) {
+    return parseSLABarRaw(ticket.sla_deadline, ticket.created_at, ticket.sla_breached, ticket.resolved_at)
+  }
   if (statusConfig?.pauses_sla) {
     if (!ticket.sla_deadline || !ticket.created_at) return null
     const dl      = new Date(ticket.sla_deadline + 'Z').getTime()

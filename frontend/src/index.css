@@ -156,3 +156,6 @@
 }
 .seg button:hover { color: var(--ink); }
 .seg button.on { background: var(--brand-grad); color: #fff; }
+
+/* SLA met on a resolved ticket (pill variant) */
+.pill.ok { background: var(--ok-bg); color: var(--ok-ink); }

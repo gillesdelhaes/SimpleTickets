@@ -18,11 +18,12 @@ export default function SLABadge({ ticket, slaResult, variant = 'bar' }: Props) 
   }
 
   const paused = sla.label === 'Paused'
-  const hot = sla.breached || (!paused && sla.pct <= 0.2)
+  const met = sla.frozen && !sla.breached
+  const hot = sla.breached || (!paused && !met && sla.pct <= 0.2)
 
   if (variant === 'pill') {
     return (
-      <span className={`pill ${sla.breached ? 'danger' : hot ? 'warn' : paused ? 'retired' : 'avail'}`}>
+      <span className={`pill ${sla.breached ? 'danger' : met ? 'ok' : hot ? 'warn' : paused ? 'retired' : 'avail'}`}>
         {sla.label}
       </span>
     )
@@ -31,7 +32,7 @@ export default function SLABadge({ ticket, slaResult, variant = 'bar' }: Props) 
   // Bar variant — countdown meter for table rows
   return (
     <span className="warr">
-      <span className={`d${hot ? ' hot' : ''}`} style={paused ? { color: 'var(--ink-3)' } : undefined}>
+      <span className={`d${hot ? ' hot' : ''}`} style={paused || met ? { color: 'var(--ink-3)' } : undefined}>
         {sla.label}
       </span>
       <span className="m">
@@ -39,7 +40,7 @@ export default function SLABadge({ ticket, slaResult, variant = 'bar' }: Props) 
           className={hot ? 'hot' : ''}
           style={{
             width: `${Math.max((sla.breached ? 1 : sla.pct) * 100, 4)}%`,
-            ...(paused ? { background: 'var(--ink-3)' } : {}),
+            ...(paused || met ? { background: 'var(--ink-3)' } : {}),
           }}
         />
       </span>
