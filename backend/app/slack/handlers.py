@@ -296,6 +296,9 @@ async def _handle_csat_response(body: dict, client: Any, workspace_id: int, *, s
                 new_value="positive" if score else "negative",
                 created_at=now,
             ))
+            if not score:
+                from app.services.notifications import notify, ticket_watchers
+                await notify(session, await ticket_watchers(session, ticket, admins_only=True), ticket_id, "csat_negative")
             await session.commit()
 
             # Notify assignee on negative response

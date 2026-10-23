@@ -23,6 +23,7 @@ from app.models.revoked_token import RevokedToken  # noqa: F401
 from app.models.slack_workspace import SlackWorkspace  # noqa: F401
 from app.models.user_slack_identity import UserSlackIdentity  # noqa: F401
 from app.models.slack_link_request import SlackLinkRequest  # noqa: F401
+from app.models.notification import Notification  # noqa: F401
 
 __all__ = [
     "AuthProvider",
@@ -45,4 +46,5 @@ __all__ = [
     "SlackWorkspace",
     "UserSlackIdentity",
     "SlackLinkRequest",
+    "Notification",
 ]

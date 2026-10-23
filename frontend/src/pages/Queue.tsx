@@ -7,6 +7,7 @@ import PriorityBadge from '../components/tickets/PriorityBadge'
 import SLABadge from '../components/tickets/SLABadge'
 import CreateTicketModal from '../components/tickets/CreateTicketModal'
 import FilterMenu, { MenuCheck, MenuDivider, MenuOption } from '../components/tickets/FilterMenu'
+import DeleteTicketsDialog from '../components/tickets/DeleteTicketsDialog'
 import { useTickets } from '../hooks/useTickets'
 import { useCategories } from '../hooks/useCategories'
 import { useSavedQueueViews } from '../hooks/useSavedQueueViews'
@@ -92,6 +93,7 @@ export default function Queue() {
   const [bulkPriority, setBulkPriority] = useState<string>('')
   const [bulkLoading, setBulkLoading] = useState(false)
   const [bulkError, setBulkError] = useState<string | null>(null)
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const { views: savedViews, saveView, deleteView } = useSavedQueueViews()
   const [namingView, setNamingView] = useState(false)
   const [newViewName, setNewViewName] = useState('')
@@ -538,6 +540,15 @@ export default function Queue() {
               ✓ {s.label}
             </button>
           ))}
+          {isAdmin && (
+            <button
+              onClick={() => setDeleteOpen(true)}
+              disabled={bulkLoading}
+              className="btn ghost sm danger"
+            >
+              Delete…
+            </button>
+          )}
           <button
             onClick={() => setSelected(new Set())}
             className="btn ghost sm ml-auto"
@@ -545,6 +556,15 @@ export default function Queue() {
             Clear
           </button>
         </div>
+      )}
+
+      {isAdmin && (
+        <DeleteTicketsDialog
+          open={deleteOpen}
+          onClose={() => setDeleteOpen(false)}
+          tickets={sortedItems.filter(t => selected.has(t.id)).map(t => ({ id: t.id, display_id: t.display_id }))}
+          onDeleted={() => { setDeleteOpen(false); setSelected(new Set()) }}
+        />
       )}
 
       {bulkError && (

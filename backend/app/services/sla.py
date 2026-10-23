@@ -263,8 +263,10 @@ async def _check_sla_breaches() -> None:
             if not breached:
                 continue
 
+            from app.services.notifications import notify, ticket_watchers
             for ticket in breached:
                 ticket.sla_breached = True
+                await notify(session, await ticket_watchers(session, ticket), ticket.id, "sla_breached")
                 session.add(
                     TicketHistory(
                         ticket_id=ticket.id,
@@ -319,9 +321,11 @@ async def _warn_sla_breaches() -> None:
             tickets = result.scalars().all()
 
             from app.slack.service import post_sla_warning_to_technicians
+            from app.services.notifications import notify, ticket_watchers
 
             for ticket in tickets:
                 await post_sla_warning_to_technicians(ticket, session, kind="sla")
+                await notify(session, await ticket_watchers(session, ticket), ticket.id, "sla_warning")
                 ticket.sla_breach_warned_at = now
                 session.add(ticket)
                 logger.info("SLA warning sent for ticket %s", ticket.display_id)
@@ -342,6 +346,7 @@ async def _warn_sla_breaches() -> None:
 
             for ticket in fr_tickets:
                 await post_sla_warning_to_technicians(ticket, session, kind="first_response")
+                await notify(session, await ticket_watchers(session, ticket), ticket.id, "first_response_warning")
                 ticket.first_response_warned_at = now
                 session.add(ticket)
                 logger.info("First-response warning sent for ticket %s", ticket.display_id)

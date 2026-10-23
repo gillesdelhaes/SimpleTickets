@@ -4,6 +4,8 @@ import { useAuth } from '../../contexts/AuthContext'
 import { useTheme } from '../../hooks/useTheme'
 import { useAppConfig } from '../../hooks/useAppConfig'
 import { useUnreadReplies } from '../../hooks/useUnreadReplies'
+import { useNotifications, useMarkAllNotificationsRead, notificationText } from '../../hooks/useNotifications'
+import { timeAgo } from '../../types/ticket'
 
 // Tracks whether the viewport is phone-width. Drives the mobile drawer instead
 // of relying on Tailwind responsive utilities that aren't wired up here.
@@ -147,6 +149,42 @@ function IconMenu() {
   )
 }
 
+// ── Bell row ──────────────────────────────────────────────────────────────────
+
+function BellRow({ unread, displayId, title, detail, tone, when, onClick }: {
+  unread: boolean
+  displayId: string
+  title: string
+  detail?: string
+  tone?: 'warn' | 'danger'
+  when?: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-start gap-2.5 w-full px-4 py-2.5 text-left bg-transparent border-0 cursor-pointer hover:bg-row-hover"
+    >
+      <span style={{
+        width: 7, height: 7, borderRadius: '50%', marginTop: 5, flexShrink: 0,
+        background: unread ? 'var(--b1)' : 'transparent',
+      }} />
+      <span className="flex-1 min-w-0">
+        <span className="flex items-center justify-between gap-2">
+          <span className="font-mono text-[10px] text-ink-3 tracking-wide">{displayId}</span>
+          {when && <span className="font-mono text-[10px] text-ink-3 whitespace-nowrap">{when}</span>}
+        </span>
+        <span className={`block text-[12.5px] truncate mt-0.5 ${unread ? 'font-semibold text-ink' : 'font-medium text-ink-2'}`}>{title}</span>
+        {detail && (
+          <span className={`block text-[11.5px] mt-0.5 ${tone === 'danger' ? 'text-danger-ink' : tone === 'warn' ? 'text-warn-ink' : 'text-ink-3'}`}>
+            {detail}
+          </span>
+        )}
+      </span>
+    </button>
+  )
+}
+
 // ── Nav data ──────────────────────────────────────────────────────────────────
 
 const NAV_MAIN = [
@@ -181,6 +219,11 @@ export default function AppShell({ title, children }: AppShellProps) {
   const { data: unreadData } = useUnreadReplies()
   const myUnreadCount = unreadData?.my_unread_count ?? 0
   const myUnreadTickets = unreadData?.my_unread_tickets ?? []
+  const { data: notifData } = useNotifications()
+  const notifItems = notifData?.items ?? []
+  const notifUnread = notifData?.unread_count ?? 0
+  const bellCount = myUnreadCount + notifUnread
+  const markAllRead = useMarkAllNotificationsRead()
   const [bellOpen, setBellOpen] = useState(false)
   const bellRef = useRef<HTMLDivElement>(null)
   const [collapsed, setCollapsed] = useState(() => {
@@ -348,17 +391,17 @@ export default function AppShell({ title, children }: AppShellProps) {
               />
             </form>
 
-            {/* Notification bell */}
+            {/* Notification bell — bell notifications (assigned, SLA, 👎 survey) + unread replies */}
             <div ref={bellRef} style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
               <button
                 className="icon-btn"
                 onClick={() => setBellOpen((o) => !o)}
-                aria-label={myUnreadCount > 0 ? `${myUnreadCount} tickets with unread replies` : 'Notifications'}
-                style={myUnreadCount > 0 ? { color: 'var(--brand-ink)' } : undefined}
+                aria-label={bellCount > 0 ? `${bellCount} notifications` : 'Notifications'}
+                style={bellCount > 0 ? { color: 'var(--brand-ink)' } : undefined}
               >
                 <IconBell />
               </button>
-              {myUnreadCount > 0 && (
+              {bellCount > 0 && (
                 <span
                   aria-hidden="true"
                   className="font-mono"
@@ -371,7 +414,7 @@ export default function AppShell({ title, children }: AppShellProps) {
                     padding: '0 4px', pointerEvents: 'none', lineHeight: 1,
                   }}
                 >
-                  {myUnreadCount > 99 ? '99+' : myUnreadCount}
+                  {bellCount > 99 ? '99+' : bellCount}
                 </span>
               )}
 
@@ -380,38 +423,61 @@ export default function AppShell({ title, children }: AppShellProps) {
                   className="overlay-surface animate-fade-up"
                   style={{
                     position: 'absolute', top: 'calc(100% + 10px)', right: 0,
-                    width: 330, zIndex: 100, overflow: 'hidden', borderRadius: 18, padding: '4px 0',
+                    width: 'min(350px, calc(100vw - 32px))', zIndex: 100, overflow: 'hidden', borderRadius: 18, padding: '4px 0',
+                    background: 'var(--menu-bg)',
                   }}
                 >
                   <div className="flex items-center justify-between px-4 py-2.5 border-b border-track">
-                    <span className="text-[13px] font-semibold text-ink">Unread replies</span>
-                    {myUnreadCount > 0 && (
-                      <span className="pill use plain">{myUnreadCount} ticket{myUnreadCount > 1 ? 's' : ''}</span>
+                    <span className="text-[13px] font-semibold text-ink">Notifications</span>
+                    {notifUnread > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => markAllRead.mutate()}
+                        className="bg-transparent border-0 p-0 cursor-pointer text-[12px] font-semibold text-brand-ink"
+                      >
+                        Mark all read
+                      </button>
                     )}
                   </div>
-                  {myUnreadTickets.length === 0 ? (
+                  {notifItems.length === 0 && myUnreadTickets.length === 0 ? (
                     <p className="m-0 px-4 py-6 text-center text-[13px] text-ink-3">You're all caught up</p>
                   ) : (
-                    <div style={{ maxHeight: 320, overflowY: 'auto' }}>
-                      {myUnreadTickets.map((t) => (
-                        <button
-                          key={t.id}
-                          onClick={() => {
-                            setBellOpen(false)
-                            navigate(`/tickets/${t.id}`)
-                          }}
-                          className="flex items-center gap-2.5 w-full px-4 py-2.5 text-left bg-transparent border-0 cursor-pointer hover:bg-row-hover"
-                        >
-                          <span style={{
-                            width: 7, height: 7, borderRadius: '50%',
-                            background: 'var(--b1)', flexShrink: 0,
-                          }} />
-                          <span className="flex-1 min-w-0">
-                            <span className="block font-mono text-[10px] text-ink-3 tracking-wide">{t.display_id}</span>
-                            <span className="block text-[12.5px] font-medium text-ink truncate mt-0.5">{t.title}</span>
-                          </span>
-                        </button>
-                      ))}
+                    <div style={{ maxHeight: 380, overflowY: 'auto' }}>
+                      {myUnreadTickets.length > 0 && (
+                        <>
+                          <div className="px-4 pt-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.1em] text-ink-3">
+                            Unread replies
+                          </div>
+                          {myUnreadTickets.map((t) => (
+                            <BellRow
+                              key={`r-${t.id}`}
+                              unread
+                              displayId={t.display_id}
+                              title={t.title}
+                              onClick={() => { setBellOpen(false); navigate(`/tickets/${t.id}`) }}
+                            />
+                          ))}
+                        </>
+                      )}
+                      {notifItems.length > 0 && (
+                        <>
+                          <div className="px-4 pt-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.1em] text-ink-3">
+                            Activity
+                          </div>
+                          {notifItems.map((n) => (
+                            <BellRow
+                              key={`n-${n.id}`}
+                              unread={!n.read}
+                              displayId={n.display_id}
+                              title={n.ticket_title}
+                              detail={notificationText(n)}
+                              tone={n.kind === 'sla_breached' || n.kind === 'csat_negative' ? 'danger' : n.kind.endsWith('warning') ? 'warn' : undefined}
+                              when={timeAgo(n.created_at)}
+                              onClick={() => { setBellOpen(false); navigate(`/tickets/${n.ticket_id}`) }}
+                            />
+                          ))}
+                        </>
+                      )}
                     </div>
                   )}
                 </div>

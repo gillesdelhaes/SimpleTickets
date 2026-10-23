@@ -308,6 +308,42 @@ async def notify_assignee_dm(ticket: Ticket, assignee_user_id: int, actor_name: 
         logger.exception("notify_assignee_dm: failed to DM assignee %s", assignee_slack_id)
 
 
+async def notify_ticket_deleted(ticket: Ticket) -> None:
+    """
+    Tell the requester their ticket was deleted (admin delete). Posted in the
+    ticket's Slack thread with an @mention — the thread itself stays in Slack —
+    or as a plain DM when there's no thread. The delete reason is internal and
+    deliberately not shared. Call after the delete committed; only the
+    already-loaded ticket attributes are used.
+    """
+    if ticket.workspace_id is None:
+        return
+    async with AsyncSessionLocal() as session:
+        workspace = await _get_workspace(session, ticket.workspace_id)
+    if workspace is None or not workspace.two_way_sync:
+        return
+    from app.slack.bot import get_slack_client
+    client = get_slack_client(ticket.workspace_id)
+    if client is None:
+        return
+
+    text = (
+        f"🗑️ Your ticket *{ticket.display_id}* — _{slack_escape(ticket.title)}_ — has been deleted "
+        f"by the IT team and is no longer tracked. Replies here won't reach anyone. "
+        f"If you still need help, please open a new request."
+    )
+    if ticket.slack_channel_id and ticket.slack_message_ts:
+        await _post_thread_notification(client, ticket, text, notify_submitter=True)
+        return
+    submitter_slack_id = await _get_submitter_slack_id(ticket)
+    if not submitter_slack_id:
+        return
+    try:
+        await client.chat_postMessage(channel=submitter_slack_id, text=text)
+    except Exception:  # noqa: BLE001
+        logger.exception("notify_ticket_deleted: failed to DM %s", submitter_slack_id)
+
+
 async def notify_duplicate_dm(ticket: Ticket, canonical: Ticket) -> None:
     """DM the ticket submitter when their ticket is closed as a duplicate."""
     if ticket.workspace_id is None:
@@ -691,8 +727,8 @@ async def post_ticket_update_to_slack(
 ) -> None:
     """
     Post a single combined update message to the originating Slack thread
-    covering any combination of status, priority, assignee, and category
-    changes. Silently no-ops if sync is disabled or there's no thread anchor.
+    covering any combination of title, status, priority, assignee, and
+    category changes. Silently no-ops if sync is disabled or there's no thread anchor.
     """
     if ticket.workspace_id is None:
         return
@@ -702,6 +738,10 @@ async def post_ticket_update_to_slack(
         return
 
     lines: list[str] = []
+
+    if "title" in changes:
+        _, new_val = changes["title"]
+        lines.append(f"• Title → *{slack_escape(new_val or '')}*")
 
     if "status" in changes:
         _, new_val = changes["status"]

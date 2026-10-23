@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import AppShell from '../components/layout/AppShell'
 import AuthImage from '../components/AuthImage'
 import SLABadge from '../components/tickets/SLABadge'
+import DeleteTicketsDialog from '../components/tickets/DeleteTicketsDialog'
 import { isResolvedStatus, parseSLABarRaw } from '../types/ticket'
 import { useMarkDuplicate, useUnmarkDuplicate } from '../hooks/useDuplicate'
 import { useTicket } from '../hooks/useTicket'
@@ -429,6 +430,82 @@ function SavedFlash({ show }: { show: boolean }) {
   )
 }
 
+// ── Editable title ─────────────────────────────────────────────────────────────
+// Click to edit (Enter / blur saves, Escape cancels). Read-only on frozen
+// (resolved/closed) tickets — reopen first, like every other field.
+
+function EditableTitle({ ticket, editable }: { ticket: TicketRead; editable: boolean }) {
+  const queryClient = useQueryClient()
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState(ticket.title)
+  const [error, setError] = useState<string | null>(null)
+
+  const save = useMutation({
+    mutationFn: (title: string) => api.patch<TicketRead>(`/tickets/${ticket.id}`, { title }).then(r => r.data),
+    onSuccess: updated => {
+      queryClient.setQueryData(['ticket', ticket.id], updated)
+      queryClient.invalidateQueries({ queryKey: ['tickets'] })
+      queryClient.invalidateQueries({ queryKey: ['ticket-history', ticket.id] })
+      setEditing(false)
+    },
+    onError: err => setError(apiErrorMessage(err, 'Could not save the title.')),
+  })
+
+  function commit() {
+    const t = value.trim()
+    if (!t || t === ticket.title) { setEditing(false); setValue(ticket.title); return }
+    save.mutate(t)
+  }
+
+  const h1Class = 'text-[20px] font-bold text-ink tracking-[-0.01em] leading-tight mt-0'
+
+  if (editing) {
+    return (
+      <div className="mb-5">
+        <input
+          className="input"
+          autoFocus
+          value={value}
+          maxLength={200}
+          disabled={save.isPending}
+          onChange={e => { setValue(e.target.value); setError(null) }}
+          onBlur={commit}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { e.preventDefault(); commit() }
+            if (e.key === 'Escape') { setEditing(false); setValue(ticket.title); setError(null) }
+          }}
+          aria-label="Ticket title"
+          style={{ fontSize: 18, fontWeight: 700, padding: '8px 12px' }}
+        />
+        {error && <span className="block mt-1 text-[12px] text-danger-ink">{error}</span>}
+      </div>
+    )
+  }
+
+  if (!editable) return <h1 className={`${h1Class} mb-5`}>{ticket.title}</h1>
+
+  return (
+    <h1 className={`${h1Class} mb-5 group`}>
+      <button
+        type="button"
+        onClick={() => { setValue(ticket.title); setEditing(true) }}
+        title="Edit title"
+        className="bg-transparent border-0 p-0 m-0 text-left cursor-text"
+        style={{ font: 'inherit', color: 'inherit', letterSpacing: 'inherit' }}
+      >
+        {ticket.title}
+        <svg
+          width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
+          className="inline-block ml-2 align-middle text-ink-3 opacity-0 group-hover:opacity-100 transition-opacity"
+          aria-hidden="true"
+        >
+          <path d="M11 2.5l2.5 2.5L5 13.5H2.5V11L11 2.5z" />
+        </svg>
+      </button>
+    </h1>
+  )
+}
+
 // ── Reopen (the only action on a resolved/closed ticket) ──────────────────────
 
 function useReopenTicket(ticketId: number) {
@@ -595,6 +672,8 @@ interface MetaSidebarProps {
 
 function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const { data: categories } = useCategories()
   const { data: agents } = useAgents()
   const [savedField, setSavedField] = useState<string | null>(null)
@@ -824,6 +903,25 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
             </div>
           )}
         </div>
+
+        {/* Admin-only permanent delete (test tickets, mistakes) */}
+        {isAdmin && (
+          <>
+            <button
+              type="button"
+              onClick={() => setDeleteOpen(true)}
+              className="self-start bg-transparent border-0 p-0 text-[12px] text-ink-3 hover:text-danger-ink cursor-pointer underline"
+            >
+              Delete ticket…
+            </button>
+            <DeleteTicketsDialog
+              open={deleteOpen}
+              onClose={() => setDeleteOpen(false)}
+              tickets={[{ id: ticket.id, display_id: ticket.display_id }]}
+              onDeleted={() => navigate('/queue')}
+            />
+          </>
+        )}
       </div>
     </section>
   )
@@ -838,6 +936,7 @@ const FIELD_LABELS: Record<string, string> = {
   category_id: 'category',
   duplicate_of: 'duplicate link',
   csat_response: 'CSAT feedback',
+  title: 'title',
 }
 
 function formatHistoryValue(field: string, value: string | null): React.ReactNode {
@@ -1185,10 +1284,8 @@ export default function TicketDetail() {
       <div style={{ maxWidth: 1200 }}>
         <Breadcrumb ticket={ticket} />
 
-        {/* Title */}
-        <h1 className="text-[20px] font-bold text-ink tracking-[-0.01em] leading-tight mt-0 mb-5">
-          {ticket.title}
-        </h1>
+        {/* Title — click to edit while the ticket is open */}
+        <EditableTitle ticket={ticket} editable={isTech && !isResolvedStatus(ticket.status)} />
 
         {/* Slack sync notice — shown for any ticket with an active Slack thread */}
         {ticket.slack_channel_id && ticket.slack_message_ts && (

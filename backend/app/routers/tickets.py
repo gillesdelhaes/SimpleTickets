@@ -13,20 +13,34 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from app.auth.deps import get_current_user, require_technician
+from app.auth.deps import get_current_user, require_admin, require_technician
 from app.database import get_session
+from app.config import settings
 from app.models import Category, SLAPolicy, Ticket, TicketCSAT, TicketHistory, User
+from app.models.ticket_attachment import TicketAttachment
+from app.models.ticket_reply import TicketReply
 from app.models.enums import Priority, Role
 from app.models.slack_workspace import SlackWorkspace
 from app.models.ticket_status_config import TicketStatusConfig
-from app.schemas.ticket import BulkTicketUpdate, CloseTicketRequest, MarkDuplicateRequest, TicketCreate, TicketListResponse, TicketRead, TicketUpdate
+from app.schemas.ticket import (
+    BulkDeleteTicketsRequest,
+    BulkTicketUpdate,
+    CloseTicketRequest,
+    DeleteTicketsRequest,
+    MarkDuplicateRequest,
+    TicketCreate,
+    TicketListResponse,
+    TicketRead,
+    TicketUpdate,
+)
 from app.services.audit import write_audit
+from app.services.notifications import notify
 from app.services.rate_limit import RateLimiter
 from app.services.sla import apply_sla_status_change, compute_sla_deadline
 from app.utils import client_ip, get_ticket_or_404, utcnow
 
 # Fields worth surfacing in the timeline
-_HISTORY_DISPLAY_FIELDS = {"status", "assignee_id", "priority", "category_id", "duplicate_of", "csat_response"}
+_HISTORY_DISPLAY_FIELDS = {"status", "assignee_id", "priority", "category_id", "duplicate_of", "csat_response", "title"}
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
@@ -526,6 +540,8 @@ async def bulk_update_tickets(
         if changes:
             ticket.updated_at = now
             _record_history(session, ticket.id, current_user.id, changes)
+            if "assignee_id" in changes and body.assignee_id != current_user.id:
+                await notify(session, [body.assignee_id], ticket.id, "assigned", actor_name=current_user.name)
             changed.append((ticket, changes, entered_csat))
             updated += 1
 
@@ -734,6 +750,8 @@ async def update_ticket(
 
     ticket.updated_at = now
     _record_history(session, ticket.id, current_user.id, changes)
+    if "assignee_id" in changes and new_assignee_id is not None and new_assignee_id != current_user.id:
+        await notify(session, [new_assignee_id], ticket.id, "assigned", actor_name=current_user.name)
     await session.commit()
     await session.refresh(ticket)
 
@@ -741,7 +759,7 @@ async def update_ticket(
     enriched = items[0]
 
     # Post a single Slack thread message covering all tracked field changes
-    _SLACK_TRACKED = {"status", "priority", "assignee_id", "category_id"}
+    _SLACK_TRACKED = {"title", "status", "priority", "assignee_id", "category_id"}
     if changes.keys() & _SLACK_TRACKED:
         try:
             from app.slack.service import post_ticket_update_to_slack
@@ -773,6 +791,101 @@ async def update_ticket(
             logger.exception("Failed to send CSAT DM for ticket %s", ticket_id)
 
     return enriched
+
+
+# ── Delete (admin only) ────────────────────────────────────────────────────────
+
+
+async def _delete_tickets(
+    session: AsyncSession, tickets: list[Ticket], actor: User, reason: str, ip: str | None,
+) -> None:
+    """
+    Permanently delete tickets with everything hanging off them (replies,
+    history, attachments + their files, CSAT; read markers and bell
+    notifications cascade in the DB). Tickets marked as a duplicate of a
+    deleted one are unlinked. One audit entry per ticket — the only trace
+    left — so deleting can't be used to quietly bury a breach or bad score.
+    """
+    import shutil
+    from pathlib import Path
+    from sqlalchemy import delete, update
+
+    ids = [t.id for t in tickets]
+    for t in tickets:
+        await write_audit(
+            session,
+            actor_id=actor.id,
+            action="ticket.deleted",
+            entity_type="ticket",
+            entity_id=str(t.id),
+            payload={
+                "display_id": t.display_id,
+                "title": t.title,
+                "status": t.status,
+                "submitter": t.slack_submitter_name or t.slack_submitter_id or (f"user #{t.submitter_id}" if t.submitter_id else None),
+                "sla_breached": t.sla_breached,
+                "reason": reason,
+            },
+            ip_address=ip,
+        )
+
+    # Unlink duplicates of these tickets (that aren't being deleted themselves).
+    dupes = (await session.execute(
+        select(Ticket).where(Ticket.duplicate_of_id.in_(ids), Ticket.id.not_in(ids))
+    )).scalars().all()
+    for d in dupes:
+        _record_history(session, d.id, actor.id, {"duplicate_of": (f"TKT-{d.duplicate_of_id:04d}", None)})
+    await session.execute(update(Ticket).where(Ticket.duplicate_of_id.in_(ids)).values(duplicate_of_id=None))
+
+    await session.execute(delete(TicketAttachment).where(TicketAttachment.ticket_id.in_(ids)))
+    await session.execute(delete(TicketReply).where(TicketReply.ticket_id.in_(ids)))
+    await session.execute(delete(TicketHistory).where(TicketHistory.ticket_id.in_(ids)))
+    await session.execute(delete(TicketCSAT).where(TicketCSAT.ticket_id.in_(ids)))
+    await session.execute(delete(Ticket).where(Ticket.id.in_(ids)))
+    await session.commit()
+
+    # Files last, once the rows are gone — a failed commit must not lose files.
+    for tid in ids:
+        shutil.rmtree(Path(settings.storage_local_path) / str(tid), ignore_errors=True)
+
+    # Tell each requester in Slack (the ticket objects keep their loaded
+    # attributes after the delete — expire_on_commit=False).
+    from app.slack.service import notify_ticket_deleted
+    for t in tickets:
+        try:
+            await notify_ticket_deleted(t)
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to notify requester of deletion for ticket %s", t.id)
+
+
+@router.post("/{ticket_id}/delete", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_ticket(
+    ticket_id: int,
+    body: DeleteTicketsRequest,
+    request: Request,
+    admin: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Permanently delete one ticket. Admin only; reason required and audited."""
+    ticket = await get_ticket_or_404(session, ticket_id)
+    await _delete_tickets(session, [ticket], admin, body.reason, client_ip(request))
+
+
+@router.post("/bulk-delete")
+async def bulk_delete_tickets(
+    body: BulkDeleteTicketsRequest,
+    request: Request,
+    admin: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Permanently delete up to 100 tickets. Admin only; reason required and audited."""
+    if not body.ids:
+        raise HTTPException(status_code=422, detail="No ticket IDs provided")
+    if len(body.ids) > 100:
+        raise HTTPException(status_code=422, detail="Maximum 100 tickets per bulk delete")
+    tickets = list((await session.execute(select(Ticket).where(Ticket.id.in_(body.ids)))).scalars().all())
+    await _delete_tickets(session, tickets, admin, body.reason, client_ip(request))
+    return {"deleted": len(tickets)}
 
 
 # ── POST /tickets/{id}/reopen ──────────────────────────────────────────────────

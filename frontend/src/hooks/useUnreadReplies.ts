@@ -30,7 +30,8 @@ export function useMarkTicketRead(ticketId: number) {
   return useMutation({
     mutationFn: () => api.post(`/tickets/${ticketId}/mark-read`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['notifications', 'unread'] })
+      // Opening a ticket clears its unread replies and its bell notifications
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
     },
   })
 }

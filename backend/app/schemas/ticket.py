@@ -58,6 +58,23 @@ class CloseTicketRequest(BaseModel):
         return v
 
 
+class DeleteTicketsRequest(BaseModel):
+    """Permanently delete tickets (admin only). Reason is required and audited."""
+    reason: str
+
+    @field_validator("reason")
+    @classmethod
+    def reason_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("A reason is required")
+        return v
+
+
+class BulkDeleteTicketsRequest(DeleteTicketsRequest):
+    ids: list[int]
+
+
 class BulkTicketUpdate(BaseModel):
     ids: list[int]
     assignee_id: Optional[int] = None
