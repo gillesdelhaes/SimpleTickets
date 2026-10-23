@@ -12,7 +12,7 @@ import { useCategories } from '../hooks/useCategories'
 import { useSavedQueueViews } from '../hooks/useSavedQueueViews'
 import { useAuth } from '../contexts/AuthContext'
 import { useUnreadReplies } from '../hooks/useUnreadReplies'
-import { getAllStatuses, timeAgo, PRIORITY_LABELS, type Priority } from '../types/ticket'
+import { getAllStatuses, isResolvedStatus, timeAgo, PRIORITY_LABELS, type Priority } from '../types/ticket'
 import { useAppConfig } from '../hooks/useAppConfig'
 import { useWorkspaceOptions } from '../hooks/useWorkspaces'
 import api, { apiErrorMessage } from '../lib/api'
@@ -282,8 +282,15 @@ export default function Queue() {
     setBulkLoading(true)
     setBulkError(null)
     try {
-      await api.patch('/tickets/bulk', { ids: [...selected], ...payload })
+      const { data } = await api.patch<{ updated: number; skipped_locked?: number }>(
+        '/tickets/bulk', { ids: [...selected], ...payload },
+      )
       queryClient.invalidateQueries({ queryKey: ['tickets'] })
+      if (data.skipped_locked) {
+        setBulkError(
+          `${data.skipped_locked} resolved/closed ticket${data.skipped_locked > 1 ? 's were' : ' was'} skipped — reopen ${data.skipped_locked > 1 ? 'them' : 'it'} first.`,
+        )
+      }
       setSelected(new Set())
       setBulkAssignId('')
       setBulkPriority('')
@@ -697,7 +704,9 @@ export default function Queue() {
                       <td>
                         {ticket.assignee_name
                           ? <span className="text-[12.5px] text-ink font-medium">{ticket.assignee_name}</span>
-                          : (
+                          : isResolvedStatus(ticket.status)
+                            ? <span className="text-[12px] text-ink-3 italic">Unassigned</span>
+                            : (
                             <button
                               type="button"
                               onClick={e => handleClaim(e, ticket.id)}

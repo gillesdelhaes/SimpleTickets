@@ -59,6 +59,25 @@ async def _categories_configured(session: AsyncSession) -> bool:
 _CATEGORY_REQUIRED = "Set a category before resolving this ticket."
 
 
+_LOCKED = "This ticket is resolved — reopen it before changing anything."
+
+
+async def _get_reopen_status(session: AsyncSession) -> str:
+    """Status a reopened ticket goes back to: the first active, non-resolved,
+    non-pausing status by sort order — the same rule a public reply uses."""
+    result = await session.execute(
+        select(TicketStatusConfig.name)
+        .where(
+            TicketStatusConfig.is_resolved_state == False,  # noqa: E712
+            TicketStatusConfig.pauses_sla == False,  # noqa: E712
+            TicketStatusConfig.is_archived == False,  # noqa: E712
+        )
+        .order_by(TicketStatusConfig.sort_order)
+        .limit(1)
+    )
+    return result.scalar_one_or_none() or "in_progress"
+
+
 async def _get_default_status(session: AsyncSession) -> str:
     """Return the slug of the is_default status, falling back to 'open'."""
     result = await session.execute(
@@ -397,6 +416,10 @@ async def bulk_update_tickets(
     tickets = list(result.scalars().all())
 
     now = utcnow()
+    # Resolved/closed tickets are frozen: assignee/priority changes skip them
+    # (a status change — reopen, or admin close — still applies).
+    frozen_names = await _get_resolved_status_names(session)
+    skipped_locked = 0
 
     if body.assignee_id is not None:
         assignee = await session.get(User, body.assignee_id)
@@ -460,15 +483,19 @@ async def bulk_update_tickets(
     for ticket in tickets:
         changes: dict = {}
         entered_csat = False
+        if ticket.status in frozen_names and body.status is None:
+            skipped_locked += 1
+            continue
+        locked = ticket.status in frozen_names
 
-        if body.assignee_id is not None and ticket.assignee_id != body.assignee_id:
+        if body.assignee_id is not None and not locked and ticket.assignee_id != body.assignee_id:
             changes["assignee_id"] = (
                 str(ticket.assignee_id) if ticket.assignee_id else None,
                 str(body.assignee_id),
             )
             ticket.assignee_id = body.assignee_id
 
-        if body.priority is not None and ticket.priority != body.priority:
+        if body.priority is not None and not locked and ticket.priority != body.priority:
             changes["priority"] = (ticket.priority.value, body.priority.value)
             ticket.priority = body.priority
             if sla_policy:
@@ -533,7 +560,7 @@ async def bulk_update_tickets(
             except Exception:  # noqa: BLE001
                 logger.exception("Failed to send CSAT DM for ticket %s", ticket.id)
 
-    return {"updated": updated}
+    return {"updated": updated, "skipped_locked": skipped_locked}
 
 
 # ── PATCH /tickets/{id} ────────────────────────────────────────────────────────
@@ -546,7 +573,10 @@ async def update_ticket(
     current_user: User = Depends(require_technician),
     session: AsyncSession = Depends(get_session),
 ) -> TicketRead:
-    """Update a ticket. All fields are editable by technicians and admins."""
+    """Update a ticket. All fields are editable by technicians and admins —
+    except on a resolved/closed ticket, which is frozen: the only change
+    allowed is moving it back to a non-resolved status (reopening). Closing a
+    Resolved ticket without its survey goes through POST /close."""
     ticket = await get_ticket_or_404(session, ticket_id)
 
     provided = body.model_fields_set  # fields explicitly included in request body
@@ -555,6 +585,14 @@ async def update_ticket(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="No fields provided",
         )
+
+    if ticket.status in await _get_resolved_status_names(session):
+        reopening = (
+            provided == {"status"} and body.status is not None
+            and body.status not in await _get_resolved_status_names(session)
+        )
+        if not reopening:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_LOCKED)
 
     changes: dict[str, tuple[str | None, str | None]] = {}
     now = utcnow()
@@ -737,6 +775,61 @@ async def update_ticket(
     return enriched
 
 
+# ── POST /tickets/{id}/reopen ──────────────────────────────────────────────────
+
+
+@router.post("/{ticket_id}/reopen", response_model=TicketRead)
+async def reopen_ticket(
+    ticket_id: int,
+    request: Request,
+    current_user: User = Depends(require_technician),
+    session: AsyncSession = Depends(get_session),
+) -> TicketRead:
+    """
+    Reopen a resolved/closed ticket — the one action a frozen ticket allows.
+    It goes back to the same status a public reply reopens to, its SLA clock
+    resumes, and a duplicate link (closing-as-duplicate) is removed.
+    """
+    ticket = await get_ticket_or_404(session, ticket_id)
+    if ticket.status not in await _get_resolved_status_names(session):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Ticket isn't resolved or closed.")
+
+    now = utcnow()
+    new_status = await _get_reopen_status(session)
+    changes: dict[str, tuple[str | None, str | None]] = {"status": (ticket.status, new_status)}
+    ticket.status = new_status
+    ticket.resolved_at = None
+    await apply_sla_status_change(ticket, new_status, session)
+
+    old_dup_id = ticket.duplicate_of_id
+    if old_dup_id is not None:
+        changes["duplicate_of"] = (f"TKT-{old_dup_id:04d}", None)
+        ticket.duplicate_of_id = None
+        # Same audit as unlinking — a mark-then-reopen cycle must not be traceless.
+        await write_audit(
+            session,
+            actor_id=current_user.id,
+            action="ticket.unmarked_duplicate",
+            entity_type="ticket",
+            entity_id=str(ticket_id),
+            payload={"was_duplicate_of_id": old_dup_id, "was_duplicate_of": f"TKT-{old_dup_id:04d}", "reopened": True},
+            ip_address=client_ip(request),
+        )
+
+    ticket.updated_at = now
+    _record_history(session, ticket.id, current_user.id, changes)
+    await session.commit()
+    await session.refresh(ticket)
+
+    items, _ = await _fetch_enriched(session, [Ticket.id == ticket_id])
+    try:
+        from app.slack.service import post_ticket_update_to_slack
+        await post_ticket_update_to_slack(ticket, {"status": changes["status"]}, current_user.name)
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to post reopen to Slack for ticket %s", ticket_id)
+    return items[0]
+
+
 # ── POST /tickets/{id}/close ───────────────────────────────────────────────────
 
 
@@ -906,6 +999,8 @@ async def mark_duplicate(
         raise HTTPException(status_code=400, detail="A ticket cannot be a duplicate of itself")
     if canonical.duplicate_of_id is not None:
         raise HTTPException(status_code=400, detail="Cannot link to a ticket that is itself a duplicate")
+    if ticket.status in await _get_resolved_status_names(session):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_LOCKED)
 
     now = utcnow()
     changes: dict[str, tuple[str | None, str | None]] = {}

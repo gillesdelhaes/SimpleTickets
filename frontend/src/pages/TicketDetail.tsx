@@ -429,9 +429,40 @@ function SavedFlash({ show }: { show: boolean }) {
   )
 }
 
+// ── Reopen (the only action on a resolved/closed ticket) ──────────────────────
+
+function useReopenTicket(ticketId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.post<TicketRead>(`/tickets/${ticketId}/reopen`).then(r => r.data),
+    onSuccess: updated => {
+      queryClient.setQueryData(['ticket', ticketId], updated)
+      queryClient.invalidateQueries({ queryKey: ['tickets'] })
+      queryClient.invalidateQueries({ queryKey: ['ticket-history', ticketId] })
+    },
+  })
+}
+
+function ReopenButton({ ticketId }: { ticketId: number }) {
+  const reopen = useReopenTicket(ticketId)
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <button type="button" className="btn sm" onClick={() => reopen.mutate()} disabled={reopen.isPending}>
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9" /><path d="M2 2.5v3h3" />
+        </svg>
+        {reopen.isPending ? 'Reopening…' : 'Reopen ticket'}
+      </button>
+      {reopen.isError && (
+        <span className="text-[11.5px] text-danger-ink">{apiErrorMessage(reopen.error, 'Could not reopen the ticket.')}</span>
+      )}
+    </div>
+  )
+}
+
 // ── Duplicate picker ───────────────────────────────────────────────────────────
 
-function DuplicatePickerRow({ ticket }: { ticket: TicketRead }) {
+function DuplicatePickerRow({ ticket, locked }: { ticket: TicketRead; locked: boolean }) {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<TicketRead[]>([])
@@ -479,6 +510,9 @@ function DuplicatePickerRow({ ticket }: { ticket: TicketRead }) {
     markDuplicate.mutate(t.id)
   }
 
+  // Frozen ticket: nothing to link; an existing link is undone by reopening.
+  if (locked && !ticket.duplicate_of_id) return null
+
   if (ticket.duplicate_of_id) {
     const displayId = `TKT-${String(ticket.duplicate_of_id).padStart(4, '0')}`
     return (
@@ -495,14 +529,16 @@ function DuplicatePickerRow({ ticket }: { ticket: TicketRead }) {
               </span>
             )}
           </button>
-          <button
-            onClick={() => unmarkDuplicate.mutate()}
-            disabled={unmarkDuplicate.isPending}
-            className="btn ghost sm danger"
-            style={{ padding: '3px 9px', fontSize: 11 }}
-          >
-            Unlink
-          </button>
+          {!locked && (
+            <button
+              onClick={() => unmarkDuplicate.mutate()}
+              disabled={unmarkDuplicate.isPending}
+              className="btn ghost sm danger"
+              style={{ padding: '3px 9px', fontSize: 11 }}
+            >
+              Unlink
+            </button>
+          )}
         </div>
       </MetaRow>
     )
@@ -566,8 +602,11 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
   const { data: appConfig } = useAppConfig()
   const categoryRef = useRef<HTMLSelectElement>(null)
   const [flashCategory, setFlashCategory] = useState(false)
+  // Resolved/closed tickets are frozen (enforced by the API too): every field
+  // is read-only and the only action is Reopen.
+  const locked = isResolvedStatus(ticket.status)
   // Resolving requires a category whenever any exist (enforced by the API too)
-  const needsCategory = !ticket.category_id && (categories?.length ?? 0) > 0
+  const needsCategory = !locked && !ticket.category_id && (categories?.length ?? 0) > 0
 
   const patchMutation = useMutation({
     mutationFn: (update: Partial<TicketRead>) =>
@@ -619,6 +658,15 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
       </div>
 
       <div className="px-5 pb-5 pt-3 flex flex-col gap-4">
+        {locked && (
+          <div className="rounded-control px-3 py-2.5 flex flex-col gap-2" style={{ background: 'var(--field)', border: '1px solid var(--edge)' }}>
+            <span className="text-[12.5px] text-ink-2 leading-snug">
+              This ticket is {statusLabel(ticket.status).toLowerCase()} — its details are frozen. Reopen it to make changes.
+            </span>
+            <ReopenButton ticketId={ticket.id} />
+          </div>
+        )}
+
         {patchError && (
           <div
             className="rounded-control px-3 py-2 text-[12px] text-danger-ink"
@@ -631,7 +679,7 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
         {/* Status */}
         <MetaRow label="Status">
           <div className="relative">
-            <StatusDropdown ticket={ticket} patch={patch} isAdmin={isAdmin} />
+            <StatusDropdown ticket={ticket} patch={patch} isAdmin={isAdmin} disabled={locked} />
             <SavedFlash show={savedField === 'status'} />
             <CloseWithoutSurvey ticket={ticket} />
           </div>
@@ -644,6 +692,7 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
               <select
                 className="select"
                 value={ticket.priority}
+                disabled={locked}
                 onChange={e => patch('priority', e.target.value)}
                 style={{ fontWeight: 600, color: PRIORITY_INK[ticket.priority as Priority] }}
               >
@@ -664,6 +713,7 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
                 <select
                   className="select"
                   value={ticket.assignee_id ?? ''}
+                  disabled={locked}
                   onChange={e => patch('assignee_id', e.target.value ? Number(e.target.value) : null)}
                 >
                   <option value="">Unassigned</option>
@@ -677,7 +727,7 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
                 {ticket.assignee_name ?? 'Unassigned'}
               </span>
             )}
-            {ticket.assignee_id !== currentUserId && (
+            {!locked && ticket.assignee_id !== currentUserId && (
               <button
                 type="button"
                 onClick={() => patch('assignee_id', currentUserId)}
@@ -699,6 +749,7 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
                 ref={categoryRef}
                 className={`select${needsCategory ? ' needs-attention' : ''}${needsCategory && flashCategory ? ' flash' : ''}`}
                 value={ticket.category_id ?? ''}
+                disabled={locked}
                 onChange={e => patch('category_id', e.target.value ? Number(e.target.value) : null)}
                 onAnimationEnd={() => setFlashCategory(false)}
               >
@@ -744,7 +795,7 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
         )}
 
         {/* Duplicate link */}
-        <DuplicatePickerRow ticket={ticket} />
+        <DuplicatePickerRow ticket={ticket} locked={locked} />
 
         {/* Submitter */}
         {ticket.submitter_name && (
@@ -823,7 +874,12 @@ function formatHistoryValue(field: string, value: string | null): React.ReactNod
   return <strong className="text-ink font-semibold">{value}</strong>
 }
 
-function StatusDropdown({ ticket, patch, isAdmin }: { ticket: TicketRead; patch: (field: string, value: string) => void; isAdmin: boolean }) {
+function StatusDropdown({ ticket, patch, isAdmin, disabled = false }: {
+  ticket: TicketRead
+  patch: (field: string, value: string) => void
+  isAdmin: boolean
+  disabled?: boolean
+}) {
   const { data: appConfig } = useAppConfig()
   const statuses = appConfig?.statuses ?? getAllStatuses()
   // Technicians can't set a terminal-close state (resolved but no survey) — that
@@ -837,6 +893,7 @@ function StatusDropdown({ ticket, patch, isAdmin }: { ticket: TicketRead; patch:
       <select
         className="select"
         value={ticket.status}
+        disabled={disabled}
         onChange={e => patch('status', e.target.value)}
         style={{ fontWeight: 600, color: statusColor(ticket.status) }}
       >
@@ -1045,9 +1102,12 @@ function ThreadColumn({ ticket, isTech, currentUserId }: ThreadColumnProps) {
       {/* Composer */}
       <div className="panel px-5 py-4 mt-2">
         {isClosed ? (
-          <p className="text-[13px] text-ink-3 m-0 text-center">
-            This ticket is {statusLabel(ticket.status).toLowerCase()}. Reopen it to reply.
-          </p>
+          <div className="flex items-center justify-center gap-3 flex-wrap">
+            <p className="text-[13px] text-ink-3 m-0">
+              This ticket is {statusLabel(ticket.status).toLowerCase()}. Reopen it to reply.
+            </p>
+            {isTech && <ReopenButton ticketId={ticket.id} />}
+          </div>
         ) : (
           <Composer ticketId={ticket.id} isTech={isTech} />
         )}

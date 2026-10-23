@@ -159,3 +159,14 @@
 
 /* SLA met on a resolved ticket (pill variant) */
 .pill.ok { background: var(--ok-bg); color: var(--ok-ink); }
+
+/* Frozen fields (e.g. a resolved ticket's sidebar): read as a plain value —
+   no field fill, dashed outline, no dropdown arrow. */
+.select:disabled, .input:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  background: transparent;
+  border-style: dashed;
+  box-shadow: none;
+}
+.selectwrap:has(select:disabled)::after { display: none; }
