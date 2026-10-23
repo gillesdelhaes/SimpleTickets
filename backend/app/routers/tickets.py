@@ -36,7 +36,7 @@ from app.schemas.ticket import (
 from app.services.audit import write_audit
 from app.services.notifications import notify
 from app.services.rate_limit import RateLimiter
-from app.services.sla import apply_sla_status_change, compute_sla_deadline
+from app.services.sla import compute_sla_deadline, recompute_sla_for_policy, transition_status
 from app.utils import client_ip, get_ticket_or_404, utcnow
 
 # Fields worth surfacing in the timeline
@@ -178,6 +178,7 @@ async def _fetch_enriched(
                 sla_policy_id=ticket.sla_policy_id,
                 sla_deadline=ticket.sla_deadline,
                 sla_breached=ticket.sla_breached,
+                sla_paused_at=ticket.sla_paused_at,
                 duplicate_of_id=ticket.duplicate_of_id,
                 duplicate_of_title=dup_title,
                 source=ticket.source,
@@ -512,30 +513,14 @@ async def bulk_update_tickets(
         if body.priority is not None and not locked and ticket.priority != body.priority:
             changes["priority"] = (ticket.priority.value, body.priority.value)
             ticket.priority = body.priority
-            if sla_policy:
-                ticket.sla_policy_id = sla_policy.id
-                paused = timedelta(seconds=ticket.sla_paused_seconds or 0)
-                ticket.sla_deadline = await compute_sla_deadline(
-                    ticket.created_at, sla_policy.resolution_minutes, session
-                ) + paused
-                if ticket.first_responded_at is None:
-                    ticket.first_response_deadline = await compute_sla_deadline(
-                        ticket.created_at, sla_policy.first_response_minutes, session
-                    ) + paused
-            else:
-                ticket.sla_policy_id = None
-                ticket.sla_deadline = None
+            await recompute_sla_for_policy(ticket, sla_policy, session)
 
         if body.status is not None and ticket.status != body.status:
             old_status = ticket.status
             changes["status"] = (old_status, body.status)
-            ticket.status = body.status
-            await apply_sla_status_change(ticket, body.status, session)
+            await transition_status(ticket, body.status, session)
             if body.status in resolved_names and old_status not in resolved_names:
-                ticket.resolved_at = now
                 entered_csat = sends_csat
-            elif body.status not in resolved_names and old_status in resolved_names:
-                ticket.resolved_at = None
 
         if changes:
             ticket.updated_at = now
@@ -652,24 +637,7 @@ async def update_ticket(
             sla_result = await session.execute(
                 select(SLAPolicy).where(SLAPolicy.priority == body.priority)
             )
-            sla_policy = sla_result.scalar_one_or_none()
-            if sla_policy:
-                ticket.sla_policy_id = sla_policy.id
-                # Recompute from created_at, then add back any accrued pause
-                # extension so re-prioritising doesn't silently drop it.
-                paused = timedelta(seconds=ticket.sla_paused_seconds or 0)
-                ticket.sla_deadline = await compute_sla_deadline(
-                    ticket.created_at, sla_policy.resolution_minutes, session
-                ) + paused
-                # The first-response target moves with priority too — but only
-                # while the ticket is still awaiting its first response.
-                if ticket.first_responded_at is None:
-                    ticket.first_response_deadline = await compute_sla_deadline(
-                        ticket.created_at, sla_policy.first_response_minutes, session
-                    ) + paused
-            else:
-                ticket.sla_policy_id = None
-                ticket.sla_deadline = None
+            await recompute_sla_for_policy(ticket, sla_result.scalar_one_or_none(), session)
 
     # status
     if "status" in provided and body.status is not None:
@@ -711,18 +679,11 @@ async def update_ticket(
             resolved_names = await _get_resolved_status_names(session)
             changes["status"] = (ticket.status, body.status)
             old_status = ticket.status
-            ticket.status = body.status
-
-            # SLA pause/resume based on the new status's pauses_sla flag
-            await apply_sla_status_change(ticket, body.status, session)
-
-            # Track resolved_at transitions
+            # Status, resolved_at and the SLA clock in one place
+            await transition_status(ticket, body.status, session)
             if body.status in resolved_names and old_status not in resolved_names:
-                ticket.resolved_at = now
                 # CSAT fires only on first entry into a sends_csat resolved state
                 _sends_csat = bool(status_cfg.sends_csat)
-            elif body.status not in resolved_names and old_status in resolved_names:
-                ticket.resolved_at = None
 
     # assignee_id
     new_assignee_id: int | None = None
@@ -910,9 +871,7 @@ async def reopen_ticket(
     now = utcnow()
     new_status = await _get_reopen_status(session)
     changes: dict[str, tuple[str | None, str | None]] = {"status": (ticket.status, new_status)}
-    ticket.status = new_status
-    ticket.resolved_at = None
-    await apply_sla_status_change(ticket, new_status, session)
+    await transition_status(ticket, new_status, session)
 
     old_dup_id = ticket.duplicate_of_id
     if old_dup_id is not None:
@@ -985,11 +944,8 @@ async def close_without_survey(
     resolved_names = await _get_resolved_status_names(session)
     old_status = ticket.status
     changes: dict[str, tuple[str | None, str | None]] = {"status": (old_status, close_cfg.name)}
-    ticket.status = close_cfg.name
-    if old_status not in resolved_names:
-        ticket.resolved_at = now
+    await transition_status(ticket, close_cfg.name, session)
     ticket.updated_at = now
-    await apply_sla_status_change(ticket, close_cfg.name, session)
     _record_history(session, ticket.id, current_user.id, changes)
 
     await write_audit(
@@ -1134,9 +1090,7 @@ async def mark_duplicate(
     )
     if ticket.status not in resolved_names:
         changes["status"] = (ticket.status, closed_status)
-        ticket.status = closed_status
-        ticket.resolved_at = now
-        await apply_sla_status_change(ticket, closed_status, session)
+        await transition_status(ticket, closed_status, session)
 
     ticket.updated_at = now
     _record_history(session, ticket.id, current_user.id, changes)
@@ -1200,9 +1154,7 @@ async def unmark_duplicate(
     resolved_names = await _get_resolved_status_names(session)
     if ticket.status in resolved_names:
         changes["status"] = (ticket.status, default_status)
-        ticket.status = default_status
-        ticket.resolved_at = None
-        await apply_sla_status_change(ticket, default_status, session)
+        await transition_status(ticket, default_status, session)
 
     ticket.updated_at = now
     _record_history(session, ticket.id, current_user.id, changes)

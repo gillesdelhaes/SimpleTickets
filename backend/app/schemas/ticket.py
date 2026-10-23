@@ -138,6 +138,8 @@ class TicketRead(BaseModel):
     sla_policy_id: Optional[int]
     sla_deadline: Optional[datetime]
     sla_breached: bool
+    # When the SLA clock last stopped (paused or resolved); null while running
+    sla_paused_at: Optional[datetime] = None
 
     duplicate_of_id: Optional[int]
     duplicate_of_title: Optional[str] = None

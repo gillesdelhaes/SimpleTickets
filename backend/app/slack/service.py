@@ -884,8 +884,9 @@ async def handle_slack_thread_message(
                 .limit(1)
             )
             reopen_status = reopen_result.scalar_one_or_none() or "in_progress"
-            ticket.status = reopen_status
-            ticket.resolved_at = None
+            from app.services.sla import transition_status
+            # Restarts the SLA clock too (it was stopped while resolved)
+            await transition_status(ticket, reopen_status, session)
             ticket.updated_at = now
             session.add(
                 TicketHistory(

@@ -49,6 +49,7 @@ def _build_ticket_read(
         sla_policy_id=ticket.sla_policy_id,
         sla_deadline=ticket.sla_deadline,
         sla_breached=ticket.sla_breached,
+        sla_paused_at=ticket.sla_paused_at,
         duplicate_of_id=ticket.duplicate_of_id,
         duplicate_of_title=duplicate_of_title,
         slack_channel_id=ticket.slack_channel_id,

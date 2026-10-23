@@ -257,7 +257,7 @@ async def _handle_csat_response(body: dict, client: Any, workspace_id: int, *, s
                 dm_ts=message_ts,
             ))
 
-            from app.services.sla import apply_sla_status_change
+            from app.services.sla import transition_status
 
             old_status = current_status
             # Pick from active statuses in sort order — same selection rule as
@@ -274,11 +274,10 @@ async def _handle_csat_response(body: dict, client: Any, workspace_id: int, *, s
                 # First active (non-resolved) state
                 open_cfg = next((s for s in pickable if not s.is_resolved_state), None)
                 new_status = open_cfg.name if open_cfg else "open"
-                ticket.resolved_at = None
 
-            ticket.status = new_status
+            # 👍 Resolved → Closed keeps the clock stopped; 👎 reopens and restarts it
+            await transition_status(ticket, new_status, session)
             ticket.updated_at = now
-            await apply_sla_status_change(ticket, new_status, session)
 
             session.add(TicketHistory(
                 ticket_id=ticket_id,
@@ -999,12 +998,9 @@ def register_handlers(app: Any, workspace: SlackWorkspace) -> None:
                     )
                     return
 
-                # Apply SLA pause/resume logic
-                from app.services.sla import apply_sla_status_change
-                await apply_sla_status_change(ticket, resolved_status, session)
-
-                ticket.status = resolved_status
-                ticket.resolved_at = now
+                # Status, resolved_at and the SLA clock (stops on resolve)
+                from app.services.sla import transition_status
+                await transition_status(ticket, resolved_status, session)
                 session.add(
                     TicketHistory(
                         ticket_id=ticket_id,

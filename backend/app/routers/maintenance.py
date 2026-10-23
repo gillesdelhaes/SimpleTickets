@@ -27,7 +27,7 @@ from app.models import Notification, Ticket, TicketCSAT, TicketHistory, TicketRe
 from app.models.ticket_attachment import TicketAttachment
 from app.models.ticket_reply import TicketReply
 from app.models.ticket_status_config import TicketStatusConfig
-from app.routers.reports import _date_range
+from app.routers.reports import _closed_time, _date_range
 from app.services.audit import write_audit
 from app.utils import client_ip
 
@@ -106,21 +106,28 @@ async def data_health(
     tickets = (await session.execute(
         select(Ticket).where(Ticket.created_at >= start, Ticket.created_at <= end).order_by(Ticket.id)
     )).scalars().all()
+    closed_q = _closed_time()
+    closed_secs = {tid: float(secs) for tid, secs in (await session.execute(select(closed_q.c.ticket_id, closed_q.c.closed_secs))).all()}
 
     rows = []
     for t in tickets:
+        # Same rules as routers/reports.py (_sla_met / _sla_counted)
         if t.sla_deadline is None:
             sla, why = "excluded", "no SLA policy"
         elif t.resolved_at is not None:
-            if t.resolved_at <= t.sla_deadline:
-                sla, why = "met", "resolved before the deadline"
+            if not t.sla_breached:
+                sla, why = "met", "resolved within its SLA time"
             else:
-                sla, why = "missed", "resolved after the deadline"
+                sla, why = "missed", "SLA time ran out before it was resolved"
         elif t.sla_breached:
-            sla, why = "missed", "still open, deadline passed"
+            sla, why = "missed", "still open, SLA time ran out"
+        elif t.sla_paused_at is not None:
+            sla, why = "excluded", "open, clock paused (waiting on requester)"
         else:
-            sla, why = "excluded", "still open, deadline not reached"
+            sla, why = "excluded", "still open, within its SLA time"
         n, pos = csat.get(t.id, (0, 0))
+        closed_h = closed_secs.get(t.id, 0.0) / 3600
+        hours = ((t.resolved_at - t.created_at).total_seconds() / 3600 - closed_h) if t.resolved_at else None
         rows.append({
             "id": t.id,
             "display_id": t.display_id,
@@ -130,6 +137,9 @@ async def data_health(
             "created_at": t.created_at,
             "resolved_at": t.resolved_at,
             "sla_deadline": t.sla_deadline,
+            "sla_paused_seconds": t.sla_paused_seconds or 0,
+            "resolution_hours": round(hours, 1) if hours is not None else None,
+            "closed_hours": round(closed_h, 1),
             "sla": sla,
             "sla_reason": why,
             "csat_answers": n,
@@ -139,6 +149,7 @@ async def data_health(
     sla_counted = [r for r in rows if r["sla"] != "excluded"]
     sla_met = sum(1 for r in rows if r["sla"] == "met")
     csat_total = sum(r["csat_answers"] for r in rows)
+    res = [(t.resolved_at - t.created_at).total_seconds() / 3600 - closed_secs.get(t.id, 0.0) / 3600 for t in tickets if t.resolved_at]
     csat_pos = sum(r["csat_positive"] for r in rows)
     return {
         "db_version": version,
@@ -156,6 +167,7 @@ async def data_health(
                 "sla_compliance_pct": round(sla_met * 100 / len(sla_counted), 1) if sla_counted else None,
                 "csat_total": csat_total,
                 "csat_positive": csat_pos,
+                "avg_resolution_hours": round(sum(res) / len(res), 1) if res else None,
             },
         },
     }

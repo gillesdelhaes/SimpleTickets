@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import require_admin, require_technician
 from app.database import get_session
-from app.models import Category, Ticket, User
+from app.models import Category, Ticket, TicketHistory, User
 from app.models.enums import Role
 from app.models.ticket_csat import TicketCSAT
 from app.models.ticket_status_config import TicketStatusConfig
@@ -73,6 +73,73 @@ async def _date_range(
     )
 
 
+# ── Shared SLA / resolution-time definitions ──────────────────────────────────
+# One definition for every report (and Settings → Data health):
+#   - The SLA clock stops while a ticket is resolved/closed or waiting on the
+#     requester, and a breach is recorded the moment the clock stops past the
+#     deadline (services.sla.transition_status). So a resolved ticket met its
+#     SLA exactly when it isn't flagged breached.
+#   - SLA compliance counts resolved tickets plus still-open tickets that have
+#     already breached (they've missed it whatever happens next); open tickets
+#     still within their deadline aren't decided yet and are left out.
+#   - Time to resolve = creation → latest resolution, minus the time the
+#     ticket sat resolved/closed before being reopened (derived from its
+#     status history — see _closed_time).
+
+def _sla_met():
+    return (Ticket.sla_deadline.isnot(None)) & (Ticket.resolved_at.isnot(None)) & (Ticket.sla_breached == False)  # noqa: E712
+
+
+def _sla_counted():
+    return (Ticket.sla_deadline.isnot(None)) & (Ticket.resolved_at.isnot(None) | (Ticket.sla_breached == True))  # noqa: E712
+
+
+def _closed_time():
+    """
+    Per ticket, seconds it spent resolved/closed *before its latest
+    resolution* — i.e. closed time that ended in a reopen. Built from the
+    ticket's status history: each status change lasts until the next one, and
+    the spans spent in a resolved state that ended by resolved_at are summed.
+    (The span after the latest resolution is not "before" it, so a ticket
+    that's simply still closed contributes nothing.)
+    """
+    resolved_names = select(TicketStatusConfig.name).where(TicketStatusConfig.is_resolved_state == True)  # noqa: E712
+    spans = (
+        select(
+            TicketHistory.ticket_id,
+            TicketHistory.new_value,
+            TicketHistory.created_at.label("start_at"),
+            func.lead(TicketHistory.created_at).over(
+                partition_by=TicketHistory.ticket_id,
+                order_by=(TicketHistory.created_at, TicketHistory.id),
+            ).label("end_at"),
+        )
+        .where(TicketHistory.field_changed == "status")
+        .subquery()
+    )
+    return (
+        select(
+            spans.c.ticket_id,
+            func.sum(func.extract("epoch", spans.c.end_at - spans.c.start_at)).label("closed_secs"),
+        )
+        .join(Ticket, Ticket.id == spans.c.ticket_id)
+        .where(
+            spans.c.new_value.in_(resolved_names),
+            spans.c.end_at.isnot(None),
+            spans.c.end_at <= Ticket.resolved_at,
+        )
+        .group_by(spans.c.ticket_id)
+        .subquery()
+    )
+
+
+def _resolution_hours(closed):
+    return (
+        func.extract("epoch", Ticket.resolved_at - Ticket.created_at)
+        - func.coalesce(closed.c.closed_secs, 0)
+    ) / 3600
+
+
 # ── GET /api/reports/assignees ─────────────────────────────────────────────────
 
 @router.get("/assignees")
@@ -110,27 +177,19 @@ async def get_overview(
         .scalar_subquery()
     )
 
+    closed = _closed_time()
     stmt = select(
         func.count().label("total"),
         func.count(case((Ticket.status.in_(resolved_subq), 1))).label("resolved"),
         func.count(case((~Ticket.status.in_(resolved_subq), 1))).label("open"),
-        func.count(case((
-            (Ticket.sla_deadline.isnot(None)) &
-            (Ticket.resolved_at.isnot(None)) &
-            (Ticket.resolved_at <= Ticket.sla_deadline),
-            1
-        ))).label("sla_met"),
-        func.count(case((
-            (Ticket.sla_deadline.isnot(None)) &
-            (Ticket.resolved_at.isnot(None) | (Ticket.sla_breached == True)),  # noqa: E712
-            1
-        ))).label("sla_total"),
-        func.avg(
-            func.extract("epoch", Ticket.resolved_at - Ticket.created_at) / 3600
-        ).filter(
+        func.count(case((_sla_met(), 1))).label("sla_met"),
+        func.count(case((_sla_counted(), 1))).label("sla_total"),
+        func.avg(_resolution_hours(closed)).filter(
             Ticket.resolved_at.isnot(None)
         ).label("avg_resolution_hours"),
-    ).where(Ticket.created_at >= start, Ticket.created_at <= end)
+    ).select_from(Ticket).outerjoin(closed, closed.c.ticket_id == Ticket.id).where(
+        Ticket.created_at >= start, Ticket.created_at <= end,
+    )
 
     if assignee_id is not None:
         stmt = stmt.where(Ticket.assignee_id == assignee_id)
@@ -140,7 +199,7 @@ async def get_overview(
     sla_pct = round(row.sla_met * 100 / row.sla_total, 1) if row.sla_total else None
     # `is not None`, not truthiness — a genuine 0 (0% SLA, 0h avg) is a real value,
     # not "no data", and must not render as "—".
-    avg_h = round(row.avg_resolution_hours, 1) if row.avg_resolution_hours is not None else None
+    avg_h = round(float(row.avg_resolution_hours), 1) if row.avg_resolution_hours is not None else None
 
     csat_stmt = (
         select(
@@ -313,6 +372,7 @@ async def get_technicians(
         .scalar_subquery()
     )
 
+    closed = _closed_time()
     csat_subq = (
         select(
             TicketCSAT.ticket_id,
@@ -330,24 +390,17 @@ async def get_technicians(
             User.name,
             func.count(Ticket.id).label("total"),
             func.count(case((Ticket.status.in_(resolved_subq), 1))).label("resolved"),
-            func.avg(
-                func.extract("epoch", Ticket.resolved_at - Ticket.created_at) / 3600
-            ).filter(Ticket.resolved_at.isnot(None)).label("avg_hours"),
+            func.avg(_resolution_hours(closed)).filter(Ticket.resolved_at.isnot(None)).label("avg_hours"),
+            # Scoped to tickets resolved in the window, so every one is counted
             (
-                func.count(case((
-                    (Ticket.sla_deadline.isnot(None)) &
-                    (Ticket.resolved_at.isnot(None)) &
-                    (Ticket.resolved_at <= Ticket.sla_deadline),
-                    1
-                ))) * 100.0 /
-                func.nullif(func.count(case((
-                    (Ticket.sla_deadline.isnot(None)) & (Ticket.resolved_at.isnot(None)), 1
-                ))), 0)
+                func.count(case((_sla_met(), 1))) * 100.0 /
+                func.nullif(func.count(case((_sla_counted(), 1))), 0)
             ).label("sla_pct"),
             func.coalesce(func.sum(csat_subq.c.csat_count), 0).label("csat_total"),
             func.coalesce(func.sum(csat_subq.c.csat_pos), 0).label("csat_positive"),
         )
         .join(User, Ticket.assignee_id == User.id)
+        .outerjoin(closed, closed.c.ticket_id == Ticket.id)
         .outerjoin(csat_subq, csat_subq.c.ticket_id == Ticket.id)
         .where(
             Ticket.resolved_at.isnot(None),
@@ -367,7 +420,7 @@ async def get_technicians(
             "name": row.name,
             "total": row.total,
             "resolved": row.resolved,
-            "avg_hours": round(row.avg_hours, 1) if row.avg_hours is not None else None,
+            "avg_hours": round(float(row.avg_hours), 1) if row.avg_hours is not None else None,
             "sla_pct": round(float(row.sla_pct), 1) if row.sla_pct is not None else None,
             "csat_pct": (
                 round(row.csat_positive * 100 / row.csat_total, 1)

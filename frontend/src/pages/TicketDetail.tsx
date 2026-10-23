@@ -5,7 +5,7 @@ import AppShell from '../components/layout/AppShell'
 import AuthImage from '../components/AuthImage'
 import SLABadge from '../components/tickets/SLABadge'
 import DeleteTicketsDialog from '../components/tickets/DeleteTicketsDialog'
-import { isResolvedStatus, parseSLABarRaw } from '../types/ticket'
+import { isResolvedStatus, parseSLABar, parseSLABarRaw, parseSLAPaused } from '../types/ticket'
 import { useMarkDuplicate, useUnmarkDuplicate } from '../hooks/useDuplicate'
 import { useTicket } from '../hooks/useTicket'
 import { useReplies, useAddReply, type ReplyRead } from '../hooks/useReplies'
@@ -848,11 +848,16 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
         {/* SLA — context-aware: first-response until replied, resolution after */}
         {(ticket.first_response_deadline || ticket.sla_deadline) && (() => {
           const awaitingFirstResponse = !ticket.first_responded_at && ticket.first_response_deadline
-          // Resolved tickets: both clocks stopped at resolution — judge them there.
-          const stoppedAt = isResolvedStatus(ticket.status) ? ticket.resolved_at : undefined
-          const slaResult = awaitingFirstResponse
-            ? parseSLABarRaw(ticket.first_response_deadline, ticket.created_at, false, stoppedAt)
-            : parseSLABarRaw(ticket.sla_deadline, ticket.created_at, ticket.sla_breached, stoppedAt)
+          // The clock stops while waiting on the requester or resolved: a
+          // resolved ticket is judged where it stopped, a paused one is frozen.
+          const resolved = isResolvedStatus(ticket.status)
+          const slaResult = !awaitingFirstResponse
+            ? parseSLABar(ticket)
+            : resolved
+              ? parseSLABarRaw(ticket.first_response_deadline, ticket.created_at, false, ticket.sla_paused_at ?? ticket.resolved_at)
+              : ticket.sla_paused_at
+                ? parseSLAPaused(ticket.first_response_deadline, ticket.created_at, ticket.sla_paused_at)
+                : parseSLABarRaw(ticket.first_response_deadline, ticket.created_at)
           const label = awaitingFirstResponse ? '1st response' : 'SLA'
           return (
             <MetaRow label={label}>

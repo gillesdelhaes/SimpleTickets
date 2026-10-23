@@ -17,7 +17,7 @@ export default function SLABadge({ ticket, slaResult, variant = 'bar' }: Props) 
     return <span className="text-[11px] text-ink-3 italic">No SLA</span>
   }
 
-  const paused = sla.label === 'Paused'
+  const paused = sla.label.startsWith('Paused')
   const met = sla.frozen && !sla.breached
   const hot = sla.breached || (!paused && !met && sla.pct <= 0.2)
 
@@ -32,8 +32,9 @@ export default function SLABadge({ ticket, slaResult, variant = 'bar' }: Props) 
   // Bar variant — countdown meter for table rows
   return (
     <span className="warr">
-      <span className={`d${hot ? ' hot' : ''}`} style={paused || met ? { color: 'var(--ink-3)' } : undefined}>
-        {sla.label}
+      <span className={`d${hot ? ' hot' : ''}`} style={paused || met ? { color: 'var(--ink-3)' } : undefined} title={sla.label}>
+        {/* Narrow table column: "Paused · 2h 0m left" → "⏸ 2h 0m" */}
+        {paused ? sla.label.replace(/^Paused(?: · )?/, '⏸ ').replace(/ left$/, '').trim() : sla.label}
       </span>
       <span className="m">
         <i

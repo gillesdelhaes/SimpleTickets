@@ -4,9 +4,9 @@ SLA Engine.
 Responsibilities:
   1. Breach detection: every minute, find tickets whose sla_deadline has
      passed and mark them sla_breached=True.
-  2. Pause / resume: when a ticket enters a status with pauses_sla=True the
-     SLA clock stops; when it leaves, accumulated paused seconds are recorded
-     and the deadline is extended accordingly.
+  2. The SLA clock (transition_status): it stops while a ticket is in a
+     pausing status (pauses_sla) or a resolved/closed status and resumes —
+     deadlines moved by the stopped time — when it becomes active again.
   3. Status endpoint helper: compute current SLA state for a single ticket
      without touching the database.
   4. Business-hours SLA: deadline computation skips outside-of-hours time
@@ -181,50 +181,135 @@ async def compute_sla_deadline(
     return local_end.astimezone(timezone.utc).replace(tzinfo=None)
 
 
-# ── Pause / resume ─────────────────────────────────────────────────────────────
+# ── Status transitions & the SLA clock ────────────────────────────────────────
+#
+# The SLA clock runs only while a ticket is being worked on. It stops when the
+# ticket enters a status that pauses the SLA (e.g. Pending user) or a
+# resolved/closed status, and resumes when it goes back to an active status —
+# so neither waiting on the requester nor the time a ticket sat closed before
+# being reopened counts against its SLA.
+#
+#   running → stopped   sla_paused_at = now; the outcome is settled: if the
+#                       deadline already passed, sla_breached = True (the
+#                       minute-by-minute checker could otherwise miss a ticket
+#                       resolved right after its deadline).
+#   stopped → stopped   nothing (Pending → Resolved, Resolved → Closed): the
+#                       clock is still stopped since the first stop.
+#   stopped → running   the stopped time is added to sla_paused_seconds and the
+#                       remaining budget of each open deadline (resolution and,
+#                       until the first reply, first response) is walked forward
+#                       from now; their warnings can fire again.
+#
+# A resolved ticket's SLA outcome is therefore simply `not sla_breached`.
 
 
-async def apply_sla_status_change(
-    ticket: Ticket, new_status: str, session: AsyncSession
-) -> None:
+async def _status_configs(session: AsyncSession) -> dict[str, TicketStatusConfig]:
+    rows = (await session.execute(select(TicketStatusConfig))).scalars().all()
+    return {c.name: c for c in rows}
+
+
+def _is_resolved(name: str, cfgs: dict[str, TicketStatusConfig]) -> bool:
+    cfg = cfgs.get(name)
+    return cfg.is_resolved_state if cfg else name in ("resolved", "closed")
+
+
+def _stops_clock(name: str, cfgs: dict[str, TicketStatusConfig]) -> bool:
+    cfg = cfgs.get(name)
+    return bool(cfg and cfg.pauses_sla) or _is_resolved(name, cfgs)
+
+
+def _settle_breach(ticket: Ticket, at: datetime, session: AsyncSession) -> None:
+    """Record the breach now if the deadline passed while the clock ran."""
+    if ticket.sla_deadline is not None and not ticket.sla_breached and at > ticket.sla_deadline:
+        ticket.sla_breached = True
+        session.add(TicketHistory(
+            ticket_id=ticket.id, actor_id=None, field_changed="sla_breached",
+            old_value="false", new_value="true",
+        ))
+
+
+async def _remaining_from(paused_at: datetime, deadline: datetime, now: datetime, session: AsyncSession) -> datetime:
+    """Move a deadline that was frozen at paused_at so its remaining SLA-clock
+    budget starts again from now. Already-passed deadlines stay where they are."""
+    if deadline <= paused_at:
+        return deadline
+    remaining = await _elapsed_sla_seconds(paused_at, deadline, session)
+    return await compute_sla_deadline(now, remaining / 60, session)
+
+
+async def transition_status(ticket: Ticket, new_status: str, session: AsyncSession) -> None:
     """
-    Call this whenever a ticket's status changes to update SLA pause state.
-    Looks up pauses_sla from the ticket_statuses table.
-    Mutates the ticket object in place — caller must commit.
+    The single place a ticket changes status: sets ticket.status, maintains
+    resolved_at (the latest resolution), and runs the SLA clock (see above).
+    Call it *instead of* assigning ticket.status. Mutates; caller commits.
     """
-    result = await session.execute(
-        select(TicketStatusConfig).where(TicketStatusConfig.name == new_status)
-    )
-    status_cfg = result.scalar_one_or_none()
-    pauses = status_cfg.pauses_sla if status_cfg else False
-
+    if ticket.status == new_status:
+        return
+    cfgs = await _status_configs(session)
     now = datetime.now(timezone.utc).replace(tzinfo=None)
+    was_resolved = _is_resolved(ticket.status, cfgs)
+    now_resolved = _is_resolved(new_status, cfgs)
+    stops = _stops_clock(new_status, cfgs)
 
-    if pauses and ticket.sla_paused_at is None:
-        # Entering a pausing status — freeze the clock
+    ticket.status = new_status
+
+    if now_resolved and not was_resolved:
+        ticket.resolved_at = now
+    elif was_resolved and not now_resolved:
+        ticket.resolved_at = None
+
+    running = ticket.sla_paused_at is None
+    if stops and running:
         ticket.sla_paused_at = now
-
-    elif not pauses and ticket.sla_paused_at is not None:
-        # Leaving a pausing status — recompute the deadline by walking the SLA
-        # budget that was still remaining at pause time forward from *now* (the
-        # resume instant), rather than adding a flat pause-duration offset to
-        # the old deadline. The flat-offset approach broke whenever business
-        # hours are enabled and the pause spans outside them (e.g. an
-        # overnight/weekend pending_user pause): the business time elapsed
-        # during the pause is small, but the old deadline can already be in
-        # the wall-clock past by the time we resume, so adding a small offset
-        # to it still lands in the past — a spurious immediate breach despite
-        # budget remaining. Walking forward from `now` is always correct, and
-        # reduces to exactly the old formula when business hours are disabled
-        # (business time equals wall-clock time in that case).
+        _settle_breach(ticket, now, session)
+    elif not stops and not running:
         paused_at = ticket.sla_paused_at
-        paused_secs = await _elapsed_sla_seconds(paused_at, now, session)
-        ticket.sla_paused_seconds = (ticket.sla_paused_seconds or 0) + paused_secs
+        ticket.sla_paused_seconds = (ticket.sla_paused_seconds or 0) + await _elapsed_sla_seconds(paused_at, now, session)
         ticket.sla_paused_at = None
-
         if ticket.sla_deadline is not None:
-            remaining_secs = await _elapsed_sla_seconds(paused_at, ticket.sla_deadline, session)
-            ticket.sla_deadline = await compute_sla_deadline(now, remaining_secs / 60, session)
+            moved = await _remaining_from(paused_at, ticket.sla_deadline, now, session)
+            if moved != ticket.sla_deadline:
+                ticket.sla_deadline = moved
+                ticket.sla_breach_warned_at = None
+        if ticket.first_response_deadline is not None and ticket.first_responded_at is None:
+            moved = await _remaining_from(paused_at, ticket.first_response_deadline, now, session)
+            if moved != ticket.first_response_deadline:
+                ticket.first_response_deadline = moved
+                ticket.first_response_warned_at = None
+
+
+async def recompute_sla_for_policy(ticket: Ticket, policy, session: AsyncSession) -> None:
+    """
+    Re-target a ticket's deadlines after its priority (hence SLA policy)
+    changed, as if the new policy had applied from creation: the SLA-clock
+    time already consumed (creation → now, minus stopped time) is taken off
+    the new budget and the rest is walked forward from the current clock
+    position. Business-hours aware. The breach flag follows the new target —
+    a downgrade can lift it, an upgrade can set it. Mutates; caller commits.
+    """
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if policy is None:
+        ticket.sla_policy_id = None
+        ticket.sla_deadline = None
+        ticket.sla_breached = False
+        return
+    ticket.sla_policy_id = policy.id
+    # Where the clock stands: now if running, the stop instant if stopped.
+    ref = ticket.sla_paused_at or now
+    consumed = max(0, await _elapsed_sla_seconds(ticket.created_at, ref, session) - (ticket.sla_paused_seconds or 0))
+
+    async def _target(budget_minutes: int) -> datetime:
+        left = budget_minutes * 60 - consumed
+        if left <= 0:
+            return ref + timedelta(seconds=left)  # already over: a past deadline
+        return await compute_sla_deadline(ref, left / 60, session)
+
+    ticket.sla_deadline = await _target(policy.resolution_minutes)
+    ticket.sla_breached = ticket.sla_deadline < ref
+    ticket.sla_breach_warned_at = None
+    if ticket.first_responded_at is None:
+        ticket.first_response_deadline = await _target(policy.first_response_minutes)
+        ticket.first_response_warned_at = None
 
 
 # ── Scheduled breach-detection job ────────────────────────────────────────────
@@ -431,8 +516,7 @@ async def _auto_close_resolved() -> None:
             now = datetime.now(timezone.utc).replace(tzinfo=None)
             for ticket in tickets:
                 old_status = ticket.status
-                await apply_sla_status_change(ticket, close_status, session)
-                ticket.status = close_status
+                await transition_status(ticket, close_status, session)
                 ticket.updated_at = now
                 session.add(
                     TicketHistory(

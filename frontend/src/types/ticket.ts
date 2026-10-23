@@ -29,6 +29,8 @@ export interface TicketRead {
   assignee_name: string | null
   sla_deadline: string | null
   sla_breached: boolean
+  /** When the SLA clock last stopped (paused or resolved); null while running */
+  sla_paused_at?: string | null
   duplicate_of_id: number | null
   duplicate_of_title: string | null
   workspace_id: number | null
@@ -120,9 +122,9 @@ export function parseSLABarRaw(
   deadline: string | null,
   created_at: string,
   preBreached = false,
-  /** Set for resolved tickets: the clock is judged at this moment (resolved_at),
-   *  never against "now" — otherwise a closed ticket drifts into "Overdue". Pass
-   *  null for a resolved ticket with no recorded resolution time. */
+  /** Set for resolved tickets: the clock is judged at the moment it stopped
+   *  (sla_paused_at, else resolved_at), never against "now" — otherwise a
+   *  closed ticket drifts into "Overdue". Pass null if neither is recorded. */
   stoppedAt?: string | null,
 ): SLABarResult | null {
   if (!deadline || !created_at) return null
@@ -154,18 +156,38 @@ export function parseSLABarRaw(
   return { pct, label: formatDuration(remaining), color, breached: false }
 }
 
+/**
+ * A deadline whose clock is stopped (ticket waiting on the requester): the
+ * time it had left when it stopped, frozen — it no longer runs down.
+ */
+export function parseSLAPaused(
+  deadline: string | null,
+  created_at: string,
+  pausedAt: string | null | undefined,
+  preBreached = false,
+): SLABarResult | null {
+  if (!deadline || !created_at) return null
+  if (preBreached) return { pct: 0, label: 'Breached', color: '#EF4444', breached: true }
+  const dl = new Date(deadline + 'Z').getTime()
+  const created = new Date(created_at + 'Z').getTime()
+  const stop = pausedAt ? new Date(pausedAt + 'Z').getTime() : Date.now()
+  const left = dl - stop
+  const pct = Math.max(0, Math.min(1, left / (dl - created)))
+  return { pct, label: left > 0 ? `Paused · ${formatDuration(left)} left` : 'Paused', color: '#737373', breached: false }
+}
+
+/**
+ * The SLA clock stops while a ticket waits on the requester or is resolved,
+ * and a breach is recorded the moment it stops past the deadline (backend
+ * services/sla.py) — so a resolved ticket met its SLA iff it isn't breached.
+ */
 export function parseSLABar(ticket: TicketRead): SLABarResult | null {
   const statusConfig = _statusMap.get(ticket.status)
   if (statusConfig?.is_resolved_state) {
-    return parseSLABarRaw(ticket.sla_deadline, ticket.created_at, ticket.sla_breached, ticket.resolved_at)
+    return parseSLABarRaw(ticket.sla_deadline, ticket.created_at, ticket.sla_breached, ticket.sla_paused_at ?? ticket.resolved_at)
   }
-  if (statusConfig?.pauses_sla) {
-    if (!ticket.sla_deadline || !ticket.created_at) return null
-    const dl      = new Date(ticket.sla_deadline + 'Z').getTime()
-    const created = new Date(ticket.created_at   + 'Z').getTime()
-    const now     = Date.now()
-    const pct     = Math.max(0, Math.min(1, (dl - now) / (dl - created)))
-    return { pct, label: 'Paused', color: statusConfig.color, breached: false }
+  if (statusConfig?.pauses_sla || ticket.sla_paused_at) {
+    return parseSLAPaused(ticket.sla_deadline, ticket.created_at, ticket.sla_paused_at, ticket.sla_breached)
   }
   return parseSLABarRaw(ticket.sla_deadline, ticket.created_at, ticket.sla_breached)
 }

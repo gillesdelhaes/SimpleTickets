@@ -12,6 +12,7 @@ from app.models import Ticket, TicketHistory, TicketReply, User
 from app.models.ticket_status_config import TicketStatusConfig
 from app.schemas.reply import ReplyCreate, ReplyRead
 from app.services.rate_limit import RateLimiter
+from app.services.sla import transition_status
 from app.utils import get_ticket_or_404, utcnow
 
 logger = logging.getLogger(__name__)
@@ -114,8 +115,8 @@ async def create_reply(
     old_status = ticket.status
     reopened = False
     if old_status in resolved_names and not is_internal:
-        ticket.status = reopen_status
-        ticket.resolved_at = None
+        # Restarts the SLA clock too (it was stopped while resolved)
+        await transition_status(ticket, reopen_status, session)
         ticket.updated_at = now
         reopened = True
         session.add(

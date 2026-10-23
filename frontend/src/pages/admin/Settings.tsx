@@ -1450,6 +1450,7 @@ interface HealthTicket {
   created_at: string; resolved_at: string | null; sla_deadline: string | null
   sla: 'met' | 'missed' | 'excluded'; sla_reason: string
   csat_answers: number; csat_positive: number
+  resolution_hours: number | null; closed_hours: number
 }
 interface HealthRead {
   db_version: string | null
@@ -1459,7 +1460,7 @@ interface HealthRead {
   report: {
     from: string; to: string
     tickets: HealthTicket[]
-    totals: { tickets: number; sla_counted: number; sla_met: number; sla_compliance_pct: number | null; csat_total: number; csat_positive: number }
+    totals: { tickets: number; sla_counted: number; sla_met: number; sla_compliance_pct: number | null; csat_total: number; csat_positive: number; avg_resolution_hours: number | null }
   }
 }
 
@@ -1561,15 +1562,16 @@ function DataHealthTab() {
           <span>Tickets <b className="text-ink">{t.tickets}</b></span>
           <span>SLA compliance <b className="text-ink">{t.sla_compliance_pct ?? '—'}{t.sla_compliance_pct != null ? '%' : ''}</b> ({t.sla_met} met of {t.sla_counted} counted)</span>
           <span>Survey answers <b className="text-ink">{t.csat_total}</b> ({t.csat_positive} 👍)</span>
+          <span>Avg time to resolve <b className="text-ink">{t.avg_resolution_hours ?? '—'}{t.avg_resolution_hours != null ? 'h' : ''}</b></span>
         </div>
         <div className="tablewrap">
           <table>
             <thead>
-              <tr>{['Ticket', 'Status', 'Created', 'Resolved', 'SLA deadline', 'SLA', 'Survey'].map(h => <th key={h}>{h}</th>)}</tr>
+              <tr>{['Ticket', 'Status', 'Created', 'Resolved', 'Time to resolve', 'SLA deadline', 'SLA', 'Survey'].map(h => <th key={h}>{h}</th>)}</tr>
             </thead>
             <tbody>
               {data.report.tickets.length === 0 ? (
-                <tr><td colSpan={7} className="text-ink-3 text-center" style={{ padding: 28 }}>No tickets in this period.</td></tr>
+                <tr><td colSpan={8} className="text-ink-3 text-center" style={{ padding: 28 }}>No tickets in this period.</td></tr>
               ) : data.report.tickets.map(r => (
                 <tr key={r.id}>
                   <td>
@@ -1579,6 +1581,10 @@ function DataHealthTab() {
                   <td className="text-[12.5px]">{r.status}</td>
                   <td className="font-mono text-[11px] text-ink-2">{fmt(r.created_at)}</td>
                   <td className="font-mono text-[11px] text-ink-2">{fmt(r.resolved_at)}</td>
+                  <td className="text-[12px] text-ink-2">
+                    {r.resolution_hours != null ? `${r.resolution_hours}h` : '—'}
+                    {r.closed_hours > 0 && <span className="block text-[11px] text-ink-3">excl. {r.closed_hours}h closed</span>}
+                  </td>
                   <td className="font-mono text-[11px] text-ink-2">{fmt(r.sla_deadline)}</td>
                   <td>
                     <span className={slaPill(r)}>{r.sla}</span>

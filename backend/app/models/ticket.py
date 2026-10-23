@@ -44,7 +44,11 @@ class Ticket(SQLModel, table=True):
     sla_policy_id: Optional[int] = Field(default=None, foreign_key="sla_policies.id")
     sla_deadline: Optional[datetime] = Field(default=None)
     sla_breached: bool = Field(default=False)
-    # Tracks cumulative paused time (seconds) for accurate remaining calculation
+    # SLA clock. It is stopped while the ticket sits in a status that pauses
+    # the SLA (e.g. Pending user) *or* in a resolved/closed status:
+    # sla_paused_at = when it last stopped (null = running), and
+    # sla_paused_seconds = SLA-clock seconds (business-hours aware) spent
+    # stopped so far. Owned by services.sla.transition_status.
     sla_paused_at: Optional[datetime] = Field(default=None)
     sla_paused_seconds: int = Field(default=0)
     # Set when the 15-min breach warning DM has been sent — prevents re-sends
