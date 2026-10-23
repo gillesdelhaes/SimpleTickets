@@ -49,8 +49,10 @@ export default function DeleteTicketsDialog({ open, onClose, tickets, onDeleted 
       } else {
         await api.post('/tickets/bulk-delete', { ids: tickets.map(t => t.id), reason: reason.trim() })
       }
-      queryClient.invalidateQueries({ queryKey: ['tickets'] })
-      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      // Everything that counts tickets: queue, bell, reports, dashboard activity
+      for (const key of ['tickets', 'notifications', 'reports', 'activity']) {
+        queryClient.invalidateQueries({ queryKey: [key] })
+      }
       onDeleted()
     } catch (err) {
       setError(apiErrorMessage(err, 'Delete failed — please try again.'))

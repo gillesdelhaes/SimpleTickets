@@ -16,6 +16,7 @@ from app.routers import (
     backup,
     categories,
     health,
+    maintenance,
     notifications,
     replies,
     reports,
@@ -73,6 +74,7 @@ app.include_router(setup.router,           prefix="/api")
 app.include_router(auth.router,            prefix="/api")
 app.include_router(admin.router,           prefix="/api")
 app.include_router(account.router,         prefix="/api")
+app.include_router(maintenance.router,     prefix="/api")
 app.include_router(settings_router.router, prefix="/api")
 app.include_router(categories.router,      prefix="/api")
 app.include_router(sla_policies.router,    prefix="/api")

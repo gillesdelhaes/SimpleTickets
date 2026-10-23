@@ -99,6 +99,8 @@ const DESCRIBE: Record<string, (p: Payload) => string> = {
   'settings.updated': p => `Changed settings: ${fmtValue(p.keys)}`,
   'slack_workspace.created': p => `Connected workspace "${fmtValue(p.name)}"${p.team_name ? ` (${fmtValue(p.team_name)})` : ''}`,
   'slack_workspace.updated': p => `Workspace settings changed: ${fmtValue(p.keys)}`,
+  'maintenance.cleanup': p => `Data health cleanup — removed ${fmtValue(p.removed)}`,
+  'ticket.deleted': p => `Deleted ${fmtValue(p.display_id)} "${fmtValue(p.title)}" — reason: ${fmtValue(p.reason)}`,
   'backup.downloaded': p => `Downloaded backup (${fmtValue(p.attachments)} attachments)`,
   'backup.restored': p => `Restored from backup (${fmtValue(p.restored_files)} files)`,
 }

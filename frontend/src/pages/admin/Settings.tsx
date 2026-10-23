@@ -9,7 +9,7 @@ import { useAgents, type UserRead } from '../../hooks/useAgents'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Tab = 'general' | 'workspaces' | 'categories' | 'sla' | 'statuses' | 'backup'
+type Tab = 'general' | 'workspaces' | 'categories' | 'sla' | 'statuses' | 'backup' | 'health'
 
 const ADMIN_TABS: { id: Tab; label: string }[] = [
   { id: 'general', label: 'General' },
@@ -18,6 +18,7 @@ const ADMIN_TABS: { id: Tab; label: string }[] = [
   { id: 'sla', label: 'SLA policies' },
   { id: 'statuses', label: 'Statuses' },
   { id: 'backup', label: 'Backup & restore' },
+  { id: 'health', label: 'Data health' },
 ]
 
 type Priority = 'low' | 'medium' | 'high' | 'critical'
@@ -1440,6 +1441,160 @@ function StatusesTab() {
   )
 }
 
+// ── Data health tab ───────────────────────────────────────────────────────────
+// Database checks an admin can run from the browser (no DB access needed):
+// leftover rows/files, and the Reports overview broken down ticket by ticket.
+
+interface HealthTicket {
+  id: number; display_id: string; title: string; status: string; resolved: boolean
+  created_at: string; resolved_at: string | null; sla_deadline: string | null
+  sla: 'met' | 'missed' | 'excluded'; sla_reason: string
+  csat_answers: number; csat_positive: number
+}
+interface HealthRead {
+  db_version: string | null
+  counts: Record<string, number>
+  leftovers: Record<string, number>
+  missing_files: number
+  report: {
+    from: string; to: string
+    tickets: HealthTicket[]
+    totals: { tickets: number; sla_counted: number; sla_met: number; sla_compliance_pct: number | null; csat_total: number; csat_positive: number }
+  }
+}
+
+const LEFTOVER_LABELS: Record<string, string> = {
+  csat_answers: 'Survey answers', history: 'History entries', replies: 'Replies', attachments: 'Attachment records',
+  notifications: 'Notifications', read_markers: 'Read markers', unused_files: 'Unused files on disk',
+}
+
+function DataHealthTab() {
+  const qc = useQueryClient()
+  const { data, isLoading, isError, refetch, isFetching } = useQuery<HealthRead>({
+    queryKey: ['admin-health'],
+    queryFn: async () => (await api.get('/admin/maintenance/health')).data,
+    staleTime: 0,
+  })
+  const [result, setResult] = useState<Record<string, number> | null>(null)
+  const cleanup = useMutation({
+    mutationFn: async () => (await api.post<{ removed: Record<string, number> }>('/admin/maintenance/cleanup')).data,
+    onSuccess: d => {
+      setResult(d.removed)
+      qc.invalidateQueries({ queryKey: ['admin-health'] })
+      qc.invalidateQueries({ queryKey: ['reports'] })
+    },
+  })
+
+  if (isLoading) return <p className="text-[13px] text-ink-3">Checking the database…</p>
+  if (isError || !data) return <p className="text-[13px] text-danger-ink">Couldn't run the check.</p>
+
+  const leftoverTotal = Object.values(data.leftovers).reduce((a, b) => a + b, 0)
+  const t = data.report.totals
+  const fmt = (d: string | null) => d ? parseUTC(d).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : '—'
+  const slaPill = (r: HealthTicket) =>
+    r.sla === 'met' ? 'pill ok' : r.sla === 'missed' ? 'pill danger' : 'pill retired'
+
+  return (
+    <div className="flex flex-col gap-4" style={{ maxWidth: 980 }}>
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-3 w-full">
+            <SectionLabel>Database check</SectionLabel>
+            <button className="btn ghost sm" onClick={() => { setResult(null); refetch() }} disabled={isFetching}>
+              {isFetching ? 'Checking…' : 'Run again'}
+            </button>
+          </div>
+        </CardHeader>
+        <div style={{ padding: '16px 22px' }} className="flex flex-col gap-3">
+          <div className="flex flex-wrap gap-x-6 gap-y-1 text-[12.5px] text-ink-2">
+            <span>Database version <b className="font-mono text-ink">{data.db_version ?? '—'}</b></span>
+            <span>Tickets <b className="text-ink">{data.counts.tickets}</b></span>
+            <span>Replies <b className="text-ink">{data.counts.replies}</b></span>
+            <span>Survey answers <b className="text-ink">{data.counts.csat_answers}</b></span>
+            <span>Attachments <b className="text-ink">{data.counts.attachments}</b></span>
+          </div>
+
+          {leftoverTotal === 0 ? (
+            <div className="rounded-control px-3 py-2.5 text-[13px] text-ok-ink" style={{ background: 'var(--ok-bg)' }}>
+              ✓ No leftovers — every row belongs to an existing ticket and every stored file is in use.
+            </div>
+          ) : (
+            <div className="rounded-control px-3 py-2.5 text-[13px] text-warn-ink flex flex-col gap-2" style={{ background: 'var(--warn-bg)' }}>
+              <span>Found data that no longer belongs to any ticket:</span>
+              <ul className="m-0 pl-5">
+                {Object.entries(data.leftovers).filter(([, n]) => n > 0).map(([k, n]) => (
+                  <li key={k}>{LEFTOVER_LABELS[k] ?? k}: <b>{n}</b></li>
+                ))}
+              </ul>
+              <div>
+                <button className="btn sm" onClick={() => cleanup.mutate()} disabled={cleanup.isPending}>
+                  {cleanup.isPending ? 'Cleaning up…' : `Clean up ${leftoverTotal} item${leftoverTotal > 1 ? 's' : ''}`}
+                </button>
+              </div>
+            </div>
+          )}
+          {data.missing_files > 0 && (
+            <p className="m-0 text-[12.5px] text-warn-ink">
+              {data.missing_files} attachment{data.missing_files > 1 ? 's point' : ' points'} to a file that's missing on disk (can't be repaired here).
+            </p>
+          )}
+          {result && (
+            <p className="m-0 text-[12.5px] text-ok-ink font-semibold">
+              ✓ Removed {Object.values(result).reduce((a, b) => a + b, 0)} item(s). Logged in the audit log.
+            </p>
+          )}
+          {cleanup.isError && <p className="m-0 text-[12.5px] text-danger-ink">{apiErrorMessage(cleanup.error, 'Cleanup failed.')}</p>}
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="w-full">
+            <SectionLabel>Reports overview, ticket by ticket</SectionLabel>
+            <p className="m-0 mt-1 text-[12.5px] text-ink-3">
+              Tickets created {fmt(data.report.from)} – {fmt(data.report.to)} (the Reports page's default last 30 days).
+              These totals should match the Reports overview.
+            </p>
+          </div>
+        </CardHeader>
+        <div style={{ padding: '14px 22px' }} className="flex flex-wrap gap-x-6 gap-y-1 text-[12.5px] text-ink-2">
+          <span>Tickets <b className="text-ink">{t.tickets}</b></span>
+          <span>SLA compliance <b className="text-ink">{t.sla_compliance_pct ?? '—'}{t.sla_compliance_pct != null ? '%' : ''}</b> ({t.sla_met} met of {t.sla_counted} counted)</span>
+          <span>Survey answers <b className="text-ink">{t.csat_total}</b> ({t.csat_positive} 👍)</span>
+        </div>
+        <div className="tablewrap">
+          <table>
+            <thead>
+              <tr>{['Ticket', 'Status', 'Created', 'Resolved', 'SLA deadline', 'SLA', 'Survey'].map(h => <th key={h}>{h}</th>)}</tr>
+            </thead>
+            <tbody>
+              {data.report.tickets.length === 0 ? (
+                <tr><td colSpan={7} className="text-ink-3 text-center" style={{ padding: 28 }}>No tickets in this period.</td></tr>
+              ) : data.report.tickets.map(r => (
+                <tr key={r.id}>
+                  <td>
+                    <span className="font-mono text-[11px] text-ink-3">{r.display_id}</span>
+                    <span className="block text-[12.5px] text-ink truncate" style={{ maxWidth: 220 }}>{r.title}</span>
+                  </td>
+                  <td className="text-[12.5px]">{r.status}</td>
+                  <td className="font-mono text-[11px] text-ink-2">{fmt(r.created_at)}</td>
+                  <td className="font-mono text-[11px] text-ink-2">{fmt(r.resolved_at)}</td>
+                  <td className="font-mono text-[11px] text-ink-2">{fmt(r.sla_deadline)}</td>
+                  <td>
+                    <span className={slaPill(r)}>{r.sla}</span>
+                    <span className="block text-[11px] text-ink-3 mt-1">{r.sla_reason}</span>
+                  </td>
+                  <td className="text-[12.5px]">{r.csat_answers ? `${r.csat_positive} 👍 / ${r.csat_answers - r.csat_positive} 👎` : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
 // ── Backup tab ────────────────────────────────────────────────────────────────
 
 function BackupTab() {
@@ -1596,6 +1751,7 @@ export default function Settings() {
         {tab === 'sla'        && <SLATab />}
         {tab === 'statuses'   && <StatusesTab />}
         {tab === 'backup'     && <BackupTab />}
+        {tab === 'health'     && <DataHealthTab />}
       </div>
     </AppShell>
   )
