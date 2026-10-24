@@ -184,8 +184,10 @@ export default function Queue() {
   // …except for a requester's history, where closed tickets are the point
   const statusParam = selectedStatuses.length > 0 ? selectedStatuses : requesterOf ? undefined : activeStatusNames
   const priorityParam = selectedPriorities.length > 0 ? selectedPriorities : undefined
+  // 'all' | 'mine' | 'unassigned' | a technician's user id (from the menu)
+  const pickedTechId = /^\d+$/.test(assigneeFilter) ? Number(assigneeFilter) : undefined
   const assigneeIdParam: number | undefined =
-    assigneeFilter === 'mine' ? (user?.id ?? undefined) : undefined
+    assigneeFilter === 'mine' ? (user?.id ?? undefined) : pickedTechId
   const unassignedParam = assigneeFilter === 'unassigned'
   const categoryIdParam: number | undefined =
     categoryFilter !== 'all' ? Number(categoryFilter) : undefined
@@ -467,6 +469,33 @@ export default function Queue() {
             </button>
           ))}
         </div>
+
+        {/* Any one technician — e.g. to review someone's workload */}
+        <FilterMenu
+          label="Technician"
+          value={pickedTechId !== undefined ? (technicians?.find(t => t.id === pickedTechId)?.name ?? '…') : undefined}
+          active={pickedTechId !== undefined}
+        >
+          {close => (
+            <>
+              {technicians?.length === 0 && <p className="m-0 px-2.5 py-2 text-[12.5px] text-ink-3">No technicians yet.</p>}
+              {technicians?.map(t => (
+                <MenuOption
+                  key={t.id}
+                  label={t.id === user?.id ? `${t.name} (you)` : t.name}
+                  selected={pickedTechId === t.id}
+                  onClick={() => { setAssignee(String(t.id)); close() }}
+                />
+              ))}
+              {pickedTechId !== undefined && (
+                <>
+                  <MenuDivider />
+                  <MenuOption label="Any assignee" selected={false} onClick={() => { setAssignee('all'); close() }} />
+                </>
+              )}
+            </>
+          )}
+        </FilterMenu>
 
         <FilterMenu label="Status" value={statusSummary} active={selectedStatuses.length > 0}>
           {() => (
