@@ -6,6 +6,7 @@ import AuthImage from '../components/AuthImage'
 import RichText from '../components/RichText'
 import SLABadge from '../components/tickets/SLABadge'
 import DeleteTicketsDialog from '../components/tickets/DeleteTicketsDialog'
+import ResolveUnansweredDialog from '../components/tickets/ResolveUnansweredDialog'
 import RequesterTickets from '../components/tickets/RequesterTickets'
 import { isResolvedStatus, parseSLABar, parseSLABarRaw, parseSLAPaused } from '../types/ticket'
 import { useMarkDuplicate, useUnmarkDuplicate } from '../hooks/useDuplicate'
@@ -376,6 +377,7 @@ function Composer({ ticketId, isTech, disabled }: ComposerProps) {
       )}
 
       <textarea
+        id="reply-composer"
         ref={textareaRef}
         className="input"
         value={body}
@@ -749,6 +751,8 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
   const { data: appConfig } = useAppConfig()
   const categoryRef = useRef<HTMLSelectElement>(null)
   const [flashCategory, setFlashCategory] = useState(false)
+  // Resolved status waiting on the "no reply yet" confirmation
+  const [pendingResolve, setPendingResolve] = useState<string | null>(null)
   // Resolved/closed tickets are frozen (enforced by the API too): every field
   // is read-only and the only action is Reopen.
   const locked = isResolvedStatus(ticket.status)
@@ -772,19 +776,40 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
   })
 
   function patch(field: string, value: unknown) {
-    if (field === 'status' && needsCategory) {
-      const statuses = appConfig?.statuses ?? getAllStatuses()
-      if (statuses.find(s => s.name === value)?.is_resolved_state) {
-        setPatchError('Set a category before resolving this ticket.')
-        categoryRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-        categoryRef.current?.focus({ preventScroll: true })
-        setFlashCategory(false)
-        requestAnimationFrame(() => setFlashCategory(true))
-        return
-      }
+    const resolving = field === 'status' &&
+      !!(appConfig?.statuses ?? getAllStatuses()).find(s => s.name === value)?.is_resolved_state
+    if (resolving && needsCategory) {
+      setPatchError('Set a category before resolving this ticket.')
+      categoryRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      categoryRef.current?.focus({ preventScroll: true })
+      setFlashCategory(false)
+      requestAnimationFrame(() => setFlashCategory(true))
+      return
     }
-    if (field === 'category_id' && value) setPatchError(null)
+    // Same rule for the assignee, minus the highlight: assigning is routine,
+    // and "Assign to me" sits right below, so the message is enough.
+    if (resolving && ticket.assignee_id == null) {
+      setPatchError('Assign this ticket before resolving it.')
+      return
+    }
+    if (resolving && !ticket.first_responded_at) {
+      setPendingResolve(value as string)
+      return
+    }
+    if ((field === 'category_id' || field === 'assignee_id') && value) setPatchError(null)
     patchMutation.mutate({ [field]: value })
+  }
+
+  function confirmResolve() {
+    if (pendingResolve) patchMutation.mutate({ status: pendingResolve })
+    setPendingResolve(null)
+  }
+
+  function replyFirst() {
+    setPendingResolve(null)
+    const box = document.getElementById('reply-composer') as HTMLTextAreaElement | null
+    box?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    box?.focus({ preventScroll: true })
   }
 
   const channelLabels: Record<string, string> = {
@@ -997,6 +1022,14 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
             />
           </>
         )}
+        <ResolveUnansweredDialog
+          open={pendingResolve !== null}
+          unanswered={[{ id: ticket.id, display_id: ticket.display_id }]}
+          statusLabel={pendingResolve ? statusLabel(pendingResolve) : ''}
+          onCancel={() => setPendingResolve(null)}
+          onConfirm={confirmResolve}
+          onReplyFirst={replyFirst}
+        />
       </div>
     </section>
   )

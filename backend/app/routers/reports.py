@@ -86,12 +86,14 @@ async def _date_range(
 #   - Time to resolve = creation → latest resolution, minus the time the
 #     ticket sat resolved/closed before being reopened (derived from its
 #     status history — see _closed_time).
-#   - First response is met when the first public tech reply landed by
-#     first_response_deadline. A ticket with no reply yet has missed it once
-#     the deadline passed while the clock ran (before now, or before the
-#     clock stopped — a stopped clock's later deadline is walked forward on
-#     resume, so it isn't decided yet). Time to first response is wall-clock
-#     creation → first reply, like time to resolve.
+#   - First response = the first public tech reply *or* resolving the ticket,
+#     whichever came first: resolving is an answer too, and technicians
+#     shouldn't need an "on it" reply just to stop the clock. It's met when
+#     that landed by first_response_deadline. A ticket with neither yet has
+#     missed it once the deadline passed while the clock ran (before now, or
+#     before the clock stopped — a stopped clock's later deadline is walked
+#     forward on resume, so it isn't decided yet). Time to first response is
+#     wall-clock creation → first response, like time to resolve.
 
 def _sla_met():
     return (Ticket.sla_deadline.isnot(None)) & (Ticket.resolved_at.isnot(None)) & (Ticket.sla_breached == False)  # noqa: E712
@@ -101,20 +103,25 @@ def _sla_counted():
     return (Ticket.sla_deadline.isnot(None)) & (Ticket.resolved_at.isnot(None) | (Ticket.sla_breached == True))  # noqa: E712
 
 
+def _fr_at():
+    # Postgres LEAST ignores NULLs: NULL only when neither has happened
+    return func.least(Ticket.first_responded_at, Ticket.resolved_at)
+
+
 def _fr_met():
-    return (Ticket.first_response_deadline.isnot(None)) & (Ticket.first_responded_at <= Ticket.first_response_deadline)
+    return (Ticket.first_response_deadline.isnot(None)) & (_fr_at() <= Ticket.first_response_deadline)
 
 
 def _fr_counted():
     return (Ticket.first_response_deadline.isnot(None)) & (
-        Ticket.first_responded_at.isnot(None)
+        _fr_at().isnot(None)
         | (Ticket.first_response_deadline < func.coalesce(Ticket.sla_paused_at, utcnow()))
     )
 
 
 def _fr_minutes():
-    # NULL until the first reply, so avg / percentile skip unanswered tickets
-    return func.extract("epoch", Ticket.first_responded_at - Ticket.created_at) / 60
+    # NULL until answered or resolved, so avg / percentile skip those tickets
+    return func.extract("epoch", _fr_at() - Ticket.created_at) / 60
 
 
 def _closed_time():

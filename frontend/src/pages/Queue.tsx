@@ -8,6 +8,7 @@ import SLABadge from '../components/tickets/SLABadge'
 import CreateTicketModal from '../components/tickets/CreateTicketModal'
 import FilterMenu, { MenuCheck, MenuDivider, MenuOption } from '../components/tickets/FilterMenu'
 import DeleteTicketsDialog from '../components/tickets/DeleteTicketsDialog'
+import ResolveUnansweredDialog from '../components/tickets/ResolveUnansweredDialog'
 import { useTickets } from '../hooks/useTickets'
 import { useCategories } from '../hooks/useCategories'
 import { useSavedQueueViews } from '../hooks/useSavedQueueViews'
@@ -161,6 +162,8 @@ export default function Queue() {
   const [bulkLoading, setBulkLoading] = useState(false)
   const [bulkError, setBulkError] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  // Bulk resolve waiting on the "no reply yet" confirmation
+  const [pendingResolve, setPendingResolve] = useState<{ status: string; label: string } | null>(null)
   const { views: savedViews, saveView, deleteView } = useSavedQueueViews()
   const [namingView, setNamingView] = useState(false)
   const [newViewName, setNewViewName] = useState('')
@@ -390,6 +393,30 @@ export default function Queue() {
     } finally {
       setBulkLoading(false)
     }
+  }
+
+  // Ask first when some selected tickets never got a reply (see
+  // ResolveUnansweredDialog) — resolving is allowed, just not silently.
+  const unansweredSelected = (data?.items ?? [])
+    .filter(t => selected.has(t.id) && !t.first_responded_at && !isResolvedStatus(t.status))
+    .map(t => ({ id: t.id, display_id: t.display_id }))
+
+  function resolveSelected(status: string, label: string) {
+    // Mirrors the server rule (every resolved ticket needs an owner), checked
+    // first so nobody confirms the dialog below only to hit the error after
+    const unassigned = (data?.items ?? [])
+      .filter(t => selected.has(t.id) && t.assignee_id == null && !isResolvedStatus(t.status))
+      .map(t => t.display_id)
+    if (unassigned.length > 0) {
+      setBulkError(
+        `Assign tickets before resolving them — ${unassigned.length} selected ticket${unassigned.length > 1 ? 's are' : ' is'} unassigned: ` +
+        unassigned.slice(0, 10).join(', ') + (unassigned.length > 10 ? '…' : ''),
+      )
+      return
+    }
+    setBulkError(null)
+    if (unansweredSelected.length > 0) setPendingResolve({ status, label })
+    else bulkAction({ status })
   }
 
   // Technicians can't bulk-close (terminal resolved state with no survey) — that
@@ -631,7 +658,7 @@ export default function Queue() {
           {resolvedStatuses.map(s => (
             <button
               key={s.name}
-              onClick={() => bulkAction({ status: s.name })}
+              onClick={() => resolveSelected(s.name, s.label)}
               disabled={bulkLoading}
               className="btn ghost sm"
             >
@@ -655,6 +682,15 @@ export default function Queue() {
           </button>
         </div>
       )}
+
+      <ResolveUnansweredDialog
+        open={pendingResolve !== null}
+        unanswered={unansweredSelected}
+        total={selected.size}
+        statusLabel={pendingResolve?.label ?? ''}
+        onCancel={() => setPendingResolve(null)}
+        onConfirm={() => { if (pendingResolve) bulkAction({ status: pendingResolve.status }); setPendingResolve(null) }}
+      />
 
       {isAdmin && (
         <DeleteTicketsDialog

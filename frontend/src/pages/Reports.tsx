@@ -493,7 +493,7 @@ export default function Reports() {
               value={ov.first_response_pct != null ? `${ov.first_response_pct}%` : '—'}
               sub={ov.median_first_response_minutes != null
                 ? `median ${fmtMinutes(ov.median_first_response_minutes)} · avg ${fmtMinutes(ov.avg_first_response_minutes)}`
-                : 'No replies yet'}
+                : 'No responses yet'}
               tone={ov.first_response_pct != null && ov.first_response_pct < 80 ? 'danger' : undefined}
             />
             <KpiCard

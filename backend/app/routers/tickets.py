@@ -74,6 +74,7 @@ async def _categories_configured(session: AsyncSession) -> bool:
 
 
 _CATEGORY_REQUIRED = "Set a category before resolving this ticket."
+_ASSIGNEE_REQUIRED = "Assign this ticket before resolving it."
 
 
 _LOCKED = "This ticket is resolved — reopen it before changing anything."
@@ -615,6 +616,21 @@ async def bulk_update_tickets(
                     + ("…" if len(uncategorized) > 10 else "")
                 ),
             )
+        # An assignee in this same request is applied to every ticket below
+        unassigned = [
+            t.display_id for t in tickets
+            if t.assignee_id is None and body.assignee_id is None and t.status != body.status
+        ]
+        if unassigned:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Assign tickets before resolving them — "
+                    f"{len(unassigned)} selected ticket(s) are unassigned: "
+                    + ", ".join(unassigned[:10])
+                    + ("…" if len(unassigned) > 10 else "")
+                ),
+            )
 
     updated = 0
     # (ticket, changes, entered_csat) for post-commit Slack/CSAT side effects
@@ -799,6 +815,14 @@ async def update_ticket(
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail=_CATEGORY_REQUIRED,
+                )
+            # …and an owner, so every resolution is credited to someone. An
+            # assignee set in this same request counts (it's applied below).
+            assignee_after = body.assignee_id if "assignee_id" in provided else ticket.assignee_id
+            if status_cfg.is_resolved_state and assignee_after is None:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=_ASSIGNEE_REQUIRED,
                 )
             resolved_names = await _get_resolved_status_names(session)
             changes["status"] = (ticket.status, body.status)

@@ -35,6 +35,8 @@ export function useAddReply(ticketId: number) {
       api.post<ReplyRead>(`/tickets/${ticketId}/replies`, body).then(r => r.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['replies', ticketId] })
+      // A public reply sets first_responded_at on the ticket
+      queryClient.invalidateQueries({ queryKey: ['ticket', ticketId] })
     },
   })
 }
