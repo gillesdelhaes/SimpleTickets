@@ -23,6 +23,9 @@ interface Overview {
   open: number
   sla_compliance_pct: number | null
   avg_resolution_hours: number | null
+  first_response_pct: number | null
+  avg_first_response_minutes: number | null
+  median_first_response_minutes: number | null
   csat_pct: number | null
   csat_total: number
   csat_positive: number
@@ -38,6 +41,8 @@ interface TechRow {
   resolved: number
   avg_hours: number | null
   sla_pct: number | null
+  first_response_pct: number | null
+  avg_first_response_minutes: number | null
   csat_pct: number | null
 }
 interface CsatNegRow {
@@ -299,6 +304,12 @@ function pct(value: number | null, warnBelow: number, dangerBelow: number): Reac
   return <span className="font-semibold" style={{ color }}>{value}%</span>
 }
 
+// Response times are in minutes — show minutes under an hour, hours after
+function fmtMinutes(m: number | null): string {
+  if (m == null) return '—'
+  return m < 60 ? `${m}m` : `${Math.round(m / 6) / 10}h`
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────────
 
 interface Assignee { id: number; name: string }
@@ -465,7 +476,7 @@ export default function Reports() {
       {/* ── KPI row ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 14 }}>
         {overview.isLoading ? (
-          [1, 2, 3, 4, 5].map(i => <Skeleton key={i} height={96} />)
+          [1, 2, 3, 4, 5, 6, 7].map(i => <Skeleton key={i} height={96} />)
         ) : ov ? (
           <>
             <KpiCard label="Total tickets" value={ov.total} />
@@ -476,6 +487,14 @@ export default function Reports() {
               value={ov.sla_compliance_pct != null ? `${ov.sla_compliance_pct}%` : '—'}
               sub="of tickets with SLA"
               tone={ov.sla_compliance_pct != null && ov.sla_compliance_pct < 80 ? 'danger' : undefined}
+            />
+            <KpiCard
+              label="First response"
+              value={ov.first_response_pct != null ? `${ov.first_response_pct}%` : '—'}
+              sub={ov.median_first_response_minutes != null
+                ? `median ${fmtMinutes(ov.median_first_response_minutes)} · avg ${fmtMinutes(ov.avg_first_response_minutes)}`
+                : 'No replies yet'}
+              tone={ov.first_response_pct != null && ov.first_response_pct < 80 ? 'danger' : undefined}
             />
             <KpiCard
               label="Avg resolution"
@@ -664,7 +683,7 @@ export default function Reports() {
             <table>
               <thead>
                 <tr>
-                  {['Name', 'Assigned', 'Resolved', 'Avg resolution', 'SLA compliance', 'CSAT'].map(h => (
+                  {['Name', 'Assigned', 'Resolved', 'Avg resolution', 'SLA compliance', 'First response', 'CSAT'].map(h => (
                     <th key={h} className={thClass}>{h}</th>
                   ))}
                 </tr>
@@ -672,7 +691,7 @@ export default function Reports() {
               <tbody>
                 {(techs.data ?? []).length === 0 ? (
                   <tr>
-                    <td colSpan={6} style={{ padding: '24px 12px', textAlign: 'center', whiteSpace: 'normal' }} className="text-ink-3">
+                    <td colSpan={7} style={{ padding: '24px 12px', textAlign: 'center', whiteSpace: 'normal' }} className="text-ink-3">
                       No assigned tickets in this period
                     </td>
                   </tr>
@@ -690,6 +709,14 @@ export default function Reports() {
                     </td>
                     <td className="text-ink-2">{row.avg_hours != null ? `${row.avg_hours}h` : '—'}</td>
                     <td>{pct(row.sla_pct, 90, 70)}</td>
+                    <td>
+                      {pct(row.first_response_pct, 90, 70)}
+                      {row.avg_first_response_minutes != null && (
+                        <span className="text-ink-3 text-[11px] ml-1">
+                          (avg {fmtMinutes(row.avg_first_response_minutes)})
+                        </span>
+                      )}
+                    </td>
                     <td>{pct(row.csat_pct, 80, 60)}</td>
                   </tr>
                 ))}

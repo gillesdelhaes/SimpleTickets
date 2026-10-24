@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import require_admin, require_technician
 from app.database import get_session
+from app.dt import utcnow
 from app.models import Category, Ticket, TicketHistory, User
 from app.models.enums import Role
 from app.models.ticket_csat import TicketCSAT
@@ -85,6 +86,12 @@ async def _date_range(
 #   - Time to resolve = creation → latest resolution, minus the time the
 #     ticket sat resolved/closed before being reopened (derived from its
 #     status history — see _closed_time).
+#   - First response is met when the first public tech reply landed by
+#     first_response_deadline. A ticket with no reply yet has missed it once
+#     the deadline passed while the clock ran (before now, or before the
+#     clock stopped — a stopped clock's later deadline is walked forward on
+#     resume, so it isn't decided yet). Time to first response is wall-clock
+#     creation → first reply, like time to resolve.
 
 def _sla_met():
     return (Ticket.sla_deadline.isnot(None)) & (Ticket.resolved_at.isnot(None)) & (Ticket.sla_breached == False)  # noqa: E712
@@ -92,6 +99,22 @@ def _sla_met():
 
 def _sla_counted():
     return (Ticket.sla_deadline.isnot(None)) & (Ticket.resolved_at.isnot(None) | (Ticket.sla_breached == True))  # noqa: E712
+
+
+def _fr_met():
+    return (Ticket.first_response_deadline.isnot(None)) & (Ticket.first_responded_at <= Ticket.first_response_deadline)
+
+
+def _fr_counted():
+    return (Ticket.first_response_deadline.isnot(None)) & (
+        Ticket.first_responded_at.isnot(None)
+        | (Ticket.first_response_deadline < func.coalesce(Ticket.sla_paused_at, utcnow()))
+    )
+
+
+def _fr_minutes():
+    # NULL until the first reply, so avg / percentile skip unanswered tickets
+    return func.extract("epoch", Ticket.first_responded_at - Ticket.created_at) / 60
 
 
 def _closed_time():
@@ -187,6 +210,10 @@ async def get_overview(
         func.avg(_resolution_hours(closed)).filter(
             Ticket.resolved_at.isnot(None)
         ).label("avg_resolution_hours"),
+        func.count(case((_fr_met(), 1))).label("fr_met"),
+        func.count(case((_fr_counted(), 1))).label("fr_total"),
+        func.avg(_fr_minutes()).label("avg_fr_minutes"),
+        func.percentile_cont(0.5).within_group(_fr_minutes()).label("median_fr_minutes"),
     ).select_from(Ticket).outerjoin(closed, closed.c.ticket_id == Ticket.id).where(
         Ticket.created_at >= start, Ticket.created_at <= end,
     )
@@ -200,6 +227,9 @@ async def get_overview(
     # `is not None`, not truthiness — a genuine 0 (0% SLA, 0h avg) is a real value,
     # not "no data", and must not render as "—".
     avg_h = round(float(row.avg_resolution_hours), 1) if row.avg_resolution_hours is not None else None
+    fr_pct = round(row.fr_met * 100 / row.fr_total, 1) if row.fr_total else None
+    avg_fr = round(float(row.avg_fr_minutes)) if row.avg_fr_minutes is not None else None
+    median_fr = round(float(row.median_fr_minutes)) if row.median_fr_minutes is not None else None
 
     csat_stmt = (
         select(
@@ -224,6 +254,9 @@ async def get_overview(
         "open": row.open,
         "sla_compliance_pct": sla_pct,
         "avg_resolution_hours": avg_h,
+        "first_response_pct": fr_pct,
+        "avg_first_response_minutes": avg_fr,
+        "median_first_response_minutes": median_fr,
         "csat_pct": csat_pct,
         "csat_total": csat_row.csat_total,
         "csat_positive": int(csat_row.csat_positive),
@@ -396,6 +429,11 @@ async def get_technicians(
                 func.count(case((_sla_met(), 1))) * 100.0 /
                 func.nullif(func.count(case((_sla_counted(), 1))), 0)
             ).label("sla_pct"),
+            (
+                func.count(case((_fr_met(), 1))) * 100.0 /
+                func.nullif(func.count(case((_fr_counted(), 1))), 0)
+            ).label("fr_pct"),
+            func.avg(_fr_minutes()).label("avg_fr_minutes"),
             func.coalesce(func.sum(csat_subq.c.csat_count), 0).label("csat_total"),
             func.coalesce(func.sum(csat_subq.c.csat_pos), 0).label("csat_positive"),
         )
@@ -422,6 +460,8 @@ async def get_technicians(
             "resolved": row.resolved,
             "avg_hours": round(float(row.avg_hours), 1) if row.avg_hours is not None else None,
             "sla_pct": round(float(row.sla_pct), 1) if row.sla_pct is not None else None,
+            "first_response_pct": round(float(row.fr_pct), 1) if row.fr_pct is not None else None,
+            "avg_first_response_minutes": round(float(row.avg_fr_minutes)) if row.avg_fr_minutes is not None else None,
             "csat_pct": (
                 round(row.csat_positive * 100 / row.csat_total, 1)
                 if row.csat_total

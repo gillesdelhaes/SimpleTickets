@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 logger = logging.getLogger(__name__)
-from sqlalchemy import case, func, select
+from sqlalchemy import and_, case, false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -28,6 +28,9 @@ from app.schemas.ticket import (
     CloseTicketRequest,
     DeleteTicketsRequest,
     MarkDuplicateRequest,
+    RequesterOption,
+    RequesterTicketItem,
+    RequesterTicketsResponse,
     TicketCreate,
     TicketListResponse,
     TicketRead,
@@ -346,6 +349,7 @@ async def list_tickets(
     assignee_id: int | None = Query(default=None),
     unassigned: bool = Query(default=False),
     has_negative_csat: bool = Query(default=False),
+    requester_of: int | None = Query(default=None, description="Tickets from the same requester as this ticket"),
     sort: str = Query(default="created_at"),
     sort_dir: str = Query(default="desc"),
     limit: int = Query(default=50, ge=1, le=200),
@@ -368,6 +372,10 @@ async def list_tickets(
         where.append(Ticket.assignee_id == assignee_id)
     if unassigned:
         where.append(Ticket.assignee_id.is_(None))
+    if requester_of is not None:
+        clauses = _same_requester(await get_ticket_or_404(session, requester_of))
+        # No identifiable requester → nothing matches (not "everything")
+        where.extend(clauses if clauses is not None else [false()])
     if has_negative_csat:
         where.append(
             select(TicketCSAT.id)
@@ -395,6 +403,50 @@ async def list_tickets(
     return TicketListResponse(items=items, total=total)
 
 
+# ── GET /tickets/requesters ────────────────────────────────────────────────────
+# Registered before /{ticket_id} so "requesters" isn't parsed as an id.
+
+_REQUESTER_OPTIONS_LIMIT = 50
+
+
+@router.get("/requesters", response_model=list[RequesterOption])
+async def list_requesters(
+    q: str = Query(default="", max_length=100),
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[RequesterOption]:
+    """People who have filed tickets, most recently active first, for the
+    Queue's "From" filter. Grouped by the same identity rule as
+    _same_requester: the portal account when there is one, else the Slack
+    user within its workspace."""
+    no_account = Ticket.submitter_id.is_(None)
+    slack_key = case((no_account, Ticket.slack_submitter_id), else_=None)
+    workspace_key = case((no_account, Ticket.workspace_id), else_=None)
+    name = func.coalesce(func.max(User.name), func.max(Ticket.slack_submitter_name), "Unknown")
+
+    stmt = (
+        select(
+            func.max(Ticket.id).label("ticket_id"),
+            name.label("name"),
+            func.count(Ticket.id).label("total_count"),
+        )
+        .outerjoin(User, Ticket.submitter_id == User.id)
+        .where(or_(
+            Ticket.submitter_id.is_not(None),
+            and_(Ticket.slack_submitter_id.is_not(None), Ticket.workspace_id.is_not(None)),
+        ))
+        .group_by(Ticket.submitter_id, slack_key, workspace_key)
+        .order_by(func.max(Ticket.created_at).desc())
+        .limit(_REQUESTER_OPTIONS_LIMIT)
+    )
+    if q.strip():
+        escaped = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        stmt = stmt.having(name.ilike(f"%{escaped}%", escape="\\"))
+
+    rows = (await session.execute(stmt)).all()
+    return [RequesterOption(ticket_id=r.ticket_id, name=r.name, total_count=r.total_count) for r in rows]
+
+
 # ── GET /tickets/{id} ──────────────────────────────────────────────────────────
 
 
@@ -408,6 +460,78 @@ async def get_ticket(
     await get_ticket_or_404(session, ticket_id)
     items, _ = await _fetch_enriched(session, [Ticket.id == ticket_id])
     return items[0]
+
+
+# ── GET /tickets/{id}/requester-tickets ────────────────────────────────────────
+
+_REQUESTER_TICKETS_LIMIT = 10
+
+
+def _same_requester(ticket: Ticket) -> list | None:
+    """Clauses matching tickets from this ticket's requester: same
+    submitter_id when set, else the same Slack user *within the same
+    workspace* (Slack ids are only unique per workspace). None when the
+    ticket has no identifiable requester."""
+    if ticket.submitter_id is not None:
+        return [Ticket.submitter_id == ticket.submitter_id]
+    if ticket.slack_submitter_id and ticket.workspace_id is not None:
+        return [
+            Ticket.slack_submitter_id == ticket.slack_submitter_id,
+            Ticket.workspace_id == ticket.workspace_id,
+        ]
+    return None
+
+
+@router.get("/{ticket_id}/requester-tickets", response_model=RequesterTicketsResponse)
+async def get_requester_tickets(
+    ticket_id: int,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> RequesterTicketsResponse:
+    """Other tickets from this ticket's requester — same auth and visibility
+    as GET /tickets/{id}. Summary fields only — never descriptions or replies."""
+    ticket = await get_ticket_or_404(session, ticket_id)
+
+    same_requester = _same_requester(ticket)
+    if same_requester is None:
+        return RequesterTicketsResponse(open_count=0, total_count=0, items=[])
+
+    where = [*same_requester, Ticket.id != ticket.id]
+    resolved = await _get_resolved_status_names(session)
+
+    total_count, open_count = (
+        await session.execute(
+            select(
+                func.count(Ticket.id),
+                func.count(Ticket.id).filter(Ticket.status.not_in(resolved)),
+            ).where(*where)
+        )
+    ).one()
+
+    others = (
+        await session.execute(
+            select(Ticket)
+            .where(*where)
+            .order_by(Ticket.created_at.desc(), Ticket.id.desc())
+            .limit(_REQUESTER_TICKETS_LIMIT)
+        )
+    ).scalars().all()
+
+    return RequesterTicketsResponse(
+        open_count=open_count,
+        total_count=total_count,
+        items=[
+            RequesterTicketItem(
+                id=t.id,
+                display_id=t.display_id,
+                title=t.title,
+                status=t.status,
+                priority=t.priority,
+                created_at=t.created_at,
+            )
+            for t in others
+        ],
+    )
 
 
 # ── PATCH /tickets/bulk ────────────────────────────────────────────────────────

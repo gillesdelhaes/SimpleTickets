@@ -15,6 +15,7 @@ import logging
 import magic
 import re
 import uuid
+from datetime import timedelta
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,9 @@ _ALLOWED_MIME_EXACT = {
 
 _UNSAFE_CHARS = re.compile(r"[^\w.\-]")
 
+# How long after posting a reply (or creating a ticket) files may be added to it
+_ATTACH_WINDOW = timedelta(minutes=10)
+
 
 def _sanitize_filename(name: str) -> str:
     """Strip path components and replace unsafe characters."""
@@ -65,6 +69,9 @@ def _sanitize_filename(name: str) -> str:
 
 
 def _is_allowed_mime(mime: str) -> bool:
+    # SVG is markup that can carry script — never accept it as an "image".
+    if mime == "image/svg+xml":
+        return False
     if any(mime.startswith(p) for p in _ALLOWED_MIME_PREFIXES):
         return True
     return mime in _ALLOWED_MIME_EXACT
@@ -94,7 +101,30 @@ async def upload_attachment(
     Max size: {max_mb} MB. Allowed types: images, PDF, office docs, plain text.
     """
     _upload_limiter.check(str(current_user.id))
-    await get_ticket_or_404(session, ticket_id)
+    ticket = await get_ticket_or_404(session, ticket_id)
+
+    # A file is shown as sent by whoever wrote the message it hangs off, so
+    # only that author may add to it, and only right after posting. Ticket-
+    # level files show under the original request, so they're only accepted
+    # from the web creation flow, right after the ticket is created.
+    if reply_id is not None:
+        from app.models import TicketReply  # local import to avoid circular
+        reply = await session.get(TicketReply, reply_id)
+        if (
+            reply is None
+            or reply.ticket_id != ticket_id
+            or reply.author_id != current_user.id
+            or utcnow() - reply.created_at > _ATTACH_WINDOW
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Files can only be added to your own reply, right after sending it",
+            )
+    elif ticket.source != "web" or utcnow() - ticket.created_at > _ATTACH_WINDOW:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Files can only be added to the request right after creating it",
+        )
 
     max_bytes = 10 * 1024 * 1024  # 10 MB hard limit
 
@@ -127,16 +157,6 @@ async def upload_attachment(
             detail=f"File type '{mime_type}' is not allowed",
         )
 
-    # Validate reply_id belongs to this ticket
-    if reply_id is not None:
-        from app.models import TicketReply  # local import to avoid circular
-        reply = await session.get(TicketReply, reply_id)
-        if reply is None or reply.ticket_id != ticket_id:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Reply not found on this ticket",
-            )
-
     # Build storage path
     safe_name = _sanitize_filename(original_name)
     unique_name = f"{uuid.uuid4().hex}_{safe_name}"
@@ -164,11 +184,12 @@ async def upload_attachment(
 
     # Push attachment to the Slack thread — works for both reply-level (reply_id set)
     # and ticket-level (reply_id=None) attachments as long as the ticket has a thread anchor.
+    # Internal-note files stay internal — they never reach the requester.
     try:
         from app.slack.service import upload_attachments_to_slack
-        ticket_obj = await get_ticket_or_404(session, ticket_id)
-        if ticket_obj.slack_channel_id and ticket_obj.slack_message_ts:
-            await upload_attachments_to_slack(ticket_obj, reply_id)
+        is_internal = reply_id is not None and reply.is_internal
+        if not is_internal and ticket.slack_channel_id and ticket.slack_message_ts:
+            await upload_attachments_to_slack(ticket, reply_id)
     except Exception:  # noqa: BLE001
         logger.warning("Failed to upload attachment %d to Slack", attachment.id)
 

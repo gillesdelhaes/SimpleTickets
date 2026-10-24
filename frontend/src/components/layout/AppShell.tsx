@@ -382,7 +382,7 @@ export default function AppShell({ title, children }: AppShellProps) {
               <input
                 value={searchVal}
                 onChange={(e) => setSearchVal(e.target.value)}
-                placeholder="Search tickets…"
+                placeholder="Search tickets or people…"
                 aria-label="Search tickets"
                 style={{
                   flex: 1, minWidth: 0, background: 'transparent', border: 'none',

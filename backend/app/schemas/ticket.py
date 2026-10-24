@@ -173,3 +173,30 @@ class TicketRead(BaseModel):
 class TicketListResponse(BaseModel):
     items: list[TicketRead]
     total: int
+
+
+class RequesterTicketItem(BaseModel):
+    """Slim ticket summary for the requester-context sidebar. Deliberately
+    carries no description/replies."""
+    id: int
+    display_id: str
+    title: str
+    status: str
+    priority: Priority
+    created_at: datetime
+
+
+class RequesterTicketsResponse(BaseModel):
+    """Other tickets from the same requester (the ticket itself excluded)."""
+    open_count: int
+    total_count: int
+    items: list[RequesterTicketItem]
+
+
+class RequesterOption(BaseModel):
+    """One person who has filed tickets, for the Queue's "From" filter.
+    ticket_id is their most recent ticket — the filter is keyed by a ticket so
+    the server, not the URL, decides who counts as the same requester."""
+    ticket_id: int
+    name: str
+    total_count: int

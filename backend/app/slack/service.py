@@ -1195,6 +1195,9 @@ _ALLOWED_MIME_EXACT = {
 
 
 def _allowed_mime(mime: str) -> bool:
+    # SVG is markup that can carry script — never accept it as an "image".
+    if mime == "image/svg+xml":
+        return False
     return any(mime.startswith(p) for p in _ALLOWED_IMAGE_PREFIXES) or mime in _ALLOWED_MIME_EXACT
 
 

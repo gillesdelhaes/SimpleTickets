@@ -3,11 +3,12 @@ Full-text Search using PostgreSQL FTS (tsvector / websearch_to_tsquery).
 
 Ranks tickets by relevance across title (weight A), description (weight B),
 and reply bodies (weight C). Supports AND / OR / phrase / negation syntax.
+Tickets whose requester's name contains the query also match, ranked first.
 """
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select, text, union_all
+from sqlalchemy import Float, false, func, literal, select, text, true, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -21,6 +22,20 @@ router = APIRouter(tags=["search"])
 
 # Headline options passed to ts_headline — show up to 60 words around each match
 _HL_OPTIONS = "MaxWords=60, MinWords=20, ShortWord=3, HighlightAll=false, MaxFragments=2, FragmentDelimiter=' … '"
+
+# Slack display names can carry invisible characters (seen: U+200B inside
+# "first.last"), which would make an exact-looking name fail to match.
+_ZERO_WIDTH = "\u200b\u200c\u200d\u2060\ufeff"
+
+# A requester-name match ranks above any full-text match: naming a person is
+# a precise ask, while ts_rank_cd scores stay well below 1.
+_NAME_MATCH_RANK = 1.0
+
+
+def _like_contains(term: str) -> str:
+    """ILIKE pattern matching `term` literally anywhere (escape char: \\)."""
+    escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
@@ -103,6 +118,7 @@ async def search_tickets(
         select(
             Ticket.id.label("ticket_id"),
             ticket_rank.label("rank"),
+            false().label("by_name"),
         )
         .where(ticket_tsv.op("@@")(tsq))
     )
@@ -115,16 +131,34 @@ async def search_tickets(
         select(
             TicketReply.ticket_id.label("ticket_id"),
             reply_rank.label("rank"),
+            false().label("by_name"),
         )
         .where(reply_tsv.op("@@")(tsq))
     )
 
-    combined = union_all(t_match, r_match).subquery("combined")
+    # Requester name: the portal account's name and/or the Slack display name
+    Requester = aliased(User, flat=True)
+    requester_name = func.translate(
+        func.concat_ws(" ", Requester.name, Ticket.slack_submitter_name), _ZERO_WIDTH, ""
+    )
+    name_term = q.strip().translate({ord(c): None for c in _ZERO_WIDTH})
+    n_match = (
+        select(
+            Ticket.id.label("ticket_id"),
+            literal(_NAME_MATCH_RANK, type_=Float).label("rank"),
+            true().label("by_name"),
+        )
+        .outerjoin(Requester, Ticket.submitter_id == Requester.id)
+        .where(requester_name.ilike(_like_contains(name_term), escape="\\"))
+    )
+
+    combined = union_all(t_match, r_match, n_match).subquery("combined")
 
     ranked_stmt = (
         select(
             combined.c.ticket_id,
             func.max(combined.c.rank).label("best_rank"),
+            func.bool_or(combined.c.by_name).label("by_name"),
         )
         .group_by(combined.c.ticket_id)
         .order_by(func.max(combined.c.rank).desc())
@@ -137,6 +171,7 @@ async def search_tickets(
 
     # ticket_id → rank float
     rank_map: dict[int, float] = {row.ticket_id: float(row.best_rank) for row in ranked_rows}
+    by_name: set[int] = {row.ticket_id for row in ranked_rows if row.by_name}
     candidate_ids: list[int] = list(rank_map.keys())
 
     # ── Step 2: fetch enriched ticket rows ────────────────────────────────────
@@ -166,7 +201,8 @@ async def search_tickets(
     ticket_map: dict[int, TicketRead] = {}
     for row in fetch_rows:
         t: Ticket = row[0]
-        ticket_map[t.id] = _build_ticket_read(t, row[1], row[2], row[3], row[4])
+        # Slack requesters without a portal account only have the Slack name
+        ticket_map[t.id] = _build_ticket_read(t, row[1] or t.slack_submitter_name, row[2], row[3], row[4])
 
     # ── Step 3: headlines — run ts_headline for each matched ticket ───────────
     visible_ids = list(ticket_map.keys())
@@ -196,6 +232,7 @@ async def search_tickets(
             ticket=ticket_map[tid],
             rank=rank_map[tid],
             headline=headline_map.get(tid, ""),
+            matched_requester=tid in by_name,
         )
         for tid in sorted_ids[:limit]
     ]

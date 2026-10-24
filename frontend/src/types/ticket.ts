@@ -228,3 +228,17 @@ export function timeAgo(dateStr: string): string {
     return date.toLocaleDateString()
   }
 }
+
+/** Other tickets from the same requester — GET /tickets/:id/requester-tickets */
+export interface RequesterTickets {
+  open_count: number
+  total_count: number
+  items: {
+    id: number
+    display_id: string
+    title: string
+    status: TicketStatus
+    priority: Priority
+    created_at: string
+  }[]
+}

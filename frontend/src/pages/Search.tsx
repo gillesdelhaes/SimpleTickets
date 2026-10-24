@@ -15,6 +15,7 @@ interface TicketRead {
   title: string
   status: string
   priority: string
+  submitter_name: string | null
   assignee_name: string | null
   category_name: string | null
   created_at: string
@@ -25,6 +26,7 @@ interface SearchResultItem {
   ticket: TicketRead
   rank: number
   headline: string
+  matched_requester: boolean
 }
 
 interface SearchResponse {
@@ -69,7 +71,7 @@ function Headline({ html }: { html: string }) {
 // ── Result card ───────────────────────────────────────────────────────────────
 
 function ResultCard({ item, onClick }: { item: SearchResultItem; onClick: () => void }) {
-  const { ticket, headline } = item
+  const { ticket, headline, matched_requester } = item
   return (
     <button onClick={onClick} className="panel block w-full text-left px-5 py-4 cursor-pointer" style={{ font: 'inherit' }}>
       <div className="flex items-center gap-2 mb-1.5 flex-wrap">
@@ -95,9 +97,25 @@ function ResultCard({ item, onClick }: { item: SearchResultItem; onClick: () => 
 
       <Headline html={headline} />
 
-      {ticket.assignee_name && (
+      {(ticket.submitter_name || ticket.assignee_name) && (
         <p className="m-0 mt-1.5 text-[11.5px] text-ink-3">
-          Assigned to <strong className="font-semibold text-ink-2">{ticket.assignee_name}</strong>
+          {ticket.submitter_name && (
+            <>
+              From{' '}
+              {/* Highlighted like a text match when the name is what matched */}
+              {matched_requester ? (
+                <mark style={{ background: 'var(--brand-tint)', color: 'var(--brand-ink)', borderRadius: 3, padding: '0 2px', fontWeight: 600 }}>
+                  {ticket.submitter_name}
+                </mark>
+              ) : (
+                <strong className="font-semibold text-ink-2">{ticket.submitter_name}</strong>
+              )}
+            </>
+          )}
+          {ticket.submitter_name && ticket.assignee_name && ' · '}
+          {ticket.assignee_name && (
+            <>Assigned to <strong className="font-semibold text-ink-2">{ticket.assignee_name}</strong></>
+          )}
         </p>
       )}
     </button>

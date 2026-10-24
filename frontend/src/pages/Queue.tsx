@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import AppShell from '../components/layout/AppShell'
@@ -13,7 +13,7 @@ import { useCategories } from '../hooks/useCategories'
 import { useSavedQueueViews } from '../hooks/useSavedQueueViews'
 import { useAuth } from '../contexts/AuthContext'
 import { useUnreadReplies } from '../hooks/useUnreadReplies'
-import { getAllStatuses, isResolvedStatus, timeAgo, PRIORITY_LABELS, type Priority } from '../types/ticket'
+import { getAllStatuses, isResolvedStatus, timeAgo, PRIORITY_LABELS, type Priority, type TicketRead } from '../types/ticket'
 import { useAppConfig } from '../hooks/useAppConfig'
 import { useWorkspaceOptions } from '../hooks/useWorkspaces'
 import api, { apiErrorMessage } from '../lib/api'
@@ -70,6 +70,73 @@ function Pagination({ page, total, pageSize, onPrev, onNext }: PaginationProps) 
 type SortCol = 'priority' | 'status' | 'created_at' | 'sla'
 type SortDir = 'asc' | 'desc'
 
+// ── "From" filter menu ────────────────────────────────────────────────────────
+// Searchable list of everyone who has filed tickets. Each person is keyed by
+// their latest ticket; the server works out who counts as the same requester.
+
+interface RequesterOption { ticket_id: number; name: string; total_count: number }
+
+function RequesterMenu({ selected, onPick }: { selected: number | undefined; onPick: (ticketId: number | undefined) => void }) {
+  const [search, setSearch] = useState('')
+  const [debounced, setDebounced] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(search.trim()), 200)
+    return () => clearTimeout(t)
+  }, [search])
+
+  const { data, isLoading } = useQuery<RequesterOption[]>({
+    queryKey: ['requesters', debounced],
+    queryFn: async () => (await api.get<RequesterOption[]>('/tickets/requesters', { params: { q: debounced } })).data,
+    staleTime: 30_000,
+    placeholderData: prev => prev,
+  })
+  // Narrow the current results on every keystroke; the server search (above,
+  // debounced) then fills in matches beyond the first page of people.
+  const needle = search.trim().toLowerCase()
+  const shown = data?.filter(r => r.name.toLowerCase().includes(needle))
+
+  return (
+    <>
+      {/* Sticky so the search stays in reach while scrolling a long list */}
+      <div
+        style={{ position: 'sticky', top: -5, zIndex: 1, margin: '-5px -5px 4px', padding: '7px 7px 6px', background: 'var(--menu-bg)', borderBottom: '1px solid var(--track)' }}
+      >
+        <div style={{ position: 'relative' }}>
+          <svg
+            width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"
+            className="text-ink-3" aria-hidden
+            style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
+          >
+            <circle cx="7" cy="7" r="4.5" />
+            <path d="M10.5 10.5L14 14" />
+          </svg>
+          <input
+            className="input"
+            autoFocus
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Type a name to filter…"
+            aria-label="Filter people by name"
+            style={{ padding: '7px 10px 7px 30px', fontSize: 13 }}
+          />
+        </div>
+      </div>
+      <MenuOption label="Anyone" selected={selected === undefined} onClick={() => onPick(undefined)} />
+      <MenuDivider />
+      {isLoading && <p className="m-0 px-2.5 py-2 text-[12.5px] text-ink-3">Loading…</p>}
+      {shown?.length === 0 && <p className="m-0 px-2.5 py-2 text-[12.5px] text-ink-3">No one matches “{search.trim()}”.</p>}
+      {shown?.map(r => (
+        <MenuOption
+          key={r.ticket_id}
+          label={<>{r.name} <span className="text-ink-3 font-normal">· {r.total_count}</span></>}
+          selected={selected === r.ticket_id}
+          onClick={() => onPick(r.ticket_id)}
+        />
+      ))}
+    </>
+  )
+}
+
 export default function Queue() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -104,11 +171,15 @@ export default function Queue() {
   const assigneeFilter = searchParams.get('assignee') ?? 'all'
   const categoryFilter = searchParams.get('category') ?? 'all'
   const workspaceFilter = searchParams.get('workspace') ?? 'all'
+  // "Tickets from this person" — keyed by one of their tickets, so the server
+  // works out who the requester is (no Slack ids in URLs)
+  const requesterOf = Number(searchParams.get('requester')) || undefined
   const page = parseInt(searchParams.get('page') ?? '0', 10)
 
   // Derive API params — default to non-resolved statuses when no explicit filter is set
   const activeStatusNames = allStatuses.filter(s => !s.is_resolved_state).map(s => s.name)
-  const statusParam = selectedStatuses.length > 0 ? selectedStatuses : activeStatusNames
+  // …except for a requester's history, where closed tickets are the point
+  const statusParam = selectedStatuses.length > 0 ? selectedStatuses : requesterOf ? undefined : activeStatusNames
   const priorityParam = selectedPriorities.length > 0 ? selectedPriorities : undefined
   const assigneeIdParam: number | undefined =
     assigneeFilter === 'mine' ? (user?.id ?? undefined) : undefined
@@ -129,6 +200,7 @@ export default function Queue() {
     unassigned: unassignedParam,
     category_id: categoryIdParam,
     workspace_id: workspaceIdParam,
+    requester_of: requesterOf,
     sort: apiSort,
     sort_dir: apiSortDir,
     limit: PAGE_SIZE,
@@ -198,7 +270,7 @@ export default function Queue() {
 
   const statusLabel = (n: string) => allStatuses.find(s => s.name === n)?.label ?? n
   const statusSummary =
-    selectedStatuses.length === 0 ? 'Active'
+    selectedStatuses.length === 0 ? (requesterOf ? 'All' : 'Active')
       : selectedStatuses.length === 1 ? statusLabel(selectedStatuses[0])
         : `${statusLabel(selectedStatuses[0])} +${selectedStatuses.length - 1}`
   const prioritySummary =
@@ -209,7 +281,24 @@ export default function Queue() {
   const workspaceName = workspaces?.find(w => String(w.id) === workspaceFilter)?.name
   const filtersActive =
     selectedStatuses.length > 0 || selectedPriorities.length > 0 ||
-    assigneeFilter !== 'all' || categoryFilter !== 'all' || workspaceFilter !== 'all'
+    assigneeFilter !== 'all' || categoryFilter !== 'all' || workspaceFilter !== 'all' ||
+    requesterOf !== undefined
+  const { data: requesterTicket } = useQuery<TicketRead>({
+    queryKey: ['ticket', requesterOf],
+    queryFn: async () => (await api.get<TicketRead>(`/tickets/${requesterOf}`)).data,
+    enabled: requesterOf !== undefined,
+    staleTime: 60_000,
+  })
+
+  function setRequester(ticketId: number | undefined) {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (ticketId === undefined) next.delete('requester')
+      else next.set('requester', String(ticketId))
+      next.set('page', '0')
+      return next
+    })
+  }
 
   // ── Saved views ────────────────────────────────────────────────────────────
 
@@ -414,6 +503,15 @@ export default function Queue() {
             )}
           </FilterMenu>
         )}
+
+        <FilterMenu label="From" value={requesterOf ? (requesterTicket?.submitter_name ?? '…') : 'Anyone'} active={requesterOf !== undefined} width={260}>
+          {close => (
+            <RequesterMenu
+              selected={requesterOf}
+              onPick={id => { setRequester(id); close() }}
+            />
+          )}
+        </FilterMenu>
 
         {filtersActive && (
           <button

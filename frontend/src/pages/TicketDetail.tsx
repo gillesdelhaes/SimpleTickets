@@ -3,8 +3,10 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import AppShell from '../components/layout/AppShell'
 import AuthImage from '../components/AuthImage'
+import RichText from '../components/RichText'
 import SLABadge from '../components/tickets/SLABadge'
 import DeleteTicketsDialog from '../components/tickets/DeleteTicketsDialog'
+import RequesterTickets from '../components/tickets/RequesterTickets'
 import { isResolvedStatus, parseSLABar, parseSLABarRaw, parseSLAPaused } from '../types/ticket'
 import { useMarkDuplicate, useUnmarkDuplicate } from '../hooks/useDuplicate'
 import { useTicket } from '../hooks/useTicket'
@@ -157,7 +159,7 @@ function ReplyBubble({ reply, isOwn, isTech, attachments }: ReplyBubbleProps) {
             className="rounded-r-[12px] px-3.5 py-2.5 text-[13.5px] text-ink leading-relaxed whitespace-pre-wrap break-words"
             style={{ borderLeft: '3px solid var(--warn-ink)', background: 'var(--warn-bg)' }}
           >
-            {reply.body}
+            <RichText text={reply.body} />
             <AttachmentList attachments={attachments} />
           </div>
         </div>
@@ -181,7 +183,7 @@ function ReplyBubble({ reply, isOwn, isTech, attachments }: ReplyBubbleProps) {
               borderRadius: '14px 5px 14px 14px',
             }}
           >
-            {reply.body}
+            <RichText text={reply.body} />
             <AttachmentList attachments={attachments} />
           </div>
         </div>
@@ -207,7 +209,7 @@ function ReplyBubble({ reply, isOwn, isTech, attachments }: ReplyBubbleProps) {
           className="px-3.5 py-2.5 text-[13.5px] text-ink leading-relaxed whitespace-pre-wrap break-words bg-field border border-edge"
           style={{ borderRadius: '5px 14px 14px 14px', boxShadow: 'inset 0 1px 0 var(--specular)' }}
         >
-          {reply.body}
+          <RichText text={reply.body} />
           <AttachmentList attachments={attachments} />
         </div>
       </div>
@@ -216,6 +218,27 @@ function ReplyBubble({ reply, isOwn, isTech, attachments }: ReplyBubbleProps) {
 }
 
 // ── Composer ───────────────────────────────────────────────────────────────────
+
+// Mirrors the server's allowlist (routers/attachments.py), which is what
+// actually enforces it: images except SVG, PDF, text/CSV, Office, zip.
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+const ATTACHMENT_EXTENSIONS = ['.pdf', '.txt', '.csv', '.doc', '.docx', '.xls', '.xlsx', '.zip']
+const ATTACHMENT_ACCEPT = ['image/*', ...ATTACHMENT_EXTENSIONS].join(',')
+
+function isAllowedAttachment(file: File): boolean {
+  const name = file.name.toLowerCase()
+  if (file.type === 'image/svg+xml' || name.endsWith('.svg')) return false
+  if (file.type.startsWith('image/')) return true
+  return ATTACHMENT_EXTENSIONS.some(ext => name.endsWith(ext))
+}
+
+/** Clipboard images arrive as "image.png" — give them a findable name. */
+function nameScreenshot(file: File): File {
+  if (!file.type.startsWith('image/') || !/^image\.\w+$/i.test(file.name)) return file
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-')
+  const ext = file.name.split('.').pop()
+  return new File([file], `screenshot-${stamp}.${ext}`, { type: file.type })
+}
 
 interface ComposerProps {
   ticketId: number
@@ -229,6 +252,7 @@ function Composer({ ticketId, isTech, disabled }: ComposerProps) {
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [uploading, setUploading] = useState(false)
   const [attachError, setAttachError] = useState<string | null>(null)
+  const [dragging, setDragging] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const addReply = useAddReply(ticketId)
@@ -274,10 +298,45 @@ function Composer({ ticketId, isTech, disabled }: ComposerProps) {
     }
   }
 
+  // Picked, pasted and dropped files all go through the same checks. The
+  // server re-checks type (from the bytes) and size; this just gives an
+  // immediate answer instead of a failed upload after the reply is sent.
+  function addFiles(files: File[]) {
+    const accepted: File[] = []
+    const rejected: string[] = []
+    for (const file of files) {
+      if (!isAllowedAttachment(file)) rejected.push(`${file.name} (type not allowed)`)
+      else if (file.size > MAX_ATTACHMENT_BYTES) rejected.push(`${file.name} (over 10 MB)`)
+      else accepted.push(file)
+    }
+    if (accepted.length > 0) setPendingFiles(prev => [...prev, ...accepted])
+    setAttachError(rejected.length > 0 ? `Not attached: ${rejected.join(', ')}` : null)
+  }
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? [])
-    setPendingFiles(prev => [...prev, ...files])
+    addFiles(Array.from(e.target.files ?? []))
     e.target.value = ''
+  }
+
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const files = Array.from(e.clipboardData.files)
+    if (files.length === 0) return  // plain text paste — leave it alone
+    e.preventDefault()
+    addFiles(files.map(nameScreenshot))
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    if (disabled || !e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+    setDragging(true)
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    setDragging(false)
+    if (disabled || e.dataTransfer.files.length === 0) return
+    e.preventDefault()
+    addFiles(Array.from(e.dataTransfer.files))
   }
 
   function removeFile(idx: number) {
@@ -289,7 +348,12 @@ function Composer({ ticketId, isTech, disabled }: ComposerProps) {
   const canSubmit = body.trim().length > 0 && !isBusy && !disabled
 
   return (
-    <form onSubmit={handleSubmit}>
+    <form
+      onSubmit={handleSubmit}
+      onDragOver={handleDragOver}
+      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false) }}
+      onDrop={handleDrop}
+    >
       {/* Mode toggle for technicians */}
       {isTech && (
         <div className="flex gap-1.5 mb-2.5">
@@ -316,10 +380,13 @@ function Composer({ ticketId, isTech, disabled }: ComposerProps) {
         className="input"
         value={body}
         onChange={e => setBody(e.target.value)}
+        onPaste={handlePaste}
         placeholder={
-          isInternal
-            ? 'Add an internal note — only visible to your team…'
-            : 'Write a reply to the user…'
+          dragging
+            ? 'Drop files to attach them'
+            : isInternal
+              ? 'Add an internal note — only visible to your team…'
+              : 'Write a reply to the user… Paste or drop files to attach them.'
         }
         rows={4}
         disabled={disabled}
@@ -328,6 +395,7 @@ function Composer({ ticketId, isTech, disabled }: ComposerProps) {
           minHeight: 100,
           lineHeight: 1.6,
           ...(isInternal ? { borderLeft: '3px solid var(--warn-ink)' } : {}),
+          ...(dragging ? { outline: '2px dashed var(--b1)', outlineOffset: 2 } : {}),
         }}
       />
 
@@ -358,7 +426,7 @@ function Composer({ ticketId, isTech, disabled }: ComposerProps) {
             ref={fileInputRef}
             type="file"
             multiple
-            accept="image/*,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx"
+            accept={ATTACHMENT_ACCEPT}
             onChange={handleFileChange}
             style={{ display: 'none' }}
           />
@@ -891,6 +959,8 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
           </MetaRow>
         )}
 
+        <RequesterTickets ticketId={ticket.id} />
+
         {/* Timestamps */}
         <div className="border-t border-track pt-3 flex flex-col gap-1.5">
           <div className="flex justify-between items-center">
@@ -1164,7 +1234,7 @@ function ThreadColumn({ ticket, isTech, currentUserId }: ThreadColumnProps) {
           </div>
         </div>
         <p className="m-0 text-[14px] text-ink leading-relaxed whitespace-pre-wrap break-words">
-          {ticket.description}
+          <RichText text={ticket.description} />
         </p>
         <AttachmentList attachments={attachmentsByReply['__ticket__'] ?? []} />
       </div>
