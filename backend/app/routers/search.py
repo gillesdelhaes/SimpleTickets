@@ -3,8 +3,10 @@ Full-text Search using PostgreSQL FTS (tsvector / websearch_to_tsquery).
 
 Ranks tickets by relevance across title (weight A), description (weight B),
 and reply bodies (weight C). Supports AND / OR / phrase / negation syntax.
-Tickets whose requester's name contains the query also match, ranked first.
+Tickets whose requester's name contains the query also match, and a query
+that is a ticket number (TKT-0007, tkt7, #7, 0007) puts that ticket on top.
 """
+import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -28,8 +30,14 @@ _HL_OPTIONS = "MaxWords=60, MinWords=20, ShortWord=3, HighlightAll=false, MaxFra
 _ZERO_WIDTH = "\u200b\u200c\u200d\u2060\ufeff"
 
 # A requester-name match ranks above any full-text match: naming a person is
-# a precise ask, while ts_rank_cd scores stay well below 1.
+# a precise ask, while ts_rank_cd scores stay well below 1. An exact ticket
+# number is more precise still.
 _NAME_MATCH_RANK = 1.0
+_ID_MATCH_RANK = 2.0
+
+# The whole query is a ticket number: "TKT-0007", "tkt 7", "#7", "0007".
+# Capped at 9 digits so it always fits the integer id column.
+_TICKET_NUMBER = re.compile(r"^(?:tkt[-\s]?|#)?0*(\d{1,9})$", re.IGNORECASE)
 
 
 def _like_contains(term: str) -> str:
@@ -152,7 +160,18 @@ async def search_tickets(
         .where(requester_name.ilike(_like_contains(name_term), escape="\\"))
     )
 
-    combined = union_all(t_match, r_match, n_match).subquery("combined")
+    branches = [t_match, r_match, n_match]
+    number = _TICKET_NUMBER.match(q.strip())
+    if number:
+        branches.append(
+            select(
+                Ticket.id.label("ticket_id"),
+                literal(_ID_MATCH_RANK, type_=Float).label("rank"),
+                false().label("by_name"),
+            ).where(Ticket.id == int(number.group(1)))
+        )
+
+    combined = union_all(*branches).subquery("combined")
 
     ranked_stmt = (
         select(
