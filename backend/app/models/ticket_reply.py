@@ -20,6 +20,8 @@ class TicketReply(SQLModel, table=True):
     is_internal: bool = Field(default=False)
     # Slack thread message timestamp — set when this reply was synced from/to Slack
     slack_ts: Optional[str] = Field(default=None)
-    # Display name for Slack users who have no platform account
+    # Display name for Slack users or email senders who have no platform account
     slack_author_name: Optional[str] = Field(default=None)
+    # Message-ID of the email this reply came from or was sent as (dedup + threading)
+    email_message_id: Optional[str] = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=utcnow)

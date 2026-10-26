@@ -35,7 +35,8 @@ class Ticket(SQLModel, table=True):
     submitter_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
     assignee_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
 
-    # Unmatched Slack submitter — set when submitter_id is null
+    # Display name of a requester with no platform account (submitter_id is
+    # null) — a Slack user, or an email sender's name
     slack_submitter_name: Optional[str] = Field(default=None)
     # Slack user ID of whoever submitted the ticket via Slack (all creation paths)
     slack_submitter_id: Optional[str] = Field(default=None, index=True)
@@ -54,8 +55,36 @@ class Ticket(SQLModel, table=True):
     # Set when the 15-min breach warning DM has been sent — prevents re-sends
     sla_breach_warned_at: Optional[datetime] = Field(default=None)
 
-    # Origin: 'web' = created via web portal, 'slack' = created via Slack
+    # Origin: 'web' = web portal, 'slack' = Slack, 'email' = the connected mailbox
     source: str = Field(default="slack")
+
+    # Email channel (source == 'email'). The Gmail thread the conversation
+    # lives in, and the requester's address (lowercase), which is also their
+    # identity when they have no account.
+    email_thread_id: Optional[str] = Field(default=None, index=True)
+    email_requester: Optional[str] = Field(default=None, index=True)
+    # Original subject, reused as "Re: …" on outgoing mail
+    email_subject: Optional[str] = Field(default=None)
+    # Message-ID of the email that opened the ticket
+    email_message_id: Optional[str] = Field(default=None, index=True)
+    # Who may reply publicly by email: JSON list of lowercase addresses (the
+    # requester plus the To/Cc of the opening email). Anyone else's mail on
+    # the thread lands as an internal note.
+    email_participants: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    # Threading headers for the next outgoing message
+    email_last_message_id: Optional[str] = Field(default=None)
+    email_references: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    # Email requester ↔ Slack user, so their email and Slack tickets count as
+    # one person. Identity only: it never moves the conversation to Slack
+    # (deliberately not slack_submitter_id/workspace_id, which drive Slack
+    # DMs, surveys and App Home). Kept the same on every ticket from the same
+    # address. slack_link_source: 'auto' (matched by email in Slack),
+    # 'manual' (set by a technician), 'none' (a technician unlinked it — don't
+    # auto-match again), or null (never decided).
+    linked_slack_id: Optional[str] = Field(default=None, index=True)
+    linked_workspace_id: Optional[int] = Field(default=None, foreign_key="slack_workspaces.id")
+    linked_slack_name: Optional[str] = Field(default=None)
+    slack_link_source: Optional[str] = Field(default=None)
 
     # Which connected Slack workspace this ticket came from (null = no Slack
     # origin — a pure web-portal ticket with no Slack reporter). Determines

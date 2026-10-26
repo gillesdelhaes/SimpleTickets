@@ -9,11 +9,12 @@ import { useAgents, type UserRead } from '../../hooks/useAgents'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Tab = 'general' | 'workspaces' | 'categories' | 'sla' | 'statuses' | 'backup' | 'health'
+type Tab = 'general' | 'workspaces' | 'email' | 'categories' | 'sla' | 'statuses' | 'backup' | 'health'
 
 const ADMIN_TABS: { id: Tab; label: string }[] = [
   { id: 'general', label: 'General' },
   { id: 'workspaces', label: 'Workspaces' },
+  { id: 'email', label: 'Email' },
   { id: 'categories', label: 'Categories' },
   { id: 'sla', label: 'SLA policies' },
   { id: 'statuses', label: 'Statuses' },
@@ -791,7 +792,7 @@ const SLACK_MANIFEST = JSON.stringify({
   },
   oauth_config: {
     scopes: {
-      bot: ["chat:write", "chat:write.public", "im:write", "im:history", "channels:history", "groups:history", "reactions:read", "files:read", "files:write", "users:read", "commands"],
+      bot: ["chat:write", "chat:write.public", "im:write", "im:history", "channels:history", "groups:history", "reactions:read", "files:read", "files:write", "users:read", "users:read.email", "commands"],
     },
   },
   settings: {
@@ -896,6 +897,288 @@ function SlackGuide() {
             <span><Code>App-level token</Code> — Basic Information → App-Level Tokens → Generate Token → add <Code brand>connections:write</Code> scope (starts with <Code brand>xapp-</Code>)</span>
             <span><Code>Signing secret</Code> — Basic Information → App Credentials → Signing Secret</span>
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Email tab ─────────────────────────────────────────────────────────────────
+// One Google Workspace mailbox (e.g. help@) that SimpleTickets reads every
+// 30 s and replies from. Connected through the same Google Cloud OAuth
+// client as "Sign in with Google".
+
+interface EmailChannel {
+  google_client_id_set: boolean
+  client_secret_set: boolean
+  connected: boolean
+  address: string | null
+  enabled: boolean
+  sender_name: string
+  last_poll_at: string | null
+  last_error: string | null
+  slack_lookup: 'ok' | 'missing_scope' | null
+}
+
+const GMAIL_CALLBACK_PATH = '/api/email/oauth/callback'
+
+function secondsAgo(iso: string) {
+  const s = Math.max(0, Math.round((Date.now() - parseUTC(iso).getTime()) / 1000))
+  if (s < 60) return `${s}s ago`
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`
+  return parseUTC(iso).toLocaleString()
+}
+
+function EmailTab() {
+  const qc = useQueryClient()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const { data, isLoading } = useQuery<EmailChannel>({
+    queryKey: ['admin-email'],
+    queryFn: async () => (await api.get<EmailChannel>('/admin/email')).data,
+    refetchInterval: 30_000,
+  })
+  const [secret, setSecret] = useState('')
+  const [senderName, setSenderName] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [showGuide, setShowGuide] = useState<boolean | null>(null)
+
+  // Back from Google: show the outcome once, then tidy the URL
+  const flash = searchParams.get('gmail') === 'connected' ? 'connected' : null
+  const flashError = searchParams.get('gmail_error')
+  function clearFlash() {
+    const next = new URLSearchParams(searchParams)
+    next.delete('gmail'); next.delete('gmail_error')
+    setSearchParams(next, { replace: true })
+  }
+
+  const redirectUri = window.location.origin + GMAIL_CALLBACK_PATH
+
+  async function run(label: string, fn: () => Promise<EmailChannel | void>) {
+    setBusy(label); setError(null)
+    try {
+      const result = await fn()
+      if (result) qc.setQueryData(['admin-email'], result)
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Something went wrong.'))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  function save() {
+    const body: Record<string, string> = {}
+    if (secret.trim()) body.client_secret = secret.trim()
+    if (senderName !== null) body.sender_name = senderName
+    run('save', async () => {
+      const r = (await api.patch<EmailChannel>('/admin/email', body)).data
+      setSecret(''); setSenderName(null)
+      return r
+    })
+  }
+
+  function connect() {
+    run('connect', async () => {
+      const { url } = (await api.post<{ url: string }>('/admin/email/connect', { redirect_uri: redirectUri })).data
+      window.location.assign(url)
+    })
+  }
+
+  if (isLoading || !data) return <div className="text-[13px] text-ink-3">Loading…</div>
+
+  const dirty = secret.trim() !== '' || (senderName !== null && senderName !== data.sender_name)
+  const canConnect = data.google_client_id_set && data.client_secret_set
+  const guideOpen = showGuide ?? !data.connected
+
+  return (
+    <div className="flex flex-col gap-4">
+      {(flash || flashError) && (
+        <div
+          className={`flex items-center justify-between gap-3 px-4 py-2.5 rounded-block text-[13px] ${flash ? 'text-ok-ink' : 'text-danger-ink'}`}
+          style={{ background: flash ? 'var(--ok-bg)' : 'var(--danger-bg)' }}
+        >
+          <span>{flash ? `Mailbox connected. New mail to ${data.address ?? 'it'} now becomes tickets.` : flashError}</span>
+          <button className="btn ghost sm" onClick={clearFlash}>Dismiss</button>
+        </div>
+      )}
+
+      <Card>
+        <CardHeader>
+          <SectionLabel>Support mailbox</SectionLabel>
+          {data.connected && (
+            <span className={`pill ${data.enabled ? 'use' : 'retired'}`}>{data.enabled ? 'Connected' : 'Paused'}</span>
+          )}
+        </CardHeader>
+
+        <SettingRow
+          label="Mailbox"
+          hint="Mail sent to this address becomes a ticket; replies to its emails land on that ticket. Technicians' replies are sent from it."
+        >
+          {data.connected ? (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-mono text-[13px] text-ink">{data.address}</span>
+              <button className="btn ghost sm" disabled={busy !== null} onClick={() => run('check', async () => (await api.post<EmailChannel>('/admin/email/check')).data)}>
+                {busy === 'check' ? <Spin /> : 'Check now'}
+              </button>
+              <button
+                className="btn ghost sm"
+                disabled={busy !== null}
+                onClick={() => run('pause', async () => (await api.patch<EmailChannel>('/admin/email', { enabled: !data.enabled })).data)}
+              >
+                {data.enabled ? 'Pause' : 'Resume'}
+              </button>
+              <button
+                className="btn ghost sm text-danger-ink"
+                disabled={busy !== null}
+                onClick={() => {
+                  if (window.confirm(`Disconnect ${data.address}? New mail will stop becoming tickets, and replies on email tickets won't be sent.`)) {
+                    run('disconnect', async () => (await api.post<EmailChannel>('/admin/email/disconnect')).data)
+                  }
+                }}
+              >
+                Disconnect
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 flex-wrap">
+              <button className="btn" disabled={!canConnect || busy !== null} onClick={connect}>
+                {busy === 'connect' ? 'Opening Google…' : 'Connect Gmail'}
+              </button>
+              {!canConnect && (
+                <span className="text-[12px] text-ink-3">
+                  {!data.google_client_id_set ? 'Set the Google client ID in General first, then add the client secret below.' : 'Add the client secret below first.'}
+                </span>
+              )}
+            </div>
+          )}
+        </SettingRow>
+
+        {data.connected && (
+          <SettingRow label="Last check" hint="The mailbox is checked every 30 seconds.">
+            <div className="text-[13px]">
+              <span className="text-ink-2">{data.last_poll_at ? secondsAgo(data.last_poll_at) : 'Not yet'}</span>
+              {data.last_error && <div className="text-danger-ink mt-1">{data.last_error}</div>}
+            </div>
+          </SettingRow>
+        )}
+
+        <SettingRow label="Sender name" hint="Shown after the technician's name, e.g. “Sam (IT Support)”. Acknowledgements and status emails use it alone.">
+          <input
+            className="input"
+            style={{ maxWidth: 280 }}
+            maxLength={100}
+            value={senderName ?? data.sender_name}
+            onChange={e => setSenderName(e.target.value)}
+          />
+        </SettingRow>
+
+        <SettingRow
+          label="Client secret"
+          hint="From the same Google OAuth client as Sign in with Google. Stored encrypted."
+          last
+        >
+          <input
+            className="input font-mono"
+            type="password"
+            autoComplete="off"
+            style={{ maxWidth: 420, fontSize: 12 }}
+            value={secret}
+            onChange={e => setSecret(e.target.value)}
+            placeholder={data.client_secret_set ? '•••••••• (saved — type to replace)' : 'GOCSPX-…'}
+          />
+        </SettingRow>
+
+        {error && <div className="px-5 pb-3 text-[12.5px] text-danger-ink">{error}</div>}
+        <SaveBar dirty={dirty} pending={busy === 'save'} onSave={save} />
+      </Card>
+
+      {data.slack_lookup === 'missing_scope' && (
+        <div className="px-4 py-3 rounded-block text-[13px] text-warn-ink leading-relaxed" style={{ background: 'var(--warn-bg)' }}>
+          <strong>Email senders can't be matched to Slack users yet.</strong>{' '}
+          In the Slack App Console, open your app → <strong>OAuth &amp; Permissions</strong> → Bot Token Scopes →
+          add <Code>users:read.email</Code>, then <strong>Reinstall to Workspace</strong>. Technicians can still link people by hand on each ticket.
+        </div>
+      )}
+
+      <Card>
+        <button
+          onClick={() => setShowGuide(!guideOpen)}
+          className="flex items-center gap-2 w-full bg-transparent border-0 cursor-pointer text-[13px] font-medium text-ink-2 hover:text-ink"
+          style={{ padding: '14px 22px', textAlign: 'left' }}
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+            style={{ transition: 'transform 0.2s', transform: guideOpen ? 'rotate(90deg)' : 'none' }}>
+            <path d="M4 2l4 4-4 4" />
+          </svg>
+          {guideOpen ? 'Hide' : 'Show'} Google setup guide
+        </button>
+        {guideOpen && (
+          <div style={{ padding: '2px 22px 20px', borderTop: '1px solid var(--track)' }}>
+            <GmailGuide redirectUri={redirectUri} />
+          </div>
+        )}
+      </Card>
+    </div>
+  )
+}
+
+function GmailGuide({ redirectUri }: { redirectUri: string }) {
+  return (
+    <div className="mt-3" style={{ maxWidth: 720 }}>
+      <p className="text-[13px] text-ink-2 mb-5 leading-relaxed">
+        Use the <strong className="text-ink">same Google Cloud project and OAuth client</strong> as Sign in with Google.
+        The mailbox is a normal Workspace user (e.g. <Code>help@</Code>) with a Gmail licence.
+      </p>
+
+      <div className="flex gap-3.5 mb-4">
+        <StepDot n={1} />
+        <div className="flex-1">
+          <p className="text-[14px] font-semibold text-ink m-0 mb-1.5">Turn on the Gmail API</p>
+          <p className="text-[13px] text-ink-2 m-0 mb-2 leading-relaxed">In that project, open the Gmail API page and click <strong className="text-ink">Enable</strong>.</p>
+          <a href="https://console.cloud.google.com/apis/library/gmail.googleapis.com" target="_blank" rel="noreferrer" className="btn ghost sm" style={{ textDecoration: 'none', color: 'var(--brand-ink)' }}>
+            Open Gmail API →
+          </a>
+        </div>
+      </div>
+
+      <div className="flex gap-3.5 mb-4">
+        <StepDot n={2} />
+        <div className="flex-1">
+          <p className="text-[14px] font-semibold text-ink m-0 mb-1.5">Keep the app Internal</p>
+          <p className="text-[13px] text-ink-2 m-0 leading-relaxed">
+            <strong className="text-ink">Google Auth Platform → Audience</strong>: User type must be <strong className="text-ink">Internal</strong>.
+            Only your company's accounts can connect, and Google's app review doesn't apply.
+          </p>
+        </div>
+      </div>
+
+      <div className="flex gap-3.5 mb-4">
+        <StepDot n={3} />
+        <div className="flex-1">
+          <p className="text-[14px] font-semibold text-ink m-0 mb-1.5">Add the redirect URI and copy the secret</p>
+          <p className="text-[13px] text-ink-2 m-0 mb-2 leading-relaxed">
+            <strong className="text-ink">Google Auth Platform → Clients</strong> → open the Sign in with Google client →
+            under <strong className="text-ink">Authorized redirect URIs</strong> add:
+          </p>
+          <div className="flex items-center gap-2 mb-2 px-3 py-2 rounded-lg" style={{ background: '#0A0C10', border: '1px solid var(--edge)' }}>
+            <span className="font-mono text-[12px] flex-1 break-all" style={{ color: 'rgba(255,255,255,0.75)' }}>{redirectUri}</span>
+            <CopyBtn value={redirectUri} />
+          </div>
+          <p className="text-[13px] text-ink-2 m-0 leading-relaxed">
+            Save, then copy the client's <strong className="text-ink">Client secret</strong> into the field above.
+            Use the address SimpleTickets is normally opened at — open this page from that address before copying.
+          </p>
+        </div>
+      </div>
+
+      <div className="flex gap-3.5">
+        <StepDot n={4} />
+        <div className="flex-1">
+          <p className="text-[14px] font-semibold text-ink m-0 mb-1.5">Connect</p>
+          <p className="text-[13px] text-ink-2 m-0 leading-relaxed">
+            Click <strong className="text-ink">Connect Gmail</strong>, sign in as the mailbox account (not your own), and allow access.
+            Only mail arriving after this point becomes tickets. Handled mail gets a <Code>SimpleTickets</Code> label in Gmail; nothing is deleted.
+          </p>
         </div>
       </div>
     </div>
@@ -1753,6 +2036,7 @@ export default function Settings() {
 
         {tab === 'general'    && <GeneralTab />}
         {tab === 'workspaces' && <WorkspacesTab />}
+        {tab === 'email'      && <EmailTab />}
         {tab === 'categories' && <CategoriesTab />}
         {tab === 'sla'        && <SLATab />}
         {tab === 'statuses'   && <StatusesTab />}

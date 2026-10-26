@@ -143,6 +143,10 @@ async def create_reply(
         created_at=now,
     )
     session.add(reply)
+    await session.flush()
+    # Email tickets: the reply goes to the requester from the connected mailbox
+    from app.email.outbox import queue_reply
+    queue_reply(session, ticket, reply, current_user.name)
     await session.commit()
     await session.refresh(reply)
 

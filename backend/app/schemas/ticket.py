@@ -144,7 +144,12 @@ class TicketRead(BaseModel):
     duplicate_of_id: Optional[int]
     duplicate_of_title: Optional[str] = None
 
-    source: str  # 'web' | 'slack'
+    source: str  # 'web' | 'slack' | 'email'
+    # Email tickets: the requester's address
+    email_requester: Optional[str] = None
+    # …and the Slack user they're linked to, if any ('auto' | 'manual' | 'none')
+    linked_slack_name: Optional[str] = None
+    slack_link_source: Optional[str] = None
 
     # Which connected Slack workspace this ticket originated from (null = no
     # Slack origin)
@@ -164,8 +169,10 @@ class TicketRead(BaseModel):
 
     @computed_field  # type: ignore[misc]
     @property
-    def channel(self) -> Literal['slack', 'web']:
-        return 'slack' if self.source == 'slack' else 'web'
+    def channel(self) -> Literal['slack', 'web', 'email']:
+        if self.source in ('slack', 'email'):
+            return self.source  # type: ignore[return-value]
+        return 'web'
 
     model_config = {"from_attributes": True}
 

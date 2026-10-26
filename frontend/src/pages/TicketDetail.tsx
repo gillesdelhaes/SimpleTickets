@@ -8,6 +8,7 @@ import SLABadge from '../components/tickets/SLABadge'
 import DeleteTicketsDialog from '../components/tickets/DeleteTicketsDialog'
 import ResolveUnansweredDialog from '../components/tickets/ResolveUnansweredDialog'
 import RequesterTickets from '../components/tickets/RequesterTickets'
+import RequesterSlackLink from '../components/tickets/RequesterSlackLink'
 import { isResolvedStatus, parseSLABar, parseSLABarRaw, parseSLAPaused } from '../types/ticket'
 import { useMarkDuplicate, useUnmarkDuplicate } from '../hooks/useDuplicate'
 import { useTicket } from '../hooks/useTicket'
@@ -815,6 +816,7 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
   const channelLabels: Record<string, string> = {
     web: 'Web',
     slack: 'Slack',
+    email: 'Email',
   }
 
   return (
@@ -979,10 +981,18 @@ function MetaSidebar({ ticket, isAdmin, currentUserId }: MetaSidebarProps) {
           <MetaRow label="Submitted by">
             <div className="flex items-center gap-2">
               <Avatar name={ticket.submitter_name} size={22} />
-              <span className="text-[13px] text-ink">{ticket.submitter_name}</span>
+              <div className="min-w-0">
+                <div className="text-[13px] text-ink">{ticket.submitter_name}</div>
+                {ticket.email_requester && ticket.email_requester !== ticket.submitter_name && (
+                  <div className="font-mono text-[11px] text-ink-3 truncate" title={ticket.email_requester}>{ticket.email_requester}</div>
+                )}
+              </div>
             </div>
           </MetaRow>
         )}
+
+        {/* Staff-only page: every viewer is a technician or admin */}
+        <RequesterSlackLink ticket={ticket} canEdit />
 
         <RequesterTickets ticketId={ticket.id} />
 
@@ -1045,6 +1055,7 @@ const FIELD_LABELS: Record<string, string> = {
   duplicate_of: 'duplicate link',
   csat_response: 'CSAT feedback',
   title: 'title',
+  slack_link: 'Slack account',
 }
 
 function formatHistoryValue(field: string, value: string | null): React.ReactNode {
@@ -1394,6 +1405,23 @@ export default function TicketDetail() {
 
         {/* Title — click to edit while the ticket is open */}
         <EditableTitle ticket={ticket} editable={isTech && !isResolvedStatus(ticket.status)} />
+
+        {/* Email notice — public replies go to the requester by email */}
+        {ticket.channel === 'email' && (
+          <div
+            className="flex items-center gap-2 px-3.5 py-2 mb-5 rounded-block text-[12px] text-ink-2 bg-field border border-edge"
+            style={{ boxShadow: 'inset 0 1px 0 var(--specular)' }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-brand-ink flex-shrink-0">
+              <rect x="3" y="5" width="18" height="14" rx="2" />
+              <path d="M3 7l9 6 9-6" />
+            </svg>
+            <span>
+              This ticket came in by email. Public replies are emailed to{' '}
+              <strong className="text-ink">{ticket.email_requester}</strong>; internal notes are not.
+            </span>
+          </div>
+        )}
 
         {/* Slack sync notice — shown for any ticket with an active Slack thread */}
         {ticket.slack_channel_id && ticket.slack_message_ts && (

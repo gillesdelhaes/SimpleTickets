@@ -78,6 +78,7 @@ def _build_ticket_read(
         slack_channel_id=ticket.slack_channel_id,
         slack_message_ts=ticket.slack_message_ts,
         source=ticket.source,
+        email_requester=ticket.email_requester,
         first_response_deadline=ticket.first_response_deadline,
         first_responded_at=ticket.first_responded_at,
         created_at=ticket.created_at,
@@ -144,10 +145,11 @@ async def search_tickets(
         .where(reply_tsv.op("@@")(tsq))
     )
 
-    # Requester name: the portal account's name and/or the Slack display name
+    # Requester: the portal account's name, the Slack/email display name,
+    # and the email address
     Requester = aliased(User, flat=True)
     requester_name = func.translate(
-        func.concat_ws(" ", Requester.name, Ticket.slack_submitter_name), _ZERO_WIDTH, ""
+        func.concat_ws(" ", Requester.name, Ticket.linked_slack_name, Ticket.slack_submitter_name, Ticket.email_requester), _ZERO_WIDTH, ""
     )
     name_term = q.strip().translate({ord(c): None for c in _ZERO_WIDTH})
     n_match = (
@@ -221,7 +223,7 @@ async def search_tickets(
     for row in fetch_rows:
         t: Ticket = row[0]
         # Slack requesters without a portal account only have the Slack name
-        ticket_map[t.id] = _build_ticket_read(t, row[1] or t.slack_submitter_name, row[2], row[3], row[4])
+        ticket_map[t.id] = _build_ticket_read(t, row[1] or t.linked_slack_name or t.slack_submitter_name, row[2], row[3], row[4])
 
     # ── Step 3: headlines — run ts_headline for each matched ticket ───────────
     visible_ids = list(ticket_map.keys())

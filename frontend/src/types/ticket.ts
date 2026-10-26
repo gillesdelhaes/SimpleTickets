@@ -1,6 +1,6 @@
 export type TicketStatus = string   // dynamic — any slug from ticket_statuses table
 export type Priority = 'low' | 'medium' | 'high' | 'critical'
-export type Channel = 'web' | 'slack'
+export type Channel = 'web' | 'slack' | 'email'
 
 export interface StatusConfig {
   name: string
@@ -25,6 +25,11 @@ export interface TicketRead {
   category_name: string | null
   submitter_id: number | null
   submitter_name: string | null
+  /** Email tickets: the requester's address */
+  email_requester?: string | null
+  /** …and the Slack user they're linked to (identity only) */
+  linked_slack_name?: string | null
+  slack_link_source?: 'auto' | 'manual' | 'none' | null
   assignee_id: number | null
   assignee_name: string | null
   sla_deadline: string | null

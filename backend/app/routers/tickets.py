@@ -176,7 +176,7 @@ async def _fetch_enriched(
                 category_id=ticket.category_id,
                 category_name=cat_name,
                 submitter_id=ticket.submitter_id,
-                submitter_name=sub_name or ticket.slack_submitter_name,
+                submitter_name=sub_name or ticket.linked_slack_name or ticket.slack_submitter_name,
                 assignee_id=ticket.assignee_id,
                 assignee_name=asg_name,
                 sla_policy_id=ticket.sla_policy_id,
@@ -186,6 +186,9 @@ async def _fetch_enriched(
                 duplicate_of_id=ticket.duplicate_of_id,
                 duplicate_of_title=dup_title,
                 source=ticket.source,
+                email_requester=ticket.email_requester,
+                linked_slack_name=ticket.linked_slack_name,
+                slack_link_source=ticket.slack_link_source,
                 workspace_id=ticket.workspace_id,
                 workspace_name=ws_name,
                 slack_channel_id=ticket.slack_channel_id,
@@ -421,9 +424,14 @@ async def list_requesters(
     _same_requester: the portal account when there is one, else the Slack
     user within its workspace."""
     no_account = Ticket.submitter_id.is_(None)
-    slack_key = case((no_account, Ticket.slack_submitter_id), else_=None)
-    workspace_key = case((no_account, Ticket.workspace_id), else_=None)
-    name = func.coalesce(func.max(User.name), func.max(Ticket.slack_submitter_name), "Unknown")
+    # Email tickets linked to a Slack user group with that user's Slack tickets
+    slack_id = func.coalesce(Ticket.slack_submitter_id, Ticket.linked_slack_id)
+    slack_key = case((no_account, slack_id), else_=None)
+    workspace_key = case((no_account, func.coalesce(Ticket.workspace_id, Ticket.linked_workspace_id)), else_=None)
+    email_key = case((and_(no_account, slack_id.is_(None)), Ticket.email_requester), else_=None)
+    name = func.coalesce(
+        func.max(User.name), func.max(Ticket.linked_slack_name), func.max(Ticket.slack_submitter_name), "Unknown"
+    )
 
     stmt = (
         select(
@@ -435,14 +443,19 @@ async def list_requesters(
         .where(or_(
             Ticket.submitter_id.is_not(None),
             and_(Ticket.slack_submitter_id.is_not(None), Ticket.workspace_id.is_not(None)),
+            and_(Ticket.linked_slack_id.is_not(None), Ticket.linked_workspace_id.is_not(None)),
+            Ticket.email_requester.is_not(None),
         ))
-        .group_by(Ticket.submitter_id, slack_key, workspace_key)
+        .group_by(Ticket.submitter_id, slack_key, workspace_key, email_key)
         .order_by(func.max(Ticket.created_at).desc())
         .limit(_REQUESTER_OPTIONS_LIMIT)
     )
     if q.strip():
         escaped = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        stmt = stmt.having(name.ilike(f"%{escaped}%", escape="\\"))
+        stmt = stmt.having(or_(
+            name.ilike(f"%{escaped}%", escape="\\"),
+            func.max(email_key).ilike(f"%{escaped}%", escape="\\"),
+        ))
 
     rows = (await session.execute(stmt)).all()
     return [RequesterOption(ticket_id=r.ticket_id, name=r.name, total_count=r.total_count) for r in rows]
@@ -471,15 +484,25 @@ _REQUESTER_TICKETS_LIMIT = 10
 def _same_requester(ticket: Ticket) -> list | None:
     """Clauses matching tickets from this ticket's requester: same
     submitter_id when set, else the same Slack user *within the same
-    workspace* (Slack ids are only unique per workspace). None when the
-    ticket has no identifiable requester."""
+    workspace* (Slack ids are only unique per workspace), or the same email
+    address. None when the ticket has no identifiable requester."""
     if ticket.submitter_id is not None:
         return [Ticket.submitter_id == ticket.submitter_id]
+    # A Slack user — including an email requester linked to one, whose
+    # tickets count together with that user's Slack tickets
     if ticket.slack_submitter_id and ticket.workspace_id is not None:
-        return [
-            Ticket.slack_submitter_id == ticket.slack_submitter_id,
-            Ticket.workspace_id == ticket.workspace_id,
-        ]
+        slack_id, workspace_id = ticket.slack_submitter_id, ticket.workspace_id
+    elif ticket.linked_slack_id and ticket.linked_workspace_id is not None:
+        slack_id, workspace_id = ticket.linked_slack_id, ticket.linked_workspace_id
+    else:
+        slack_id = workspace_id = None
+    if slack_id is not None:
+        return [or_(
+            and_(Ticket.slack_submitter_id == slack_id, Ticket.workspace_id == workspace_id),
+            and_(Ticket.linked_slack_id == slack_id, Ticket.linked_workspace_id == workspace_id),
+        )]
+    if ticket.email_requester:
+        return [Ticket.submitter_id.is_(None), Ticket.email_requester == ticket.email_requester]
     return None
 
 

@@ -859,6 +859,13 @@ export default function Queue() {
                               <path d="M15.5 11.5a1.5 1.5 0 0 1-1.5 1.5H5l-3 3V4a1.5 1.5 0 0 1 1.5-1.5h10.5A1.5 1.5 0 0 1 15.5 4z" />
                             </svg>
                           )}
+                          {ticket.channel === 'email' && (
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-ink-3 flex-shrink-0" aria-label="Created by email">
+                              <title>{ticket.email_requester ? `Created by email — ${ticket.email_requester}` : 'Created by email'}</title>
+                              <rect x="3" y="5" width="18" height="14" rx="2" />
+                              <path d="M3 7l9 6 9-6" />
+                            </svg>
+                          )}
                           {ticket.channel === 'web' && ticket.slack_channel_id && (
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-ink-3 flex-shrink-0" aria-label="Created on the web">
                               <title>{ticket.workspace_name ? `Created on the web — ${ticket.workspace_name}` : 'Created on the web'}</title>

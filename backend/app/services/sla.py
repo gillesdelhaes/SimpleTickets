@@ -574,6 +574,26 @@ def start_scheduler() -> None:
         max_instances=1,
         coalesce=True,
     )
+    # Email channel: read the connected mailbox, send queued mail. Both
+    # no-op while no mailbox is connected.
+    from app.email.inbound import poll_mailbox
+    from app.email.outbox import send_due
+    _scheduler.add_job(
+        poll_mailbox,
+        trigger="interval",
+        seconds=30,
+        id="email_poll",
+        max_instances=1,
+        coalesce=True,
+    )
+    _scheduler.add_job(
+        send_due,
+        trigger="interval",
+        seconds=10,
+        id="email_send",
+        max_instances=1,
+        coalesce=True,
+    )
     from app.auth.jwt import prune_revoked_tokens
     _scheduler.add_job(
         prune_revoked_tokens,

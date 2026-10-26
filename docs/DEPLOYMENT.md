@@ -44,8 +44,13 @@ The docker host just needs **direct outbound HTTPS (443)** to:
 |---|---|
 | `slack.com`, `wss-*.slack.com`, `files.slack.com` | Slack API, Socket Mode, file sync |
 | `www.googleapis.com` | Google signing keys (only if Google sign-in is used) |
+| `oauth2.googleapis.com`, `gmail.googleapis.com` | Email channel (only if a mailbox is connected) |
 
-Users' browsers also load `accounts.google.com` for the sign-in button. A
+Users' browsers also load `accounts.google.com` for the sign-in button.
+Connecting the email mailbox also only needs the admin's browser to reach
+SimpleTickets — Google redirects it back, nothing calls in — but Google only
+accepts an `https://` redirect URI on a real domain name (not an IP address
+or `.local`), or `http://localhost`. A
 mandatory corporate HTTP proxy or TLS-intercepting firewall on the egress
 path is not supported out of the box.
 

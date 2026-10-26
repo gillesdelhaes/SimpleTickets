@@ -57,7 +57,10 @@ BACKUP_VERSION = 1
 # in a backup — bootstrap manages it per-instance, and leaking it would expose
 # the key that decrypts every other stored secret. Slack workspace tokens are
 # handled separately below (blanked per-row, not a whole-key exclusion).
-_SECRET_KEYS = frozenset({"jwt_secret", "app_secret_key"})
+# The Gmail grant and client secret are left out too: they're encrypted with
+# this instance's master key, so they'd be useless elsewhere — reconnect the
+# mailbox after a restore.
+_SECRET_KEYS = frozenset({"jwt_secret", "app_secret_key", "gmail_client_secret", "gmail_refresh_token"})
 
 # Slack workspace columns never exported — re-entered per workspace after restore.
 _WORKSPACE_SECRET_COLS = ("bot_token", "app_token", "signing_secret")

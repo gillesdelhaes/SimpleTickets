@@ -328,9 +328,9 @@ export default function Reports() {
   const theme = useThemeAttr()
   const hues = CATEGORY_PALETTE.map(c => c[theme])
   const statusMap = statusColors(appConfig?.statuses ?? getAllStatuses(), theme)
-  // Channels: violet for Slack, sapphire for Web
+  // Channels: violet for Slack, sapphire for Web, the second palette hue for Email
   const channelFill = (source: string) =>
-    source === 'slack' ? hues[3] : source === 'web' ? hues[0] : 'var(--ink-3)'
+    source === 'slack' ? hues[3] : source === 'web' ? hues[0] : source === 'email' ? hues[1] : 'var(--ink-3)'
   const fillFor = (chart: 'priority' | 'status' | 'category', key: string) =>
     colorful ? barColor(chart, key, theme, hues, statusMap, categories) : gradientFill(chart)
 
