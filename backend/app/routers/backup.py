@@ -317,7 +317,7 @@ async def restore_backup(
         # Restored workspace rows have blank tokens (exports never carry them)
         # — deactivate them so the app doesn't try to start bots with no
         # credentials. An admin re-enters each workspace's tokens and
-        # reactivates it from Settings → Workspaces after the restore.
+        # reactivates it from Settings → Slack after the restore.
         if tables.get("slack_workspaces"):
             await session.execute(text("UPDATE slack_workspaces SET is_active = false"))
 

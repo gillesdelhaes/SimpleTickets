@@ -11,7 +11,7 @@ export interface WorkspaceOption {
  * authenticated user (not just admins). Powers the reporter-workspace picker
  * in CreateTicketModal and the per-workspace Slack ID linker on Admin Users.
  * For the full admin CRUD shape (tokens, status, settings) see the
- * Settings → Workspaces tab, which calls /admin/slack-workspaces directly.
+ * Settings → Slack tab, which calls /admin/slack-workspaces directly.
  */
 export function useWorkspaceOptions({ refetchOnMount = false }: { refetchOnMount?: boolean } = {}) {
   return useQuery<WorkspaceOption[]>({

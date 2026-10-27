@@ -67,7 +67,7 @@ the [README](../README.md#sign-in-with-google-optional). To enable it:
    scheme+host+port). No client secret and no redirect URIs are needed —
    only the public client ID. You can list several origins on one client
    (e.g. `http://localhost:3000` for testing plus the production URL).
-3. Paste the client ID in **Settings → General → Sign in with Google**. The
+3. Paste the client ID in **Settings → Google Workspace → Client ID**. The
    login page shows the Google button from then on.
 
 Origin rules to know:
@@ -134,4 +134,4 @@ avoid. Run it whenever you rotate credentials, and once after first setup.
 
 Restores happen from **Settings → Backup** in the admin UI. By design a
 restore does not carry secrets: Slack workspace tokens are re-entered and
-workspaces re-activated afterward from **Settings → Workspaces**.
+workspaces re-activated afterward from **Settings → Slack**.

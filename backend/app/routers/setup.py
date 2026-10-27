@@ -174,7 +174,7 @@ async def setup_slack(
     session: AsyncSession = Depends(_require_setup_incomplete),
 ) -> dict:
     """Create the first connected Slack workspace. More workspaces can be
-    added later from Settings → Workspaces."""
+    added later from Settings → Slack."""
     import asyncio
 
     team_name = None

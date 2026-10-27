@@ -176,7 +176,7 @@ async def check_email_channel(
 
 def _back(**params: str) -> RedirectResponse:
     query = "&".join(f"{k}={quote(v)}" for k, v in params.items())
-    return RedirectResponse(f"/admin/settings?tab=email&{query}", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(f"/admin/settings?tab=google&{query}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @public_router.get("/oauth/callback", include_in_schema=False)

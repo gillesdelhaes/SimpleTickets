@@ -9,15 +9,13 @@ import { useAgents, type UserRead } from '../../hooks/useAgents'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Tab = 'general' | 'workspaces' | 'email' | 'categories' | 'sla' | 'statuses' | 'backup' | 'health'
+type Tab = 'general' | 'tickets' | 'slack' | 'google' | 'backup' | 'health'
 
 const ADMIN_TABS: { id: Tab; label: string }[] = [
   { id: 'general', label: 'General' },
-  { id: 'workspaces', label: 'Workspaces' },
-  { id: 'email', label: 'Email' },
-  { id: 'categories', label: 'Categories' },
-  { id: 'sla', label: 'SLA policies' },
-  { id: 'statuses', label: 'Statuses' },
+  { id: 'tickets', label: 'Tickets' },
+  { id: 'slack', label: 'Slack' },
+  { id: 'google', label: 'Google Workspace' },
   { id: 'backup', label: 'Backup & restore' },
   { id: 'health', label: 'Data health' },
 ]
@@ -140,18 +138,7 @@ function GeneralTab() {
   function set(key: string, val: string) { setEdits(e => ({ ...e, [key]: val })) }
 
   const tz = get('timezone', 'UTC')
-  const bizEnabled = get('business_hours_enabled', 'false') === 'true'
-  const bizStart = get('business_hours_start', '09:00')
-  const bizEnd = get('business_hours_end', '17:00')
-  const bizDaysStr = get('business_days', '0,1,2,3,4')
-  const bizDays = new Set(bizDaysStr.split(',').map(d => d.trim()).filter(Boolean).map(Number))
   const csatDays = get('csat_auto_close_days', '7')
-
-  function toggleDay(d: number) {
-    const next = new Set(bizDays)
-    if (next.has(d)) next.delete(d); else next.add(d)
-    set('business_days', [...next].sort((a, b) => a - b).join(',') || '')
-  }
 
   const dirty = Object.keys(edits).length > 0
 
@@ -170,7 +157,61 @@ function GeneralTab() {
         </div>
       </SettingRow>
 
-      <SettingRow label="Business hours" hint="SLA deadlines only count time within working hours" last={!bizEnabled}>
+      <SettingRow label="CSAT auto-close" hint="Resolved tickets with no survey response close after this many days" last>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            className="input"
+            min={1}
+            max={90}
+            value={csatDays}
+            onChange={e => set('csat_auto_close_days', e.target.value)}
+            style={{ width: 90 }}
+          />
+          <span className="text-[13px] text-ink-2">days</span>
+        </div>
+      </SettingRow>
+
+      <SaveBar dirty={dirty} pending={mutation.isPending} onSave={() => mutation.mutate(Object.entries(edits).map(([key, value]) => ({ key, value })))} />
+    </Card>
+  )
+}
+
+// Only the SLA clock uses business hours, so they sit with the SLA policies
+function BusinessHoursCard() {
+  const { data, isLoading } = useSettingsQuery()
+  const [edits, setEdits] = useState<Record<string, string>>({})
+  const [saved, setSaved] = useState(false)
+  const mutation = useSaveMutation(() => { setEdits({}); setSaved(true); setTimeout(() => setSaved(false), 2000) })
+
+  if (isLoading) return <div className="text-[13px] text-ink-3">Loading…</div>
+
+  const sm = Object.fromEntries((data?.settings ?? []).map(s => [s.key, s.value ?? '']))
+  function get(key: string, def: string) { return key in edits ? edits[key] : (sm[key] || def) }
+  function set(key: string, val: string) { setEdits(e => ({ ...e, [key]: val })) }
+
+  const bizEnabled = get('business_hours_enabled', 'false') === 'true'
+  const bizStart = get('business_hours_start', '09:00')
+  const bizEnd = get('business_hours_end', '17:00')
+  const bizDaysStr = get('business_days', '0,1,2,3,4')
+  const bizDays = new Set(bizDaysStr.split(',').map(d => d.trim()).filter(Boolean).map(Number))
+
+  function toggleDay(d: number) {
+    const next = new Set(bizDays)
+    if (next.has(d)) next.delete(d); else next.add(d)
+    set('business_days', [...next].sort((a, b) => a - b).join(',') || '')
+  }
+
+  const dirty = Object.keys(edits).length > 0
+
+  return (
+    <Card>
+      <CardHeader>
+        <SectionLabel>Business hours</SectionLabel>
+        {saved && <span className="ml-auto"><Saved /></span>}
+      </CardHeader>
+
+      <SettingRow label="Count business hours only" hint="When on, SLA deadlines only count time within working hours, in the timezone set under General" last={!bizEnabled}>
         <SettingSwitch on={bizEnabled} onChange={v => set('business_hours_enabled', v ? 'true' : 'false')} />
       </SettingRow>
 
@@ -203,41 +244,12 @@ function GeneralTab() {
         </>
       )}
 
-      <SettingRow label="CSAT auto-close" hint="Resolved tickets with no survey response close after this many days">
-        <div className="flex items-center gap-2">
-          <input
-            type="number"
-            className="input"
-            min={1}
-            max={90}
-            value={csatDays}
-            onChange={e => set('csat_auto_close_days', e.target.value)}
-            style={{ width: 90 }}
-          />
-          <span className="text-[13px] text-ink-2">days</span>
-        </div>
-      </SettingRow>
-
-      <SettingRow
-        label="Sign in with Google"
-        hint="OAuth client ID from Google Cloud console (public, not a secret). When set, the login page shows a Google button; only accounts created with the Google sign-in method can use it. Clear to disable."
-        last
-      >
-        <input
-          className="input font-mono"
-          style={{ maxWidth: 420, fontSize: 12 }}
-          value={get('google_client_id', '')}
-          onChange={e => set('google_client_id', e.target.value.trim())}
-          placeholder="1234567890-abc123.apps.googleusercontent.com"
-        />
-      </SettingRow>
-
       <SaveBar dirty={dirty} pending={mutation.isPending} onSave={() => mutation.mutate(Object.entries(edits).map(([key, value]) => ({ key, value })))} />
     </Card>
   )
 }
 
-// ── Workspaces tab ───────────────────────────────────────────────────────────
+// ── Slack tab ────────────────────────────────────────────────────────────────
 // One deployment can connect several Slack workspaces at once — each ticket
 // carries the workspace it came from, and replies/DMs route back through
 // that workspace's own bot automatically.
@@ -266,7 +278,7 @@ function useWorkspacesQuery() {
   })
 }
 
-function WorkspacesTab() {
+function SlackTab() {
   const { data: workspaces, isLoading } = useWorkspacesQuery()
   const { data: agents } = useAgents()
   const [showAdd, setShowAdd] = useState(false)
@@ -903,10 +915,99 @@ function SlackGuide() {
   )
 }
 
-// ── Email tab ─────────────────────────────────────────────────────────────────
-// One Google Workspace mailbox (e.g. help@) that SimpleTickets reads every
-// 30 s and replies from. Connected through the same Google Cloud OAuth
-// client as "Sign in with Google".
+// ── Google Workspace tab ──────────────────────────────────────────────────────
+// One Google Cloud OAuth client powers both Sign in with Google and the
+// support mailbox. The client ID alone turns on sign-in; the mailbox also
+// needs the secret. The ID is public, so it lives in /admin/settings; the
+// secret is stored encrypted and written through /admin/email.
+
+function GoogleClientCard() {
+  const qc = useQueryClient()
+  const settings = useSettingsQuery()
+  const email = useQuery<EmailChannel>({
+    queryKey: ['admin-email'],
+    queryFn: async () => (await api.get<EmailChannel>('/admin/email')).data,
+  })
+  const [clientId, setClientId] = useState<string | null>(null)
+  const [secret, setSecret] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  if (settings.isLoading || email.isLoading || !email.data) return <div className="text-[13px] text-ink-3">Loading…</div>
+
+  const savedId = settings.data?.settings.find(s => s.key === 'google_client_id')?.value ?? ''
+  const idValue = clientId ?? savedId
+  const dirty = (clientId !== null && clientId !== savedId) || secret.trim() !== ''
+  const signInOn = savedId.trim() !== ''
+  const mail = email.data
+
+  async function save() {
+    setSaving(true); setError(null)
+    try {
+      if (clientId !== null && clientId !== savedId) {
+        await api.patch('/admin/settings', { settings: [{ key: 'google_client_id', value: clientId }] })
+      }
+      if (secret.trim()) {
+        await api.patch('/admin/email', { client_secret: secret.trim() })
+      }
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['admin-settings'] }),
+        qc.invalidateQueries({ queryKey: ['admin-email'] }),
+      ])
+      setClientId(null); setSecret('')
+      setSaved(true); setTimeout(() => setSaved(false), 2000)
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Saving failed.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <SectionLabel>Google OAuth client</SectionLabel>
+        {saved && <span className="ml-auto"><Saved /></span>}
+      </CardHeader>
+
+      <SettingRow
+        label="Client ID"
+        hint="From Google Cloud console → Google Auth Platform → Clients (a Web application client). Public, not a secret. Clear to turn off Google."
+      >
+        <input
+          className="input font-mono"
+          style={{ maxWidth: 420, fontSize: 12 }}
+          value={idValue}
+          onChange={e => setClientId(e.target.value.trim())}
+          placeholder="1234567890-abc123.apps.googleusercontent.com"
+        />
+      </SettingRow>
+
+      <SettingRow label="Client secret" hint="From the same client. Only the Gmail mailbox needs it. Stored encrypted.">
+        <input
+          className="input font-mono"
+          type="password"
+          autoComplete="off"
+          style={{ maxWidth: 420, fontSize: 12 }}
+          value={secret}
+          onChange={e => setSecret(e.target.value)}
+          placeholder={mail.client_secret_set ? '•••••••• (saved — type to replace)' : 'GOCSPX-…'}
+        />
+      </SettingRow>
+
+      <SettingRow label="Sign in with Google" hint="On whenever a client ID is set. Only accounts created with the Google sign-in method (Users) can use it." last>
+        <span className={`pill ${signInOn ? 'use' : 'retired'}`} style={{ justifySelf: 'start' }}>{signInOn ? 'On — login page shows a Google button' : 'Off — needs a client ID'}</span>
+      </SettingRow>
+
+      {error && <div className="px-5 pb-3 text-[12.5px] text-danger-ink">{error}</div>}
+      <SaveBar dirty={dirty} pending={saving} onSave={save} />
+    </Card>
+  )
+}
+
+// The support mailbox: one Workspace user (e.g. help@) that SimpleTickets
+// reads every 30 s and replies from, through the OAuth client above.
 
 interface EmailChannel {
   google_client_id_set: boolean
@@ -929,7 +1030,7 @@ function secondsAgo(iso: string) {
   return parseUTC(iso).toLocaleString()
 }
 
-function EmailTab() {
+function GoogleWorkspaceTab() {
   const qc = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
   const { data, isLoading } = useQuery<EmailChannel>({
@@ -937,7 +1038,6 @@ function EmailTab() {
     queryFn: async () => (await api.get<EmailChannel>('/admin/email')).data,
     refetchInterval: 30_000,
   })
-  const [secret, setSecret] = useState('')
   const [senderName, setSenderName] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -967,12 +1067,9 @@ function EmailTab() {
   }
 
   function save() {
-    const body: Record<string, string> = {}
-    if (secret.trim()) body.client_secret = secret.trim()
-    if (senderName !== null) body.sender_name = senderName
     run('save', async () => {
-      const r = (await api.patch<EmailChannel>('/admin/email', body)).data
-      setSecret(''); setSenderName(null)
+      const r = (await api.patch<EmailChannel>('/admin/email', { sender_name: senderName })).data
+      setSenderName(null)
       return r
     })
   }
@@ -986,9 +1083,9 @@ function EmailTab() {
 
   if (isLoading || !data) return <div className="text-[13px] text-ink-3">Loading…</div>
 
-  const dirty = secret.trim() !== '' || (senderName !== null && senderName !== data.sender_name)
+  const dirty = senderName !== null && senderName !== data.sender_name
   const canConnect = data.google_client_id_set && data.client_secret_set
-  const guideOpen = showGuide ?? !data.connected
+  const guideOpen = showGuide ?? !(data.connected && data.google_client_id_set)
 
   return (
     <div className="flex flex-col gap-4">
@@ -1001,6 +1098,8 @@ function EmailTab() {
           <button className="btn ghost sm" onClick={clearFlash}>Dismiss</button>
         </div>
       )}
+
+      <GoogleClientCard />
 
       <Card>
         <CardHeader>
@@ -1046,7 +1145,7 @@ function EmailTab() {
               </button>
               {!canConnect && (
                 <span className="text-[12px] text-ink-3">
-                  {!data.google_client_id_set ? 'Set the Google client ID in General first, then add the client secret below.' : 'Add the client secret below first.'}
+                  {data.google_client_id_set ? 'Add the client secret above first.' : 'Fill in the client ID and secret above first.'}
                 </span>
               )}
             </div>
@@ -1062,29 +1161,13 @@ function EmailTab() {
           </SettingRow>
         )}
 
-        <SettingRow label="Sender name" hint="Shown after the technician's name, e.g. “Sam (IT Support)”. Acknowledgements and status emails use it alone.">
+        <SettingRow label="Sender name" hint="Shown after the technician's name, e.g. “Sam (IT Support)”. Acknowledgements and status emails use it alone." last>
           <input
             className="input"
             style={{ maxWidth: 280 }}
             maxLength={100}
             value={senderName ?? data.sender_name}
             onChange={e => setSenderName(e.target.value)}
-          />
-        </SettingRow>
-
-        <SettingRow
-          label="Client secret"
-          hint="From the same Google OAuth client as Sign in with Google. Stored encrypted."
-          last
-        >
-          <input
-            className="input font-mono"
-            type="password"
-            autoComplete="off"
-            style={{ maxWidth: 420, fontSize: 12 }}
-            value={secret}
-            onChange={e => setSecret(e.target.value)}
-            placeholder={data.client_secret_set ? '•••••••• (saved — type to replace)' : 'GOCSPX-…'}
           />
         </SettingRow>
 
@@ -1114,7 +1197,7 @@ function EmailTab() {
         </button>
         {guideOpen && (
           <div style={{ padding: '2px 22px 20px', borderTop: '1px solid var(--track)' }}>
-            <GmailGuide redirectUri={redirectUri} />
+            <GoogleGuide redirectUri={redirectUri} />
           </div>
         )}
       </Card>
@@ -1122,65 +1205,104 @@ function EmailTab() {
   )
 }
 
-function GmailGuide({ redirectUri }: { redirectUri: string }) {
+function GuideStep({ n, title, children, last }: { n: number; title: string; children: React.ReactNode; last?: boolean }) {
+  return (
+    <div className={`flex gap-3.5${last ? '' : ' mb-4'}`}>
+      <StepDot n={n} />
+      <div className="flex-1">
+        <p className="text-[14px] font-semibold text-ink m-0 mb-1.5">{title}</p>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function CopyLine({ value }: { value: string }) {
+  return (
+    <div className="flex items-center gap-2 mb-2 px-3 py-2 rounded-lg" style={{ background: '#0A0C10', border: '1px solid var(--edge)' }}>
+      <span className="font-mono text-[12px] flex-1 break-all" style={{ color: 'rgba(255,255,255,0.75)' }}>{value}</span>
+      <CopyBtn value={value} />
+    </div>
+  )
+}
+
+function GoogleGuide({ redirectUri }: { redirectUri: string }) {
+  const origin = window.location.origin
   return (
     <div className="mt-3" style={{ maxWidth: 720 }}>
       <p className="text-[13px] text-ink-2 mb-5 leading-relaxed">
-        Use the <strong className="text-ink">same Google Cloud project and OAuth client</strong> as Sign in with Google.
-        The mailbox is a normal Workspace user (e.g. <Code>help@</Code>) with a Gmail licence.
+        Everything happens in one Google Cloud project. Open this page from the address SimpleTickets is normally used at
+        before copying the values below — Google matches them exactly.
       </p>
 
-      <div className="flex gap-3.5 mb-4">
-        <StepDot n={1} />
-        <div className="flex-1">
-          <p className="text-[14px] font-semibold text-ink m-0 mb-1.5">Turn on the Gmail API</p>
-          <p className="text-[13px] text-ink-2 m-0 mb-2 leading-relaxed">In that project, open the Gmail API page and click <strong className="text-ink">Enable</strong>.</p>
-          <a href="https://console.cloud.google.com/apis/library/gmail.googleapis.com" target="_blank" rel="noreferrer" className="btn ghost sm" style={{ textDecoration: 'none', color: 'var(--brand-ink)' }}>
-            Open Gmail API →
-          </a>
-        </div>
-      </div>
+      <GuideStep n={1} title="Keep the app Internal">
+        <p className="text-[13px] text-ink-2 m-0 leading-relaxed">
+          <strong className="text-ink">Google Auth Platform → Audience</strong>: User type must be <strong className="text-ink">Internal</strong>.
+          Only your company's accounts can sign in or connect, and Google's app review doesn't apply.
+        </p>
+      </GuideStep>
 
-      <div className="flex gap-3.5 mb-4">
-        <StepDot n={2} />
-        <div className="flex-1">
-          <p className="text-[14px] font-semibold text-ink m-0 mb-1.5">Keep the app Internal</p>
-          <p className="text-[13px] text-ink-2 m-0 leading-relaxed">
-            <strong className="text-ink">Google Auth Platform → Audience</strong>: User type must be <strong className="text-ink">Internal</strong>.
-            Only your company's accounts can connect, and Google's app review doesn't apply.
-          </p>
-        </div>
-      </div>
+      <GuideStep n={2} title="Create the OAuth client">
+        <p className="text-[13px] text-ink-2 m-0 mb-2 leading-relaxed">
+          <strong className="text-ink">Google Auth Platform → Clients → Create client</strong>, type <strong className="text-ink">Web application</strong>.
+          Under <strong className="text-ink">Authorized JavaScript origins</strong> add:
+        </p>
+        <CopyLine value={origin} />
+        <p className="text-[13px] text-ink-2 m-0 mb-2 leading-relaxed">Under <strong className="text-ink">Authorized redirect URIs</strong> add:</p>
+        <CopyLine value={redirectUri} />
+        <p className="text-[13px] text-ink-2 m-0 leading-relaxed">
+          Save, then copy the <strong className="text-ink">Client ID</strong> and <strong className="text-ink">Client secret</strong> into the card at the top of this page.
+          Sign in with Google works from here on.
+        </p>
+      </GuideStep>
 
-      <div className="flex gap-3.5 mb-4">
-        <StepDot n={3} />
-        <div className="flex-1">
-          <p className="text-[14px] font-semibold text-ink m-0 mb-1.5">Add the redirect URI and copy the secret</p>
-          <p className="text-[13px] text-ink-2 m-0 mb-2 leading-relaxed">
-            <strong className="text-ink">Google Auth Platform → Clients</strong> → open the Sign in with Google client →
-            under <strong className="text-ink">Authorized redirect URIs</strong> add:
-          </p>
-          <div className="flex items-center gap-2 mb-2 px-3 py-2 rounded-lg" style={{ background: '#0A0C10', border: '1px solid var(--edge)' }}>
-            <span className="font-mono text-[12px] flex-1 break-all" style={{ color: 'rgba(255,255,255,0.75)' }}>{redirectUri}</span>
-            <CopyBtn value={redirectUri} />
-          </div>
-          <p className="text-[13px] text-ink-2 m-0 leading-relaxed">
-            Save, then copy the client's <strong className="text-ink">Client secret</strong> into the field above.
-            Use the address SimpleTickets is normally opened at — open this page from that address before copying.
-          </p>
-        </div>
-      </div>
+      <GuideStep n={3} title="Turn on the Gmail API (mailbox only)">
+        <p className="text-[13px] text-ink-2 m-0 mb-2 leading-relaxed">In the same project, open the Gmail API page and click <strong className="text-ink">Enable</strong>.</p>
+        <a href="https://console.cloud.google.com/apis/library/gmail.googleapis.com" target="_blank" rel="noreferrer" className="btn ghost sm" style={{ textDecoration: 'none', color: 'var(--brand-ink)' }}>
+          Open Gmail API →
+        </a>
+      </GuideStep>
 
-      <div className="flex gap-3.5">
-        <StepDot n={4} />
-        <div className="flex-1">
-          <p className="text-[14px] font-semibold text-ink m-0 mb-1.5">Connect</p>
-          <p className="text-[13px] text-ink-2 m-0 leading-relaxed">
-            Click <strong className="text-ink">Connect Gmail</strong>, sign in as the mailbox account (not your own), and allow access.
-            Only mail arriving after this point becomes tickets. Handled mail gets a <Code>SimpleTickets</Code> label in Gmail; nothing is deleted.
-          </p>
-        </div>
+      <GuideStep n={4} title="Connect the mailbox" last>
+        <p className="text-[13px] text-ink-2 m-0 leading-relaxed">
+          The mailbox is a normal Workspace user (e.g. <Code>help@</Code>) with a Gmail licence.
+          Click <strong className="text-ink">Connect Gmail</strong>, sign in as that account (not your own), and allow access.
+          Only mail arriving after this point becomes tickets. Handled mail gets a <Code>SimpleTickets</Code> label in Gmail; nothing is deleted.
+        </p>
+      </GuideStep>
+    </div>
+  )
+}
+
+// ── Tickets tab ───────────────────────────────────────────────────────────────
+// How tickets are sorted and timed: categories, the statuses they move
+// through, and the SLA targets (with the business hours those count in).
+
+function TicketsSection({ title, hint, children }: { title: string; hint: string; children: React.ReactNode }) {
+  return (
+    <section className="flex flex-col gap-4">
+      <div>
+        <h2 className="m-0 text-[17px] font-semibold text-ink">{title}</h2>
+        <p className="m-0 mt-1 text-[13px] text-ink-3">{hint}</p>
       </div>
+      {children}
+    </section>
+  )
+}
+
+function TicketsTab() {
+  return (
+    <div className="flex flex-col gap-10">
+      <TicketsSection title="Categories" hint="What a ticket is about. Technicians set it; reports break down by it.">
+        <CategoriesTab />
+      </TicketsSection>
+      <TicketsSection title="Statuses" hint="The stages a ticket moves through, and what each one does to the SLA clock and the CSAT survey.">
+        <StatusesTab />
+      </TicketsSection>
+      <TicketsSection title="SLA" hint="Response and resolution targets per priority, and the hours they count in.">
+        <BusinessHoursCard />
+        <SLATab />
+      </TicketsSection>
     </div>
   )
 }
@@ -2034,13 +2156,11 @@ export default function Settings() {
           ))}
         </div>
 
-        {tab === 'general'    && <GeneralTab />}
-        {tab === 'workspaces' && <WorkspacesTab />}
-        {tab === 'email'      && <EmailTab />}
-        {tab === 'categories' && <CategoriesTab />}
-        {tab === 'sla'        && <SLATab />}
-        {tab === 'statuses'   && <StatusesTab />}
-        {tab === 'backup'     && <BackupTab />}
+        {tab === 'general' && <GeneralTab />}
+        {tab === 'tickets' && <TicketsTab />}
+        {tab === 'slack'   && <SlackTab />}
+        {tab === 'google'  && <GoogleWorkspaceTab />}
+        {tab === 'backup'  && <BackupTab />}
         {tab === 'health'     && <DataHealthTab />}
       </div>
     </AppShell>

@@ -59,9 +59,9 @@ async def start_oauth(session: AsyncSession, *, user_id: int, redirect_uri: str)
     in the DB with who started the flow and where Google must send them back."""
     client_id = (await get_setting("google_client_id", session)).strip()
     if not client_id:
-        raise GmailError("Set the Google client ID in Settings → General first.")
+        raise GmailError("Set the Google client ID in Settings → Google Workspace first.")
     if not await get_setting("gmail_client_secret", session):
-        raise GmailError("Add the client secret first.")
+        raise GmailError("Add the client secret in Settings → Google Workspace first.")
 
     nonce = secrets.token_urlsafe(32)
     await set_setting("gmail_oauth_nonce", json.dumps({
@@ -218,7 +218,7 @@ class Gmail:
             })
         if resp.status_code != 200:
             if resp.status_code in (400, 401):
-                raise GmailAuthError("Gmail access was revoked or expired. Reconnect the mailbox in Settings → Email.")
+                raise GmailAuthError("Gmail access was revoked or expired. Reconnect the mailbox in Settings → Google Workspace.")
             raise GmailError(f"Google token endpoint returned {resp.status_code}")
         data = resp.json()
         _token_cache[self._refresh] = (data["access_token"], time.time() + int(data.get("expires_in", 3600)))
@@ -230,7 +230,7 @@ class Gmail:
             resp = await http.request(method, f"{_API}{path}", headers={"Authorization": f"Bearer {token}"}, **kwargs)
         if resp.status_code == 401:
             _token_cache.pop(self._refresh, None)
-            raise GmailAuthError("Gmail access was revoked or expired. Reconnect the mailbox in Settings → Email.")
+            raise GmailAuthError("Gmail access was revoked or expired. Reconnect the mailbox in Settings → Google Workspace.")
         if resp.status_code >= 400:
             raise GmailError(f"Gmail API {method} {path.split('?')[0]} returned {resp.status_code}")
         return resp.json() if resp.content else {}
