@@ -60,7 +60,11 @@ BACKUP_VERSION = 1
 # The Gmail grant and client secret are left out too: they're encrypted with
 # this instance's master key, so they'd be useless elsewhere — reconnect the
 # mailbox after a restore.
-_SECRET_KEYS = frozenset({"jwt_secret", "app_secret_key", "gmail_client_secret", "gmail_refresh_token"})
+_SECRET_KEYS = frozenset({
+    "jwt_secret", "app_secret_key", "gmail_client_secret", "gmail_refresh_token",
+    # The AI provider key is re-entered after a restore, like the others
+    "ai_api_key",
+})
 
 # Slack workspace columns never exported — re-entered per workspace after restore.
 _WORKSPACE_SECRET_COLS = ("bot_token", "app_token", "signing_secret")

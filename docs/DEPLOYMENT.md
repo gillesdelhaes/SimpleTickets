@@ -45,6 +45,7 @@ The docker host just needs **direct outbound HTTPS (443)** to:
 | `slack.com`, `wss-*.slack.com`, `files.slack.com` | Slack API, Socket Mode, file sync |
 | `www.googleapis.com` | Google signing keys (only if Google sign-in is used) |
 | `oauth2.googleapis.com`, `gmail.googleapis.com` | Email channel (only if a mailbox is connected) |
+| Your AI provider's API, e.g. `generativelanguage.googleapis.com` (Gemini), `api.openai.com`, `api.anthropic.com` | AI assistant (only if switched on; a self-hosted model needs no internet) |
 
 Users' browsers also load `accounts.google.com` for the sign-in button.
 Connecting the email mailbox also only needs the admin's browser to reach

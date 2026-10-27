@@ -6,16 +6,18 @@ import { useAuth } from '../../contexts/AuthContext'
 import api, { apiErrorMessage } from '../../lib/api'
 import { parseUTC } from '../../types/ticket'
 import { useAgents, type UserRead } from '../../hooks/useAgents'
+import RichText from '../../components/RichText'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Tab = 'general' | 'tickets' | 'slack' | 'google' | 'backup' | 'health'
+type Tab = 'general' | 'tickets' | 'slack' | 'google' | 'ai' | 'backup' | 'health'
 
 const ADMIN_TABS: { id: Tab; label: string }[] = [
   { id: 'general', label: 'General' },
   { id: 'tickets', label: 'Tickets' },
   { id: 'slack', label: 'Slack' },
   { id: 'google', label: 'Google Workspace' },
+  { id: 'ai', label: 'AI assistant' },
   { id: 'backup', label: 'Backup & restore' },
   { id: 'health', label: 'Data health' },
 ]
@@ -2123,6 +2125,282 @@ function BackupTab() {
   )
 }
 
+// ── AI assistant tab ──────────────────────────────────────────────────────────
+// Provider-agnostic: no provider is preselected and the Assistant stays off
+// until one is chosen, tested and switched on. "Load models" asks the provider
+// itself, so model names are never hard-coded here.
+
+interface AIProvider { id: string; label: string; needs_key: boolean; needs_base_url: boolean }
+interface AISettings {
+  enabled: boolean
+  provider: string | null
+  model: string | null
+  base_url: string | null
+  api_key_set: boolean
+  daily_token_budget: number
+  company_context: string
+  triage_note: boolean
+  configured: boolean
+  providers: AIProvider[]
+  tokens_today: number
+  last_error: string | null
+}
+interface AITestResult {
+  ok: boolean
+  error?: string
+  note?: string
+  model?: string
+  input_tokens?: number
+  output_tokens?: number
+  duration_ms?: number
+}
+interface AIUsage {
+  days: { day: string; input_tokens: number; output_tokens: number; runs: number; failures: number }[]
+  recent: { at: string; feature: string; ticket_id: number | null; model: string; tokens: number; duration_ms: number; ok: boolean; error: string | null }[]
+}
+
+type AIForm = { provider: string; model: string; base_url: string; api_key: string; company_context: string; daily_token_budget: string; triage_note: boolean }
+
+function AITab() {
+  const qc = useQueryClient()
+  const { data, isLoading } = useQuery<AISettings>({
+    queryKey: ['admin-ai'],
+    queryFn: async () => (await api.get<AISettings>('/admin/ai')).data,
+    refetchInterval: 30_000,
+  })
+  const { data: usage } = useQuery<AIUsage>({
+    queryKey: ['admin-ai-usage'],
+    queryFn: async () => (await api.get<AIUsage>('/admin/ai/usage')).data,
+    refetchInterval: 60_000,
+  })
+  const [edits, setEdits] = useState<Partial<AIForm>>({})
+  const [models, setModels] = useState<string[]>([])
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+  const [test, setTest] = useState<AITestResult | null>(null)
+  const [sampleTitle, setSampleTitle] = useState('')
+  const [sampleBody, setSampleBody] = useState('')
+
+  if (isLoading || !data) return <div className="text-[13px] text-ink-3">Loading…</div>
+
+  const form: AIForm = {
+    provider: data.provider ?? '',
+    model: data.model ?? '',
+    base_url: data.base_url ?? '',
+    api_key: '',
+    company_context: data.company_context,
+    daily_token_budget: String(data.daily_token_budget),
+    triage_note: data.triage_note,
+    ...edits,
+  }
+  const spec = data.providers.find(p => p.id === form.provider)
+  const dirty = Object.keys(edits).length > 0
+  function set<K extends keyof AIForm>(k: K, v: AIForm[K]) { setEdits(e => ({ ...e, [k]: v })); setSaved(false) }
+
+  // The connection as currently typed — /models and /test use it unsaved
+  const tryBody = {
+    provider: form.provider || null,
+    model: form.model,
+    base_url: form.base_url,
+    api_key: form.api_key,
+    company_context: form.company_context,
+  }
+
+  async function run(label: string, fn: () => Promise<void>) {
+    setBusy(label); setError(null)
+    try { await fn() } catch (err) { setError(apiErrorMessage(err, 'Something went wrong.')) } finally { setBusy(null) }
+  }
+
+  function save() {
+    run('save', async () => {
+      const body: Record<string, unknown> = {}
+      if (edits.provider !== undefined) body.provider = edits.provider
+      if (edits.model !== undefined) body.model = edits.model
+      if (edits.base_url !== undefined) body.base_url = edits.base_url
+      if (edits.api_key) body.api_key = edits.api_key
+      if (edits.company_context !== undefined) body.company_context = edits.company_context
+      if (edits.daily_token_budget !== undefined) body.daily_token_budget = Math.max(0, parseInt(edits.daily_token_budget, 10) || 0)
+      if (edits.triage_note !== undefined) body.triage_note = edits.triage_note
+      const r = (await api.patch<AISettings>('/admin/ai', body)).data
+      qc.setQueryData(['admin-ai'], r)
+      setEdits({}); setSaved(true); setTimeout(() => setSaved(false), 2000)
+    })
+  }
+
+  function toggle(enabled: boolean) {
+    run('toggle', async () => {
+      const r = (await api.patch<AISettings>('/admin/ai', { enabled })).data
+      qc.setQueryData(['admin-ai'], r)
+    })
+  }
+
+  const budget = data.daily_token_budget
+  const pct = budget ? Math.min(100, Math.round((data.tokens_today / budget) * 100)) : 0
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Card>
+        <CardHeader>
+          <SectionLabel>AI assistant</SectionLabel>
+          <span className={`pill ${data.enabled ? 'use' : 'retired'}`}>{data.enabled ? 'On' : 'Off'}</span>
+        </CardHeader>
+
+        <div className="px-[22px] py-3 text-[12.5px] text-ink-2 leading-relaxed border-b border-track">
+          The Assistant writes an internal triage note on every new ticket: a summary, what's missing, and a suggested
+          priority and category. It doesn't change tickets or talk to requesters. Ticket text is sent to the provider you
+          choose — use a paid plan that doesn't train on your data, or a self-hosted model.
+        </div>
+
+        <SettingRow label="Assistant" hint={data.configured ? 'Only tickets created after it is switched on are triaged.' : 'Save a provider and model first.'}>
+          <div className="flex items-center gap-3">
+            <SettingSwitch on={data.enabled} onChange={v => { if (data.configured || !v) toggle(v) }} />
+            {!data.configured && <span className="text-[12px] text-ink-3">Not configured</span>}
+          </div>
+        </SettingRow>
+
+        <SettingRow label="Provider" hint="Any of these work; there's no default.">
+          <div className="selectwrap" style={{ maxWidth: 420 }}>
+            <select className="select" value={form.provider} onChange={e => { set('provider', e.target.value); setModels([]) }}>
+              <option value="">Choose a provider…</option>
+              {data.providers.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+            </select>
+          </div>
+        </SettingRow>
+
+        {spec?.needs_base_url && (
+          <SettingRow label="Base URL" hint="The server's OpenAI-compatible API, e.g. Ollama at http://ollama:11434/v1">
+            <input className="input font-mono" style={{ maxWidth: 420, fontSize: 12 }} value={form.base_url}
+              onChange={e => set('base_url', e.target.value.trim())} placeholder="https://…/v1" />
+          </SettingRow>
+        )}
+
+        {form.provider && (
+          <SettingRow label="API key" hint={spec?.needs_key ? 'Stored encrypted. Never shown again.' : 'Optional for local servers. Stored encrypted.'}>
+            <div className="flex items-center gap-2 flex-wrap">
+              <input className="input font-mono" type="password" autoComplete="off" style={{ maxWidth: 420, fontSize: 12 }}
+                value={form.api_key} onChange={e => set('api_key', e.target.value)}
+                placeholder={data.api_key_set && form.provider === data.provider ? '•••••••• (saved — type to replace)' : 'Paste the key'} />
+              {data.api_key_set && form.provider === data.provider && (
+                <button className="btn ghost sm" disabled={busy !== null}
+                  onClick={() => run('clear', async () => { qc.setQueryData(['admin-ai'], (await api.patch<AISettings>('/admin/ai', { clear_api_key: true })).data) })}>
+                  Remove key
+                </button>
+              )}
+            </div>
+          </SettingRow>
+        )}
+
+        {form.provider && (
+          <SettingRow label="Model" hint="Type a model ID, or load the list your key can use. A fast, inexpensive model is enough for triage.">
+            <div className="flex items-center gap-2 flex-wrap">
+              <input className="input font-mono" list="ai-models" style={{ maxWidth: 320, fontSize: 12 }} value={form.model}
+                onChange={e => set('model', e.target.value.trim())} placeholder="model ID" />
+              <datalist id="ai-models">{models.map(m => <option key={m} value={m} />)}</datalist>
+              <button className="btn ghost sm" disabled={busy !== null}
+                onClick={() => run('models', async () => {
+                  const r = (await api.post<{ models: string[] }>('/admin/ai/models', tryBody)).data
+                  setModels(r.models)
+                  if (r.models.length === 0) setError('The provider returned no models for this key.')
+                })}>
+                {busy === 'models' ? <Spin /> : 'Load models'}
+              </button>
+              {models.length > 0 && <span className="text-[12px] text-ink-3">{models.length} available — pick from the field</span>}
+            </div>
+          </SettingRow>
+        )}
+
+        <SettingRow label="About your IT" hint="Optional context so questions fit, e.g. “Google Workspace, Slack, MacBooks managed by Jamf, VPN is Tailscale”.">
+          <textarea className="input" rows={3} maxLength={4000} style={{ maxWidth: 520, resize: 'vertical' }}
+            value={form.company_context} onChange={e => set('company_context', e.target.value)} />
+        </SettingRow>
+
+        <SettingRow label="Triage note" hint="Write the internal note on each new ticket.">
+          <SettingSwitch on={form.triage_note} onChange={v => set('triage_note', v)} />
+        </SettingRow>
+
+        <SettingRow label="Daily token budget" hint="The Assistant pauses for the rest of the day (UTC) once this many tokens are used. 0 = no limit." last>
+          <div className="flex items-center gap-3 flex-wrap">
+            <input type="number" className="input" min={0} style={{ width: 140 }} value={form.daily_token_budget}
+              onChange={e => set('daily_token_budget', e.target.value)} />
+            <span className="text-[12px] text-ink-3">
+              Used today: <b className="text-ink-2">{data.tokens_today.toLocaleString()}</b>{budget ? ` (${pct}%)` : ''}
+            </span>
+          </div>
+        </SettingRow>
+
+        {(error || data.last_error) && (
+          <div className="px-5 pb-3 text-[12.5px] text-danger-ink">{error ?? `Last problem: ${data.last_error}`}</div>
+        )}
+        <div className="px-5 py-3 border-t border-track flex items-center justify-end gap-3">
+          {saved && <Saved />}
+          <button className="btn" onClick={save} disabled={!dirty || busy !== null}
+            style={busy === 'save' ? { opacity: 0.7, cursor: 'wait' } : undefined}>
+            {busy === 'save' ? 'Saving…' : 'Save changes'}
+          </button>
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader><SectionLabel>Try it</SectionLabel></CardHeader>
+        <div className="px-[22px] py-4 flex flex-col gap-3">
+          <p className="text-[12.5px] text-ink-2 m-0">
+            Runs triage on a sample ticket with the settings above (saved or not) and shows the note it would write. Uses a few hundred tokens.
+          </p>
+          <input className="input" style={{ maxWidth: 520 }} value={sampleTitle} onChange={e => setSampleTitle(e.target.value)}
+            placeholder="Title (blank: “laptop not working”)" />
+          <textarea className="input" rows={3} style={{ maxWidth: 520, resize: 'vertical' }} value={sampleBody}
+            onChange={e => setSampleBody(e.target.value)} placeholder="Description (blank: a deliberately vague one)" />
+          <div>
+            <button className="btn" disabled={!form.provider || !form.model || busy !== null}
+              onClick={() => run('test', async () => {
+                setTest(null)
+                setTest((await api.post<AITestResult>('/admin/ai/test', { ...tryBody, title: sampleTitle, description: sampleBody })).data)
+                qc.invalidateQueries({ queryKey: ['admin-ai-usage'] })
+                qc.invalidateQueries({ queryKey: ['admin-ai'] })
+              })}>
+              {busy === 'test' ? 'Running…' : 'Run test'}
+            </button>
+          </div>
+          {test && !test.ok && <div className="text-[13px] text-danger-ink">{test.error}</div>}
+          {test?.ok && (
+            <div>
+              <div className="rounded-r-[12px] px-3.5 py-2.5 text-[13.5px] text-ink leading-relaxed whitespace-pre-wrap break-words"
+                style={{ borderLeft: '3px solid var(--warn-ink)', background: 'var(--warn-bg)', maxWidth: 640 }}>
+                <RichText text={test.note ?? ''} />
+              </div>
+              <div className="font-mono text-[11px] text-ink-3 mt-2">
+                {test.model} · {((test.input_tokens ?? 0) + (test.output_tokens ?? 0)).toLocaleString()} tokens · {((test.duration_ms ?? 0) / 1000).toFixed(1)} s
+              </div>
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {usage && usage.days.length > 0 && (
+        <Card>
+          <CardHeader><SectionLabel>Usage, last 14 days</SectionLabel></CardHeader>
+          <div className="tablewrap">
+            <table>
+              <thead><tr><th>Day</th><th>Runs</th><th>Tokens</th><th>Failed</th></tr></thead>
+              <tbody>
+                {[...usage.days].reverse().map(d => (
+                  <tr key={d.day}>
+                    <td className="font-mono text-[12px]">{d.day}</td>
+                    <td>{d.runs}</td>
+                    <td>{(d.input_tokens + d.output_tokens).toLocaleString()}</td>
+                    <td className={d.failures ? 'text-danger-ink' : ''}>{d.failures}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+    </div>
+  )
+}
+
 function Spin() {
   return <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="animate-spin"><path d="M7 1a6 6 0 1 1-4.24 1.76" /></svg>
 }
@@ -2160,6 +2438,7 @@ export default function Settings() {
         {tab === 'tickets' && <TicketsTab />}
         {tab === 'slack'   && <SlackTab />}
         {tab === 'google'  && <GoogleWorkspaceTab />}
+        {tab === 'ai'      && <AITab />}
         {tab === 'backup'  && <BackupTab />}
         {tab === 'health'     && <DataHealthTab />}
       </div>

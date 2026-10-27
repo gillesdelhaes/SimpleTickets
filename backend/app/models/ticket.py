@@ -86,6 +86,11 @@ class Ticket(SQLModel, table=True):
     linked_slack_name: Optional[str] = Field(default=None)
     slack_link_source: Optional[str] = Field(default=None)
 
+    # AI Assistant triage: when its note was written, and how many runs were
+    # tried (a failing ticket is given up on after a few)
+    ai_triaged_at: Optional[datetime] = Field(default=None)
+    ai_triage_attempts: int = Field(default=0)
+
     # Which connected Slack workspace this ticket came from (null = no Slack
     # origin — a pure web-portal ticket with no Slack reporter). Determines
     # which workspace's bot handles replies/DMs/thread sync for this ticket.

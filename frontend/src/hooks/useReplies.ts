@@ -8,6 +8,8 @@ export interface ReplyRead {
   author_name: string | null
   body: string
   is_internal: boolean
+  /** Written by the AI Assistant */
+  ai_generated?: boolean
   created_at: string
 }
 

@@ -24,4 +24,6 @@ class TicketReply(SQLModel, table=True):
     slack_author_name: Optional[str] = Field(default=None)
     # Message-ID of the email this reply came from or was sent as (dedup + threading)
     email_message_id: Optional[str] = Field(default=None, index=True)
+    # Written by the AI Assistant (shown as "Assistant" with an AI badge)
+    ai_generated: bool = Field(default=False)
     created_at: datetime = Field(default_factory=utcnow)

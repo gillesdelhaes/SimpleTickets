@@ -594,6 +594,16 @@ def start_scheduler() -> None:
         max_instances=1,
         coalesce=True,
     )
+    # AI Assistant: triage note on new tickets (no-op while the Assistant is off)
+    from app.ai.triage import run_pending_triage
+    _scheduler.add_job(
+        run_pending_triage,
+        trigger="interval",
+        seconds=20,
+        id="ai_triage",
+        max_instances=1,
+        coalesce=True,
+    )
     from app.auth.jwt import prune_revoked_tokens
     _scheduler.add_job(
         prune_revoked_tokens,

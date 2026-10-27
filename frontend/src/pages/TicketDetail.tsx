@@ -149,6 +149,15 @@ function ReplyBubble({ reply, isOwn, isTech, attachments }: ReplyBubbleProps) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1.5">
             <span className="text-[12px] font-semibold text-ink">{reply.author_name ?? 'Unknown'}</span>
+            {reply.ai_generated && (
+              <span
+                className="text-[10px] font-bold uppercase tracking-[0.06em] rounded-md px-1.5 py-px text-brand-ink"
+                style={{ background: 'var(--brand-tint)' }}
+                title="Written by the AI Assistant — suggestions only, nothing was changed"
+              >
+                AI
+              </span>
+            )}
             <span
               className="text-[10px] font-bold uppercase tracking-[0.06em] rounded-md px-1.5 py-px text-warn-ink"
               style={{ background: 'var(--warn-bg)' }}

@@ -25,6 +25,7 @@ from app.models.user_slack_identity import UserSlackIdentity  # noqa: F401
 from app.models.slack_link_request import SlackLinkRequest  # noqa: F401
 from app.models.notification import Notification  # noqa: F401
 from app.models.email_outbox import EmailOutbox  # noqa: F401
+from app.models.ai_usage import AIUsage  # noqa: F401
 
 __all__ = [
     "AuthProvider",
@@ -49,4 +50,5 @@ __all__ = [
     "SlackLinkRequest",
     "Notification",
     "EmailOutbox",
+    "AIUsage",
 ]

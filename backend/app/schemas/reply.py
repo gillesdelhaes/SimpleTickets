@@ -29,6 +29,8 @@ class ReplyRead(BaseModel):
     author_name: Optional[str]   # denormalized
     body: str
     is_internal: bool
+    # Written by the AI Assistant
+    ai_generated: bool = False
     created_at: datetime
 
     model_config = {"from_attributes": True}

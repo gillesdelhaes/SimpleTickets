@@ -25,6 +25,7 @@ from app.routers import (
     ticket_statuses,
     email_channel,
     requester_links,
+    ai,
     tickets,
 )
 from app.routers import setup, settings as settings_router, slack_users, slack_workspaces
@@ -96,3 +97,4 @@ app.include_router(ticket_statuses.router, prefix="/api")
 app.include_router(email_channel.router,   prefix="/api")
 app.include_router(email_channel.public_router, prefix="/api")
 app.include_router(requester_links.router, prefix="/api")
+app.include_router(ai.router,              prefix="/api")

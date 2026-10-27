@@ -12,7 +12,7 @@ COPY pyproject.toml uv.lock ./
 # it runs via cwd-relative imports (see WORKDIR below).
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir uv \
-    && uv export --frozen --no-hashes --no-emit-project -o requirements.lock.txt \
+    && uv export --frozen --no-dev --no-hashes --no-emit-project -o requirements.lock.txt \
     && pip install --no-cache-dir -r requirements.lock.txt
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
