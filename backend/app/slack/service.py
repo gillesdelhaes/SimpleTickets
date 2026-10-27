@@ -731,14 +731,17 @@ async def post_ticket_update_to_slack(
     category changes. Silently no-ops if sync is disabled or there's no thread anchor.
 
     Every technician-made change funnels through here, so it also tells an
-    email requester about status changes (in their email thread instead).
+    email requester about status changes and who picked the ticket up (in
+    their email thread instead).
     """
-    if "status" in changes and ticket.source == "email":
+    if ticket.source == "email":
+        status = changes["status"][1] if "status" in changes else None
+        assignee = assignee_name if "assignee_id" in changes and changes["assignee_id"][1] else None
         try:
-            from app.email.outbox import queue_status
-            await queue_status(ticket, changes["status"][1] or "")
+            from app.email.outbox import queue_update
+            await queue_update(ticket, status=status, assignee=assignee)
         except Exception:  # noqa: BLE001
-            logger.exception("Failed to queue status email for %s", ticket.display_id)
+            logger.exception("Failed to queue update email for %s", ticket.display_id)
     if ticket.workspace_id is None:
         return
     from app.slack.bot import get_slack_client

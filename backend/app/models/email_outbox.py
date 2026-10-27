@@ -21,7 +21,7 @@ class EmailOutbox(SQLModel, table=True):
         default=None,
         sa_column=Column(Integer, ForeignKey("ticket_replies.id", ondelete="CASCADE"), nullable=True),
     )
-    # 'reply' | 'ack' | 'status'
+    # 'reply' | 'ack' | 'update' (status and/or assignee change; body is JSON)
     kind: str
     # Who the requester sees as the sender, e.g. the technician's name
     author_name: Optional[str] = Field(default=None)

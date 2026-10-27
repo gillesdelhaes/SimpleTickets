@@ -5,13 +5,15 @@ ticket's own Gmail thread.
 What the requester receives:
   • an acknowledgement when their email opens a ticket
   • every public technician reply, with its attachments (internal notes never)
-  • a short notice when a technician changes the ticket's status
+  • a short notice when a technician changes the ticket's status or a
+    technician takes it on (one email when both happen together)
 
 Mail is queued in email_outbox and sent by a job every 10 s. Replies wait a
 few seconds first so files the technician attaches right after sending go
 out in the same email. Failed sends are retried with backoff.
 """
 import base64
+import json
 import logging
 import re
 from datetime import timedelta
@@ -61,12 +63,15 @@ def queue_reply(session: AsyncSession, ticket: Ticket, reply: TicketReply, autho
     ))
 
 
-async def queue_status(ticket: Ticket, new_status: str) -> None:
-    """Own session — called after the status change is committed."""
-    if not is_email_ticket(ticket):
+async def queue_update(ticket: Ticket, *, status: Optional[str] = None, assignee: Optional[str] = None) -> None:
+    """Own session — called after the change is committed. `status` is the new
+    status name, `assignee` the name of the technician who now has it."""
+    if not is_email_ticket(ticket) or not (status or assignee):
         return
     async with AsyncSessionLocal() as session:
-        session.add(EmailOutbox(ticket_id=ticket.id, kind="status", body=new_status))
+        session.add(EmailOutbox(
+            ticket_id=ticket.id, kind="update", body=json.dumps({"status": status, "assignee": assignee}),
+        ))
         await session.commit()
 
 
@@ -90,12 +95,20 @@ def _first_name(ticket: Ticket) -> str:
     return name.split()[0]
 
 
-async def _status_text(session: AsyncSession, ticket: Ticket, status: str, sign: str) -> Optional[str]:
+async def _update_text(session: AsyncSession, ticket: Ticket, status: Optional[str], assignee: Optional[str], sign: str) -> str:
+    lines = [f"Hi {_first_name(ticket)},", ""]
+    if not status:
+        lines.append(f"{assignee} is now handling your ticket {ticket.display_id} \"{ticket.title}\".")
+        lines += ["", "We'll reply in this email thread. To add details or files, just reply to this email."]
+        return "\n".join(lines + ["", sign])
+
     cfg = (await session.execute(
         select(TicketStatusConfig).where(TicketStatusConfig.name == status)
     )).scalar_one_or_none()
     label = cfg.label if cfg else status.replace("_", " ").title()
-    lines = [f"Hi {_first_name(ticket)},", "", f"Your ticket {ticket.display_id} \"{ticket.title}\" is now: {label}."]
+    lines.append(f"Your ticket {ticket.display_id} \"{ticket.title}\" is now: {label}.")
+    if assignee:
+        lines.append(f"{assignee} is handling it.")
     if cfg and cfg.is_resolved_state:
         lines += ["", "If something still isn't right, just reply to this email and we'll reopen it."]
     elif cfg and cfg.pauses_sla:
@@ -127,8 +140,9 @@ async def _compose(session: AsyncSession, gmail: Gmail, row: EmailOutbox, ticket
             team,
         ])
         sender = team
-    elif row.kind == "status":
-        body = await _status_text(session, ticket, row.body, team)
+    elif row.kind == "update":
+        data = json.loads(row.body)
+        body = await _update_text(session, ticket, data.get("status"), data.get("assignee"), team)
         sender = team
     else:
         return None
