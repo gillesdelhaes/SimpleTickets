@@ -1,6 +1,6 @@
 # Deploying SimpleTickets
 
-Operator guide: TLS, private-network/VPN deployments, Google sign-in setup,
+Operator guide: TLS, private-network/VPN deployments, Google sign-in, the email channel,
 and backups. For what the product does and a local quick start, see the
 [README](../README.md).
 
@@ -56,8 +56,13 @@ path is not supported out of the box.
 
 ## Google sign-in — operator setup
 
-The product side (gating model, break-glass account, converting users) is in
-the [README](../README.md#sign-in-with-google-optional). To enable it:
+Staff accounts can sign in with Google instead of a password. Only
+pre-provisioned accounts whose email matches their Google account can sign in
+this way (no self-signup): create users with sign-in method **Google**
+(Settings → Users) or use **Convert to Google** on existing ones. Those
+accounts have no password and inherit your Google organization's MFA. Keep at
+least one password-based admin as a **break-glass account** (the app refuses
+to convert the last one) so a Google outage can't lock you out. To enable it:
 
 1. In [Google Cloud console → Credentials](https://console.cloud.google.com/apis/credentials),
    create an **OAuth client ID**, application type **Web application**. If
@@ -78,6 +83,37 @@ Origin rules to know:
   VPN-only host, use a subdomain of a real domain you own
   (e.g. `tickets.internal.example.com`) with split-horizon DNS: Google never
   needs to reach the server, only your users' browsers do.
+
+## Email channel — operator setup
+
+One Google Workspace user with a Gmail licence (e.g. `help@`) becomes a second
+way in. The mailbox is checked every 30 seconds; new mail becomes a ticket,
+replies thread back onto it, and technician replies, acknowledgements,
+assignment and status notices go out from it in the same thread. Handled mail
+is labelled `SimpleTickets`; nothing is deleted.
+
+Safety: only the requester and the people on the original email reply
+publicly; anyone else's message on the thread is kept as an internal note
+marked "unverified sender". Mail failing DMARC, auto-replies, bounces and
+mailing lists are never ticketed, and new tickets are rate-limited per sender.
+
+Setup uses the **same Google Cloud project and OAuth client** as Google sign-in:
+
+1. Enable the **Gmail API** in that project
+   (APIs & Services → Library → Gmail API).
+2. Keep the consent screen's audience **Internal** — only your Workspace's
+   accounts can connect, and Google's app review doesn't apply.
+3. On the OAuth client, add the **authorized redirect URI**
+   `https://<your SimpleTickets URL>/api/email/oauth/callback` (add
+   `http://localhost:3000/api/email/oauth/callback` too for local testing),
+   and paste the client's **secret** in **Settings → Google Workspace**.
+4. Click **Connect Gmail** and sign in as the mailbox user (not your own
+   account). Only mail arriving after this is ticketed.
+
+To match email senders to Slack users automatically, the Slack app needs the
+`users:read.email` bot scope: add it under OAuth & Permissions and
+**Reinstall to Workspace** (no need to recreate the app). Backups don't carry
+the Gmail grant or client secret — reconnect the mailbox after a restore.
 
 ## Backups
 
