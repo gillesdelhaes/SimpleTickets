@@ -32,6 +32,10 @@ class AIConfig:
     daily_token_budget: int
     company_context: str
     triage_note: bool
+    # Both off by default: the Assistant only suggests until an admin opts in
+    auto_category: bool = False   # fill in the category when the ticket has none
+    ask_requester: bool = False   # send the requester its questions on unclear tickets
+    retitle: bool = False         # replace a vague title, until a technician edits it
 
     @property
     def configured(self) -> bool:
@@ -60,4 +64,7 @@ async def load_config(session: AsyncSession) -> AIConfig:
         daily_token_budget=max(0, budget),
         company_context=(await get_setting("ai_company_context", session)).strip(),
         triage_note=await get_setting("ai_triage_note", session, default="true") == "true",
+        auto_category=await get_setting("ai_auto_category", session, default="false") == "true",
+        ask_requester=await get_setting("ai_ask_requester", session, default="false") == "true",
+        retitle=await get_setting("ai_retitle", session, default="false") == "true",
     )

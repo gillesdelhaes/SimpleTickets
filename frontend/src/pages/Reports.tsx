@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell, PieChart, Pie, Legend, LabelList,
+  ResponsiveContainer, Cell, PieChart, Pie, Legend, LabelList, ReferenceLine,
 } from 'recharts'
 import AppShell from '../components/layout/AppShell'
 import { getAllStatuses, parseUTC, statusColor, statusLabel } from '../types/ticket'
@@ -31,6 +31,19 @@ interface Overview {
   csat_positive: number
 }
 interface VolumePoint { date: string; count: number }
+interface AIUsageReport {
+  input_tokens: number
+  output_tokens: number
+  runs: number
+  failures: number
+  tickets: number
+  tokens_per_ticket: number | null
+  cost: number | null
+  priced: boolean
+  daily_budget: number
+  days: { date: string; input: number; output: number }[]
+  models: { model: string; runs: number; failures: number; input: number; output: number; cost: number | null }[]
+}
 interface ByPriority { priority: string; count: number }
 interface ByStatus { status: string; count: number }
 interface ByCategory { category: string; count: number }
@@ -310,6 +323,125 @@ function fmtMinutes(m: number | null): string {
   return m < 60 ? `${m}m` : `${Math.round(m / 6) / 10}h`
 }
 
+// ── AI assistant usage (admin) ─────────────────────────────────────────────────
+// Input vs output tokens per day. Violet + rust from the shared palette pass
+// the CVD / lightness checks in both themes; the table below is the text view.
+
+const tokenFmt = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 })
+
+function fmtCost(usd: number | null): string {
+  if (usd == null) return '—'
+  return usd < 0.01 && usd > 0 ? '< $0.01' : `$${usd.toFixed(2)}`
+}
+
+function TokenTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null
+  const total = payload.reduce((s: number, p: any) => s + (p.value ?? 0), 0)
+  return (
+    <div style={tooltipSurface}>
+      <div className="font-mono text-[10px] text-ink-3 mb-1 uppercase tracking-wide">{label}</div>
+      {[...payload].reverse().map((p: any) => (
+        <div key={p.dataKey} className="flex items-center gap-2 text-[12px] text-ink-2">
+          <span style={{ width: 8, height: 8, borderRadius: 2, background: p.color }} />
+          {p.name} <span className="font-mono font-semibold text-ink ml-auto">{p.value.toLocaleString()}</span>
+        </div>
+      ))}
+      <div className="font-mono text-[11px] text-ink-3 mt-1 border-t border-track pt-1">total {total.toLocaleString()}</div>
+    </div>
+  )
+}
+
+function AIUsageSection({ params, theme }: { params: Record<string, string>; theme: Theme }) {
+  const navigate = useNavigate()
+  const { from_date, to_date } = params
+  const { data, isLoading } = useReport<AIUsageReport>('ai-usage', { from_date, to_date })
+  const color = (name: string) => CATEGORY_PALETTE.find(c => c.name === name)![theme]
+  const inputColor = color('violet')
+  const outputColor = color('rust')
+
+  if (isLoading) return <div className="mt-3.5"><Skeleton height={200} /></div>
+  if (!data || data.runs === 0) return null
+
+  return (
+    <section className="panel mt-3.5">
+      <div className="panel-head">
+        <h2>AI assistant usage</h2>
+        <span className="sub">tokens sent to and from the provider · whole team</span>
+      </div>
+
+      <div className="px-5 pt-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 14 }}>
+        <KpiCard
+          label="Tokens"
+          value={tokenFmt.format(data.input_tokens + data.output_tokens)}
+          sub={`${tokenFmt.format(data.input_tokens)} in · ${tokenFmt.format(data.output_tokens)} out`}
+        />
+        <KpiCard
+          label="Runs"
+          value={data.runs}
+          sub={data.failures ? `${data.failures} failed` : 'none failed'}
+          tone={data.failures > 0 && data.failures / data.runs > 0.1 ? 'warn' : undefined}
+        />
+        <KpiCard
+          label="Per ticket"
+          value={data.tokens_per_ticket != null ? tokenFmt.format(data.tokens_per_ticket) : '—'}
+          sub={`${data.tickets} ticket${data.tickets === 1 ? '' : 's'} assessed`}
+        />
+        <KpiCard
+          label="Estimated cost"
+          value={fmtCost(data.cost)}
+          sub={data.priced
+            ? 'at the prices in Settings'
+            : <button className="bg-transparent border-0 p-0 cursor-pointer text-[12px] text-brand-ink hover:underline" onClick={() => navigate('/admin/settings?tab=ai')}>Set prices to estimate</button>}
+        />
+      </div>
+
+      <div className="px-5 py-4">
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={data.days} margin={{ top: 8, right: 8, bottom: 0, left: -4 }}>
+            <CartesianGrid stroke="var(--track)" vertical={false} />
+            <XAxis dataKey="date" tick={TICK_STYLE} tickFormatter={v => v.slice(5)} interval="preserveStartEnd" axisLine={false} tickLine={false} />
+            <YAxis tick={TICK_STYLE} tickFormatter={v => tokenFmt.format(v)} axisLine={false} tickLine={false} />
+            <Tooltip content={<TokenTooltip />} cursor={{ fill: 'var(--track)', opacity: 0.4 }} />
+            <Legend
+              formatter={value => <span className="text-[12px] text-ink-2">{value}</span>}
+              iconType="square" iconSize={9}
+            />
+            {data.daily_budget > 0 && (
+              <ReferenceLine
+                y={data.daily_budget} stroke="var(--ink-3)" strokeDasharray="4 4"
+                label={{ value: 'Daily budget', position: 'insideTopRight', fill: 'var(--ink-3)', fontSize: 10 }}
+              />
+            )}
+            {/* Thin surface stroke = the gap between stacked segments */}
+            <Bar dataKey="input" name="Input tokens" stackId="t" fill={inputColor} stroke="var(--bg)" strokeWidth={1} maxBarSize={28} />
+            <Bar dataKey="output" name="Output tokens" stackId="t" fill={outputColor} stroke="var(--bg)" strokeWidth={1} radius={[4, 4, 0, 0]} maxBarSize={28} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="tablewrap" style={{ paddingTop: 0 }}>
+        <table>
+          <thead>
+            <tr>{['Model', 'Runs', 'Failed', 'Input tokens', 'Output tokens', 'Est. cost'].map(h => <th key={h}>{h}</th>)}</tr>
+          </thead>
+          <tbody>
+            {data.models.map(m => (
+              <tr key={m.model}>
+                <td className="name font-mono text-[12px]">{m.model || '—'}</td>
+                <td className="text-ink-2">{m.runs}</td>
+                <td className={m.failures ? 'text-warn-ink' : 'text-ink-3'}>{m.failures}</td>
+                <td className="text-ink-2 font-mono text-[12px]">{m.input.toLocaleString()}</td>
+                <td className="text-ink-2 font-mono text-[12px]">{m.output.toLocaleString()}</td>
+                <td className="text-ink-2">{fmtCost(m.cost)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────────
 
 interface Assignee { id: number; name: string }
@@ -474,7 +606,8 @@ export default function Reports() {
       </div>
 
       {/* ── KPI row ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 14 }}>
+      <div className="kpi-row" style={{ marginBottom: 14 }}>
+      <div className="kpi-grid">
         {overview.isLoading ? (
           [1, 2, 3, 4, 5, 6, 7].map(i => <Skeleton key={i} height={96} />)
         ) : ov ? (
@@ -515,6 +648,7 @@ export default function Reports() {
             />
           </>
         ) : null}
+      </div>
       </div>
 
       {/* ── Volume over time ── */}
@@ -813,6 +947,9 @@ export default function Reports() {
           )}
         </div>
       </section>
+
+      {/* ── AI assistant usage (admin) ── */}
+      {isAdmin && <AIUsageSection params={params} theme={theme} />}
     </AppShell>
   )
 }

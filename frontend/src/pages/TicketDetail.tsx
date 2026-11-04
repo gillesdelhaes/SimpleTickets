@@ -9,6 +9,7 @@ import DeleteTicketsDialog from '../components/tickets/DeleteTicketsDialog'
 import ResolveUnansweredDialog from '../components/tickets/ResolveUnansweredDialog'
 import RequesterTickets from '../components/tickets/RequesterTickets'
 import RequesterSlackLink from '../components/tickets/RequesterSlackLink'
+import AssistantPanel from '../components/tickets/AssistantPanel'
 import { isResolvedStatus, parseSLABar, parseSLABarRaw, parseSLAPaused } from '../types/ticket'
 import { useMarkDuplicate, useUnmarkDuplicate } from '../hooks/useDuplicate'
 import { useTicket } from '../hooks/useTicket'
@@ -153,7 +154,7 @@ function ReplyBubble({ reply, isOwn, isTech, attachments }: ReplyBubbleProps) {
               <span
                 className="text-[10px] font-bold uppercase tracking-[0.06em] rounded-md px-1.5 py-px text-brand-ink"
                 style={{ background: 'var(--brand-tint)' }}
-                title="Written by the AI Assistant — suggestions only, nothing was changed"
+                title="Written by the AI Assistant — visible to technicians only"
               >
                 AI
               </span>
@@ -209,7 +210,16 @@ function ReplyBubble({ reply, isOwn, isTech, attachments }: ReplyBubbleProps) {
       <div style={{ maxWidth: '72%' }}>
         <div className="flex items-center gap-2 mb-1.5">
           <span className="text-[12px] font-semibold text-ink">{reply.author_name ?? 'Support'}</span>
-          {isTech && (
+          {reply.ai_generated && (
+            <span
+              className="text-[10px] font-bold uppercase tracking-[0.06em] rounded-md px-1.5 py-px text-brand-ink"
+              style={{ background: 'var(--brand-tint)' }}
+              title="Sent to the requester by the AI Assistant"
+            >
+              AI
+            </span>
+          )}
+          {isTech && !reply.ai_generated && (
             <span className="text-[10px] font-semibold text-ink-3 rounded-md px-1.5 py-px bg-field border border-edge">
               Team
             </span>
@@ -1483,7 +1493,10 @@ export default function TicketDetail() {
 
         {/* Two-column layout — single column on phones */}
         <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_300px] items-start" style={{ gap: 14 }}>
-          <ThreadColumn ticket={ticket} isTech={isTech} currentUserId={user?.id} />
+          <div className="flex flex-col min-w-0" style={{ gap: 14 }}>
+            {isTech && <AssistantPanel ticketId={ticket.id} />}
+            <ThreadColumn ticket={ticket} isTech={isTech} currentUserId={user?.id} />
+          </div>
           <MetaSidebar
             ticket={ticket}
             isAdmin={isAdmin}

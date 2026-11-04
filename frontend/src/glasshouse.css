@@ -268,6 +268,16 @@ select option:disabled{color:var(--ink-3)}
 /* ── 11. Stat card ──────────────────────────────────────────────────────── */
 .stats{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:14px}
 .stat{padding:18px 20px 16px}
+/* A row of stat tiles that never leaves one orphan on its own line: all on
+   one row when there's room, otherwise 4 + 3, otherwise 2 per row. Sized by
+   the row's own width (container query), so the sidebar doesn't matter. */
+.kpi-row{container-type:inline-size}
+.kpi-row > .kpi-grid{display:grid; gap:14px; grid-template-columns:repeat(2,minmax(0,1fr))}
+@container (min-width:560px){ .kpi-row > .kpi-grid{grid-template-columns:repeat(4,minmax(0,1fr))} }
+@container (min-width:1000px){
+  .kpi-row > .kpi-grid{grid-template-columns:repeat(7,minmax(0,1fr))}
+  .kpi-row .stat{padding:16px 16px 14px}
+}
 .stat .label{font-size:12px; font-weight:500; color:var(--ink-2)}
 .stat .value{font-size:34px; font-weight:650; letter-spacing:-.02em; margin:6px 0 8px;
   font-variant-numeric:tabular-nums}

@@ -1213,7 +1213,7 @@ async def get_ticket_history(
             "field": row[0].field_changed,
             "old_value": _resolve(row[0].field_changed, row[0].old_value),
             "new_value": _resolve(row[0].field_changed, row[0].new_value),
-            "actor_name": row[1],
+            "actor_name": row[1] or row[0].actor_label,
             "created_at": row[0].created_at.isoformat(),
         }
         for row in rows

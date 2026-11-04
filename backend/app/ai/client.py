@@ -142,12 +142,27 @@ async def tokens_used_today() -> int:
 # ── Running ───────────────────────────────────────────────────────────────────
 
 
+def _provider_message(exc: ModelHTTPError) -> str:
+    """The provider's own explanation, when it gave one — e.g. Google names
+    the replacement when a model is retired."""
+    body = exc.body
+    if isinstance(body, dict):
+        err = body.get("error")
+        msg = err.get("message") if isinstance(err, dict) else body.get("message")
+        if isinstance(msg, str):
+            return " ".join(msg.split())[:400]
+    return ""
+
+
 def _friendly(exc: BaseException) -> str:
     if isinstance(exc, ModelHTTPError):
         code = exc.status_code
         if code in (401, 403):
             return "The provider rejected the API key (or the key can't use this model)."
         if code == 404:
+            detail = _provider_message(exc)
+            if detail:
+                return f"The provider can't use this model: {detail}"
             return "The provider doesn't know this model name. Use “Load models” to pick one."
         if code == 429:
             return "The provider is rate-limiting or the account is out of quota/credit."

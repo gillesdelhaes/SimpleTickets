@@ -2140,10 +2140,15 @@ interface AISettings {
   daily_token_budget: number
   company_context: string
   triage_note: boolean
+  auto_category: boolean
+  ask_requester: boolean
+  retitle: boolean
   configured: boolean
   providers: AIProvider[]
   tokens_today: number
   last_error: string | null
+  price_input_per_m: number | null
+  price_output_per_m: number | null
 }
 interface AITestResult {
   ok: boolean
@@ -2159,7 +2164,7 @@ interface AIUsage {
   recent: { at: string; feature: string; ticket_id: number | null; model: string; tokens: number; duration_ms: number; ok: boolean; error: string | null }[]
 }
 
-type AIForm = { provider: string; model: string; base_url: string; api_key: string; company_context: string; daily_token_budget: string; triage_note: boolean }
+type AIForm = { provider: string; model: string; base_url: string; api_key: string; company_context: string; daily_token_budget: string; price_input_per_m: string; price_output_per_m: string }
 
 function AITab() {
   const qc = useQueryClient()
@@ -2191,7 +2196,8 @@ function AITab() {
     api_key: '',
     company_context: data.company_context,
     daily_token_budget: String(data.daily_token_budget),
-    triage_note: data.triage_note,
+    price_input_per_m: data.price_input_per_m != null ? String(data.price_input_per_m) : '',
+    price_output_per_m: data.price_output_per_m != null ? String(data.price_output_per_m) : '',
     ...edits,
   }
   const spec = data.providers.find(p => p.id === form.provider)
@@ -2221,10 +2227,25 @@ function AITab() {
       if (edits.api_key) body.api_key = edits.api_key
       if (edits.company_context !== undefined) body.company_context = edits.company_context
       if (edits.daily_token_budget !== undefined) body.daily_token_budget = Math.max(0, parseInt(edits.daily_token_budget, 10) || 0)
-      if (edits.triage_note !== undefined) body.triage_note = edits.triage_note
+      // Blank clears a price (sent as -1)
+      for (const k of ['price_input_per_m', 'price_output_per_m'] as const) {
+        if (edits[k] !== undefined) {
+          const v = parseFloat(edits[k]!.replace(',', '.'))
+          body[k] = edits[k]!.trim() === '' || isNaN(v) ? -1 : Math.max(0, v)
+        }
+      }
       const r = (await api.patch<AISettings>('/admin/ai', body)).data
       qc.setQueryData(['admin-ai'], r)
       setEdits({}); setSaved(true); setTimeout(() => setSaved(false), 2000)
+    })
+  }
+
+  // What the Assistant may do: like the main switch, these save on flip
+  type Behaviour = 'triage_note' | 'auto_category' | 'retitle' | 'ask_requester'
+  function setBehaviour(key: Behaviour, on: boolean) {
+    run('toggle', async () => {
+      const r = (await api.patch<AISettings>('/admin/ai', { [key]: on })).data
+      qc.setQueryData(['admin-ai'], r)
     })
   }
 
@@ -2247,9 +2268,10 @@ function AITab() {
         </CardHeader>
 
         <div className="px-[22px] py-3 text-[12.5px] text-ink-2 leading-relaxed border-b border-track">
-          The Assistant writes an internal triage note on every new ticket: a summary, what's missing, and a suggested
-          priority and category. It doesn't change tickets or talk to requesters. Ticket text is sent to the provider you
-          choose — use a paid plan that doesn't train on your data, or a self-hosted model.
+          The Assistant keeps a summary on every new ticket for technicians — what's known and missing, possible fixes, and a
+          suggested priority and category — and updates it each time the requester replies. On its own it only suggests;
+          the switches below let it set the category, rewrite vague titles, and ask the requester for missing details. Ticket text and replies are
+          sent to the provider you choose — use a paid plan that doesn't train on your data, or a self-hosted model.
         </div>
 
         <SettingRow label="Assistant" hint={data.configured ? 'Only tickets created after it is switched on are triaged.' : 'Save a provider and model first.'}>
@@ -2294,9 +2316,19 @@ function AITab() {
         {form.provider && (
           <SettingRow label="Model" hint="Type a model ID, or load the list your key can use. A fast, inexpensive model is enough for triage.">
             <div className="flex items-center gap-2 flex-wrap">
-              <input className="input font-mono" list="ai-models" style={{ maxWidth: 320, fontSize: 12 }} value={form.model}
-                onChange={e => set('model', e.target.value.trim())} placeholder="model ID" />
-              <datalist id="ai-models">{models.map(m => <option key={m} value={m} />)}</datalist>
+              {models.length > 0 ? (
+                // A real select: Chrome's datalist only shows names matching what's already typed
+                <div className="selectwrap" style={{ maxWidth: 320 }}>
+                  <select className="select font-mono" style={{ fontSize: 12 }} value={models.includes(form.model) ? form.model : ''}
+                    onChange={e => set('model', e.target.value)}>
+                    <option value="" disabled>{form.model ? `${form.model} (not in the list)` : 'Choose a model…'}</option>
+                    {models.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              ) : (
+                <input className="input font-mono" style={{ maxWidth: 320, fontSize: 12 }} value={form.model}
+                  onChange={e => set('model', e.target.value.trim())} placeholder="model ID" />
+              )}
               <button className="btn ghost sm" disabled={busy !== null}
                 onClick={() => run('models', async () => {
                   const r = (await api.post<{ models: string[] }>('/admin/ai/models', tryBody)).data
@@ -2305,7 +2337,9 @@ function AITab() {
                 })}>
                 {busy === 'models' ? <Spin /> : 'Load models'}
               </button>
-              {models.length > 0 && <span className="text-[12px] text-ink-3">{models.length} available — pick from the field</span>}
+              {models.length > 0 && (
+                <button className="btn ghost sm" onClick={() => setModels([])}>Type a name instead</button>
+              )}
             </div>
           </SettingRow>
         )}
@@ -2315,8 +2349,33 @@ function AITab() {
             value={form.company_context} onChange={e => set('company_context', e.target.value)} />
         </SettingRow>
 
-        <SettingRow label="Triage note" hint="Write the internal note on each new ticket.">
-          <SettingSwitch on={form.triage_note} onChange={v => set('triage_note', v)} />
+        <SettingRow label="Ticket summary" hint="Show the Assistant panel on each ticket, for technicians only. Updated as the requester replies.">
+          <SettingSwitch on={data.triage_note} onChange={v => setBehaviour('triage_note', v)} />
+        </SettingRow>
+
+        <SettingRow label="Set the category" hint="Fill in the suggested category when a new ticket has none. Never overwrites a technician's choice; shows in the history as Assistant.">
+          <SettingSwitch on={data.auto_category} onChange={v => setBehaviour('auto_category', v)} />
+        </SettingRow>
+
+        <SettingRow label="Improve the title" hint="Replace a vague title (“help”, “laptop”) with a specific one. Stops once a technician edits the title; shows in the history as Assistant.">
+          <SettingSwitch on={data.retitle} onChange={v => setBehaviour('retitle', v)} />
+        </SettingRow>
+
+        <SettingRow label="Ask the requester" hint="While details are missing, ask the requester in their Slack or email thread, and follow up on their answers — at most 3 rounds, and never once a technician has replied. Doesn't count as the first response.">
+          <SettingSwitch on={data.ask_requester} onChange={v => setBehaviour('ask_requester', v)} />
+        </SettingRow>
+
+        <SettingRow label="Prices" hint="Optional, from your provider's pricing page — Reports uses them to estimate cost. US dollars per 1 million tokens.">
+          <div className="flex items-center gap-2 flex-wrap text-[12px] text-ink-3">
+            <span>$</span>
+            <input className="input font-mono" inputMode="decimal" style={{ width: 90, fontSize: 12 }} value={form.price_input_per_m}
+              onChange={e => set('price_input_per_m', e.target.value)} placeholder="0.30" />
+            <span className="mr-3">input</span>
+            <span>$</span>
+            <input className="input font-mono" inputMode="decimal" style={{ width: 90, fontSize: 12 }} value={form.price_output_per_m}
+              onChange={e => set('price_output_per_m', e.target.value)} placeholder="2.50" />
+            <span>output</span>
+          </div>
         </SettingRow>
 
         <SettingRow label="Daily token budget" hint="The Assistant pauses for the rest of the day (UTC) once this many tokens are used. 0 = no limit." last>
@@ -2345,7 +2404,7 @@ function AITab() {
         <CardHeader><SectionLabel>Try it</SectionLabel></CardHeader>
         <div className="px-[22px] py-4 flex flex-col gap-3">
           <p className="text-[12.5px] text-ink-2 m-0">
-            Runs triage on a sample ticket with the settings above (saved or not) and shows the note it would write. Uses a few hundred tokens.
+            Runs the Assistant on a sample ticket with the settings above (saved or not) and shows what it would put in the ticket panel. Uses a few hundred tokens.
           </p>
           <input className="input" style={{ maxWidth: 520 }} value={sampleTitle} onChange={e => setSampleTitle(e.target.value)}
             placeholder="Title (blank: “laptop not working”)" />

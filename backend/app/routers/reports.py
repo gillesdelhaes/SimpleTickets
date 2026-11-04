@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.deps import require_admin, require_technician
 from app.database import get_session
 from app.dt import utcnow
-from app.models import Category, Ticket, TicketHistory, User
+from app.models import AIUsage, Category, Ticket, TicketHistory, User
 from app.models.enums import Role
 from app.models.ticket_csat import TicketCSAT
 from app.models.ticket_status_config import TicketStatusConfig
@@ -296,6 +296,93 @@ async def get_volume(
 
     result = await session.execute(stmt)
     return [{"date": row.day.strftime("%Y-%m-%d"), "count": row.count} for row in result.all()]
+
+
+# ── GET /api/reports/ai-usage ─────────────────────────────────────────────────
+
+
+@router.get("/ai-usage")
+async def get_ai_usage(
+    from_date: Optional[date] = Query(default=None),
+    to_date: Optional[date] = Query(default=None),
+    _: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """AI Assistant token use: totals, per day, per model, and an estimated
+    cost from the prices set in Settings → AI assistant (current prices, so
+    an estimate). Admin only, and team-wide — runs aren't anyone's own."""
+    from app.ai.config import DEFAULT_DAILY_TOKEN_BUDGET
+    from app.routers.ai import read_price
+    from app.services.settings_service import get_setting
+
+    start, end = await _date_range(from_date, to_date, session)
+    in_range = (AIUsage.created_at >= start, AIUsage.created_at <= end)
+    failed = func.count().filter(AIUsage.ok == False)  # noqa: E712
+
+    totals = (await session.execute(
+        select(
+            func.coalesce(func.sum(AIUsage.input_tokens), 0).label("input"),
+            func.coalesce(func.sum(AIUsage.output_tokens), 0).label("output"),
+            func.count().label("runs"),
+            failed.label("failures"),
+            func.count(func.distinct(AIUsage.ticket_id)).label("tickets"),
+        ).where(*in_range)
+    )).one()
+    days = (await session.execute(
+        select(
+            func.date_trunc("day", AIUsage.created_at).label("day"),
+            func.coalesce(func.sum(AIUsage.input_tokens), 0).label("input"),
+            func.coalesce(func.sum(AIUsage.output_tokens), 0).label("output"),
+        ).where(*in_range).group_by(text("day")).order_by(text("day"))
+    )).all()
+    models = (await session.execute(
+        select(
+            AIUsage.model,
+            func.count().label("runs"),
+            failed.label("failures"),
+            func.coalesce(func.sum(AIUsage.input_tokens), 0).label("input"),
+            func.coalesce(func.sum(AIUsage.output_tokens), 0).label("output"),
+        ).where(*in_range).group_by(AIUsage.model).order_by(func.sum(AIUsage.input_tokens + AIUsage.output_tokens).desc())
+    )).all()
+
+    price_in = await read_price("ai_price_input_per_m", session)
+    price_out = await read_price("ai_price_output_per_m", session)
+
+    def cost(tokens_in: int, tokens_out: int) -> Optional[float]:
+        if price_in is None or price_out is None:
+            return None
+        return round((tokens_in * price_in + tokens_out * price_out) / 1_000_000, 4)
+
+    try:
+        budget = int(await get_setting("ai_daily_token_budget", session, default=str(DEFAULT_DAILY_TOKEN_BUDGET)))
+    except ValueError:
+        budget = DEFAULT_DAILY_TOKEN_BUDGET
+    # Only ticket runs count toward tokens per ticket (Try it runs have none)
+    ticket_tokens = (await session.execute(
+        select(func.coalesce(func.sum(AIUsage.input_tokens + AIUsage.output_tokens), 0))
+        .where(*in_range, AIUsage.ticket_id.isnot(None))
+    )).scalar_one()
+
+    return {
+        "input_tokens": int(totals.input),
+        "output_tokens": int(totals.output),
+        "runs": totals.runs,
+        "failures": totals.failures,
+        "tickets": totals.tickets,
+        "tokens_per_ticket": round(int(ticket_tokens) / totals.tickets) if totals.tickets else None,
+        "cost": cost(int(totals.input), int(totals.output)),
+        "priced": price_in is not None and price_out is not None,
+        "daily_budget": budget,
+        "days": [
+            {"date": d.day.strftime("%Y-%m-%d"), "input": int(d.input), "output": int(d.output)}
+            for d in days
+        ],
+        "models": [
+            {"model": m.model, "runs": m.runs, "failures": m.failures, "input": int(m.input),
+             "output": int(m.output), "cost": cost(int(m.input), int(m.output))}
+            for m in models
+        ],
+    }
 
 
 # ── GET /api/reports/by-priority ──────────────────────────────────────────────

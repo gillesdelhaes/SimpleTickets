@@ -26,6 +26,8 @@ _SETTINGS = [
     ("ai_daily_token_budget", "200000", False),
     ("ai_company_context", None, False),
     ("ai_triage_note", "true", False),
+    ("ai_auto_category", "false", False),
+    ("ai_ask_requester", "false", False),
     ("ai_last_error", None, False),
 ]
 
@@ -34,6 +36,8 @@ def upgrade() -> None:
     op.add_column("ticket_replies", sa.Column("ai_generated", sa.Boolean(), nullable=False, server_default=sa.false()))
     op.add_column("tickets", sa.Column("ai_triaged_at", sa.DateTime(), nullable=True))
     op.add_column("tickets", sa.Column("ai_triage_attempts", sa.Integer(), nullable=False, server_default="0"))
+    # Who made a change when it wasn't a user (e.g. "Assistant"); null actor + null label = System
+    op.add_column("ticket_history", sa.Column("actor_label", sqlmodel.AutoString(), nullable=True))
 
     op.create_table(
         "ai_usage",
@@ -73,6 +77,7 @@ def downgrade() -> None:
         {"keys": [k for k, _, _ in _SETTINGS]},
     )
     op.drop_table("ai_usage")
+    op.drop_column("ticket_history", "actor_label")
     op.drop_column("tickets", "ai_triage_attempts")
     op.drop_column("tickets", "ai_triaged_at")
     op.drop_column("ticket_replies", "ai_generated")

@@ -16,6 +16,9 @@ class TicketHistory(SQLModel, table=True):
     ticket_id: int = Field(foreign_key="tickets.id", index=True)
     # Null actor = system action (e.g. SLA breach flag, auto-close)
     actor_id: Optional[int] = Field(default=None, foreign_key="users.id")
+    # Shown instead of "System" when a null-actor change came from something
+    # with a name, e.g. the AI "Assistant"
+    actor_label: Optional[str] = Field(default=None)
     field_changed: str  # e.g. "status", "priority", "assignee_id"
     old_value: Optional[str] = Field(default=None)  # JSON-serialised string
     new_value: Optional[str] = Field(default=None)  # JSON-serialised string

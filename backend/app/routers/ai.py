@@ -8,6 +8,10 @@ AI Assistant settings (admin only).
   POST  /admin/ai/test     triage a sample ticket with the given settings
   GET   /admin/ai/usage    tokens, runs and failures for the last 14 days
 
+Technicians:
+  GET   /tickets/{id}/assistant          the Assistant's current assessment
+  POST  /tickets/{id}/assistant/refresh  re-assess now (never messages the requester)
+
 /models and /test take the form's current values, so an admin can try a
 provider before saving it; a blank key means "use the saved one".
 """
@@ -17,14 +21,15 @@ from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.client import AIError, list_models, provider_choices, tokens_used_today, usage_summary
 from app.ai.config import PROVIDERS, AIConfig, load_config
-from app.ai.triage import assess
-from app.auth.deps import require_admin
+from app.ai.triage import _MAX_QUESTION_ROUNDS, _requester_reply_filter, assess, stored_assessment, triage_ticket
+from app.auth.deps import require_admin, require_technician
 from app.database import get_session
-from app.models import Ticket
+from app.models import Ticket, TicketReply
 from app.models.enums import Priority
 from app.models.user import User
 from app.services.audit import write_audit
@@ -34,8 +39,10 @@ from app.utils import client_ip, utcnow
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin/ai", tags=["admin"])
+ticket_router = APIRouter(prefix="/tickets", tags=["ai"])
 
 _try_limiter = RateLimiter(limit=10, window_seconds=60)
+_refresh_limiter = RateLimiter(limit=10, window_seconds=60)
 
 SAMPLE_TICKET = (
     "laptop not working",
@@ -52,10 +59,16 @@ class AISettingsRead(BaseModel):
     daily_token_budget: int
     company_context: str
     triage_note: bool
+    auto_category: bool
+    ask_requester: bool
+    retitle: bool
     configured: bool
     providers: list[dict]
     tokens_today: int
     last_error: Optional[str]
+    # USD per 1M tokens, for the cost estimate in Reports; null = not set
+    price_input_per_m: Optional[float]
+    price_output_per_m: Optional[float]
 
 
 class AISettingsUpdate(BaseModel):
@@ -68,6 +81,20 @@ class AISettingsUpdate(BaseModel):
     daily_token_budget: Optional[int] = Field(default=None, ge=0, le=100_000_000)
     company_context: Optional[str] = Field(default=None, max_length=4000)
     triage_note: Optional[bool] = None
+    auto_category: Optional[bool] = None
+    ask_requester: Optional[bool] = None
+    retitle: Optional[bool] = None
+    # -1 clears a price
+    price_input_per_m: Optional[float] = Field(default=None, ge=-1, le=1000)
+    price_output_per_m: Optional[float] = Field(default=None, ge=-1, le=1000)
+
+
+async def read_price(key: str, session: AsyncSession) -> Optional[float]:
+    try:
+        value = float(await get_setting(key, session))
+    except ValueError:
+        return None
+    return value if value >= 0 else None
 
 
 class AITryRequest(BaseModel):
@@ -98,10 +125,15 @@ async def _read(session: AsyncSession) -> AISettingsRead:
         daily_token_budget=cfg.daily_token_budget,
         company_context=cfg.company_context,
         triage_note=cfg.triage_note,
+        auto_category=cfg.auto_category,
+        ask_requester=cfg.ask_requester,
+        retitle=cfg.retitle,
         configured=cfg.configured,
         providers=provider_choices(),
         tokens_today=await tokens_used_today(),
         last_error=await get_setting("ai_last_error", session) or None,
+        price_input_per_m=await read_price("ai_price_input_per_m", session),
+        price_output_per_m=await read_price("ai_price_output_per_m", session),
     )
 
 
@@ -149,6 +181,16 @@ async def update_ai_settings(
     if body.triage_note is not None:
         await set_setting("ai_triage_note", "true" if body.triage_note else "false", session)
         changed.append("triage_note")
+    for field in ("price_input_per_m", "price_output_per_m"):
+        value = getattr(body, field)
+        if value is not None:
+            await set_setting(f"ai_{field}", "" if value < 0 else str(value), session)
+            changed.append(field)
+    for field in ("auto_category", "ask_requester", "retitle"):
+        value = getattr(body, field)
+        if value is not None:
+            await set_setting(f"ai_{field}", "true" if value else "false", session)
+            changed.append(field)
 
     if body.enabled is not None:
         cfg = await load_config(session)  # sees the values set above (same session)
@@ -247,3 +289,79 @@ async def test_ai(
 @router.get("/usage")
 async def get_ai_usage(current_user: User = Depends(require_admin)) -> dict:
     return await usage_summary()
+
+
+# ── Ticket panel ──────────────────────────────────────────────────────────────
+
+
+class TicketAssistantRead(BaseModel):
+    # The Assistant is on and keeps a summary on tickets
+    active: bool
+    assessment: Optional[dict]
+    # Questions sent to the requester in the latest round (empty if none)
+    asked: list[str]
+    category_set: Optional[str]
+    # {'from': the requester's original title, 'to': the Assistant's}
+    title_set: Optional[dict]
+    question_rounds: int
+    max_question_rounds: int
+    assessed_at: Optional[str]
+    # The requester replied since; an update is on its way
+    updating: bool
+
+
+async def _ticket_assistant(session: AsyncSession, ticket: Ticket) -> TicketAssistantRead:
+    cfg = await load_config(session)
+    data = stored_assessment(ticket)
+    updating = False
+    if ticket.ai_triaged_at is not None:
+        last = (await session.execute(
+            select(func.max(TicketReply.created_at)).where(TicketReply.ticket_id == ticket.id, *_requester_reply_filter())
+        )).scalar_one_or_none()
+        updating = bool(last and last > ticket.ai_triaged_at and cfg.enabled)
+    return TicketAssistantRead(
+        active=cfg.enabled and cfg.triage_note,
+        assessment=data["assessment"] if data and cfg.triage_note else None,
+        asked=(data or {}).get("asked") or [],
+        category_set=(data or {}).get("category_set"),
+        title_set=(data or {}).get("title_set"),
+        question_rounds=ticket.ai_question_rounds,
+        max_question_rounds=_MAX_QUESTION_ROUNDS,
+        assessed_at=ticket.ai_triaged_at.isoformat() if ticket.ai_triaged_at else None,
+        updating=updating,
+    )
+
+
+@ticket_router.get("/{ticket_id}/assistant", response_model=TicketAssistantRead)
+async def get_ticket_assistant(
+    ticket_id: int,
+    current_user: User = Depends(require_technician),
+    session: AsyncSession = Depends(get_session),
+) -> TicketAssistantRead:
+    ticket = await session.get(Ticket, ticket_id)
+    if ticket is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Ticket not found")
+    return await _ticket_assistant(session, ticket)
+
+
+@ticket_router.post("/{ticket_id}/assistant/refresh", response_model=TicketAssistantRead)
+async def refresh_ticket_assistant(
+    ticket_id: int,
+    current_user: User = Depends(require_technician),
+    session: AsyncSession = Depends(get_session),
+) -> TicketAssistantRead:
+    """Re-assess now, e.g. after a technician added details. Updates the panel
+    and may set the category, but never sends the requester questions."""
+    _refresh_limiter.check(str(current_user.id))
+    cfg = await load_config(session)
+    if not (cfg.enabled and cfg.configured):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "The Assistant is off.")
+    if await session.get(Ticket, ticket_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Ticket not found")
+    if not await triage_ticket(cfg, ticket_id, allow_questions=False):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            await get_setting("ai_last_error", session) or "The Assistant couldn't run.",
+        )
+    session.expire_all()
+    return await _ticket_assistant(session, await session.get(Ticket, ticket_id))
