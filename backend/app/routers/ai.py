@@ -62,6 +62,7 @@ class AISettingsRead(BaseModel):
     auto_category: bool
     ask_requester: bool
     retitle: bool
+    auto_priority: bool
     configured: bool
     providers: list[dict]
     tokens_today: int
@@ -84,6 +85,7 @@ class AISettingsUpdate(BaseModel):
     auto_category: Optional[bool] = None
     ask_requester: Optional[bool] = None
     retitle: Optional[bool] = None
+    auto_priority: Optional[bool] = None
     # -1 clears a price
     price_input_per_m: Optional[float] = Field(default=None, ge=-1, le=1000)
     price_output_per_m: Optional[float] = Field(default=None, ge=-1, le=1000)
@@ -128,6 +130,7 @@ async def _read(session: AsyncSession) -> AISettingsRead:
         auto_category=cfg.auto_category,
         ask_requester=cfg.ask_requester,
         retitle=cfg.retitle,
+        auto_priority=cfg.auto_priority,
         configured=cfg.configured,
         providers=provider_choices(),
         tokens_today=await tokens_used_today(),
@@ -186,7 +189,7 @@ async def update_ai_settings(
         if value is not None:
             await set_setting(f"ai_{field}", "" if value < 0 else str(value), session)
             changed.append(field)
-    for field in ("auto_category", "ask_requester", "retitle"):
+    for field in ("auto_category", "ask_requester", "retitle", "auto_priority"):
         value = getattr(body, field)
         if value is not None:
             await set_setting(f"ai_{field}", "true" if value else "false", session)
@@ -303,6 +306,8 @@ class TicketAssistantRead(BaseModel):
     category_set: Optional[str]
     # {'from': the requester's original title, 'to': the Assistant's}
     title_set: Optional[dict]
+    # The priority the Assistant set, if it did
+    priority_set: Optional[str]
     question_rounds: int
     max_question_rounds: int
     assessed_at: Optional[str]
@@ -325,6 +330,7 @@ async def _ticket_assistant(session: AsyncSession, ticket: Ticket) -> TicketAssi
         asked=(data or {}).get("asked") or [],
         category_set=(data or {}).get("category_set"),
         title_set=(data or {}).get("title_set"),
+        priority_set=(data or {}).get("priority_set"),
         question_rounds=ticket.ai_question_rounds,
         max_question_rounds=_MAX_QUESTION_ROUNDS,
         assessed_at=ticket.ai_triaged_at.isoformat() if ticket.ai_triaged_at else None,

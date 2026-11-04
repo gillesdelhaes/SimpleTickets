@@ -2143,6 +2143,7 @@ interface AISettings {
   auto_category: boolean
   ask_requester: boolean
   retitle: boolean
+  auto_priority: boolean
   configured: boolean
   providers: AIProvider[]
   tokens_today: number
@@ -2241,7 +2242,7 @@ function AITab() {
   }
 
   // What the Assistant may do: like the main switch, these save on flip
-  type Behaviour = 'triage_note' | 'auto_category' | 'retitle' | 'ask_requester'
+  type Behaviour = 'triage_note' | 'auto_category' | 'retitle' | 'auto_priority' | 'ask_requester'
   function setBehaviour(key: Behaviour, on: boolean) {
     run('toggle', async () => {
       const r = (await api.patch<AISettings>('/admin/ai', { [key]: on })).data
@@ -2270,7 +2271,7 @@ function AITab() {
         <div className="px-[22px] py-3 text-[12.5px] text-ink-2 leading-relaxed border-b border-track">
           The Assistant keeps a summary on every new ticket for technicians — what's known and missing, possible fixes, and a
           suggested priority and category — and updates it each time the requester replies. On its own it only suggests;
-          the switches below let it set the category, rewrite vague titles, and ask the requester for missing details. Ticket text and replies are
+          the switches below let it set the category and priority, rewrite vague titles, and ask the requester for missing details. Ticket text and replies are
           sent to the provider you choose — use a paid plan that doesn't train on your data, or a self-hosted model.
         </div>
 
@@ -2359,6 +2360,10 @@ function AITab() {
 
         <SettingRow label="Improve the title" hint="Replace a vague title (“help”, “laptop”) with a specific one. Stops once a technician edits the title; shows in the history as Assistant.">
           <SettingSwitch on={data.retitle} onChange={v => setBehaviour('retitle', v)} />
+        </SettingRow>
+
+        <SettingRow label="Set the priority" hint="Once the details are in, move a ticket still on the default (medium) to the suggested priority; SLA deadlines follow. Never sets critical — that stays with a person. Leaves any priority a requester or technician chose.">
+          <SettingSwitch on={data.auto_priority} onChange={v => setBehaviour('auto_priority', v)} />
         </SettingRow>
 
         <SettingRow label="Ask the requester" hint="While details are missing, ask the requester in their Slack or email thread, and follow up on their answers — at most 3 rounds, and never once a technician has replied. Doesn't count as the first response.">

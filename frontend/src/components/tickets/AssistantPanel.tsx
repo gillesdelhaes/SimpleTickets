@@ -26,6 +26,7 @@ interface TicketAssistant {
   asked: string[]
   category_set: string | null
   title_set: { from: string; to: string } | null
+  priority_set: Assessment['suggested_priority'] | null
   question_rounds: number
   max_question_rounds: number
   assessed_at: string | null
@@ -66,7 +67,7 @@ export default function AssistantPanel({ ticketId }: { ticketId: number }) {
     onMutate: () => setError(null),
     onSuccess: r => {
       qc.setQueryData(['ticket-assistant', ticketId], r)
-      // It may have set the category or title
+      // It may have set the category, title or priority
       qc.invalidateQueries({ queryKey: ['ticket', ticketId] })
       qc.invalidateQueries({ queryKey: ['ticket-history', ticketId] })
     },
@@ -136,7 +137,12 @@ export default function AssistantPanel({ ticketId }: { ticketId: number }) {
 
           <div className="flex flex-col gap-1 text-[12.5px] text-ink-2 border-t border-track pt-3">
             <span>
-              <b className="text-ink">Priority:</b> {PRIORITY[a.suggested_priority]} suggested
+              <b className="text-ink">Priority:</b>{' '}
+              {data.priority_set && data.priority_set === a.suggested_priority
+                ? `${PRIORITY[data.priority_set]}, set by the Assistant`
+                : data.priority_set
+                  ? `${PRIORITY[data.priority_set]} set by the Assistant · ${PRIORITY[a.suggested_priority]} suggested`
+                  : `${PRIORITY[a.suggested_priority]} suggested`}
               {a.priority_reason && <span className="text-ink-3"> — {a.priority_reason}</span>}
             </span>
             {data.title_set && (

@@ -11,7 +11,7 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from app.ai import client
 from app.ai.client import AIBudgetExceeded, AIError, run_structured
 from app.ai.config import AIConfig
-from app.ai.triage import INSTRUCTIONS, TriageAssessment, build_prompt, format_note, match_category, requester_message, should_ask, title_change
+from app.ai.triage import INSTRUCTIONS, TriageAssessment, build_prompt, format_note, match_category, requester_message, should_ask, title_change, priority_change
 from app.models import Ticket
 
 CATEGORIES = ["Hardware", "Network", "Software"]
@@ -26,7 +26,6 @@ GOOD = {
     "priority_reason": "Fully blocked from work.",
     "suggested_category": "hardware",
     "category_reason": "A device problem.",
-    "language": "English",
 }
 
 
@@ -159,15 +158,16 @@ def test_requester_message_has_only_the_questions():
 
 def test_requester_message_uses_their_language():
     a = TriageAssessment(**{
-        **GOOD, "language": "French",
+        **GOOD,
         "questions_intro": "Merci pour votre demande.\nQuelques précisions nous aideront :",
         "questions_outro": "Répondez simplement ici.",
     })
     msg = requester_message(a)
     assert msg.startswith("Merci pour votre demande. Quelques précisions nous aideront :"), "kept to one line"
     assert msg.endswith("Répondez simplement ici.")
-    # A model that leaves them out still gets a complete message
-    assert requester_message(TriageAssessment(**GOOD)).startswith("Thanks for your request.")
+    # Left out when the model skips them: never filled in with English
+    bare = requester_message(TriageAssessment(**{**GOOD, "questions_intro": "", "questions_outro": "Répondez ici."}))
+    assert bare.startswith("• ") and bare.endswith("Répondez ici.") and "Thanks" not in bare
 
 
 async def test_retired_model_error_keeps_providers_hint(no_db):
@@ -210,8 +210,41 @@ def test_title_rules():
     a = TriageAssessment(**{**GOOD, "suggested_title": '  "Laptop slow since this\nmorning"  '})
     assert a.suggested_title == "Laptop slow since this morning", "one line, no quotes"
     on = cfg(retitle=True)
-    assert title_change(on, "help", a, human_edited=False) == "Laptop slow since this morning"
-    assert title_change(cfg(), "help", a, human_edited=False) is None, "switch is off"
-    assert title_change(on, "help", a, human_edited=True) is None, "a technician's title wins"
-    assert title_change(on, "laptop slow since this morning", a, human_edited=False) is None, "no change"
-    assert title_change(on, "help", TriageAssessment(**GOOD), human_edited=False) is None, "title was fine"
+    ok = dict(title_edited=False, gathering=False)
+    assert title_change(on, "help", a, **ok) == "Laptop slow since this morning"
+    assert title_change(cfg(), "help", a, **ok) is None, "switch is off"
+    assert title_change(on, "help", a, title_edited=True, gathering=False) is None, "only once, and a technician's title wins"
+    assert title_change(on, "help", a, title_edited=False, gathering=True) is None, "wait for the details"
+    assert title_change(on, "laptop slow since this morning", a, **ok) is None, "no change"
+    assert title_change(on, "help", TriageAssessment(**GOOD), **ok) is None, "title was fine"
+
+
+def test_still_gathering():
+    from app.ai.triage import still_gathering
+    asking = cfg(ask_requester=True)
+    t = Ticket(title="x", status="open", source="slack", ai_question_rounds=0)
+    assert still_gathering(asking, t, TriageAssessment(**GOOD)), "not clear yet"
+    clear_with_q = TriageAssessment(**{**GOOD, "clarity": "clear"})
+    assert still_gathering(asking, t, clear_with_q), "clear, but questions can still go out"
+    assert not still_gathering(cfg(), t, clear_with_q), "asking is off: clear is enough"
+    t.ai_question_rounds = 3
+    assert not still_gathering(asking, t, clear_with_q), "out of rounds"
+    assert not still_gathering(asking, Ticket(title="x", status="open", source="slack", ai_question_rounds=0),
+                               TriageAssessment(**{**GOOD, "clarity": "clear", "questions": []})), "nothing left to ask"
+
+
+def test_priority_rules():
+    on = cfg(auto_priority=True)
+    ok = dict(priority_edited=False, gathering=False)
+    high = TriageAssessment(**GOOD)  # suggests high
+    assert priority_change(on, "medium", high, **ok) == "high"
+    assert priority_change(cfg(), "medium", high, **ok) is None, "switch is off"
+    assert priority_change(on, "low", high, **ok) is None, "the requester picked a priority"
+    assert priority_change(on, "medium", high, priority_edited=True, gathering=False) is None, "only once, people win"
+    assert priority_change(on, "medium", high, priority_edited=False, gathering=True) is None, "wait for the details"
+    critical = TriageAssessment(**{**GOOD, "suggested_priority": "critical"})
+    assert priority_change(on, "medium", critical, **ok) == "high", "critical stays human-only"
+    medium = TriageAssessment(**{**GOOD, "suggested_priority": "medium"})
+    assert priority_change(on, "medium", medium, **ok) is None, "no change"
+    low = TriageAssessment(**{**GOOD, "suggested_priority": "low"})
+    assert priority_change(on, "medium", low, **ok) == "low"
