@@ -252,6 +252,10 @@ async def transition_status(ticket: Ticket, new_status: str, session: AsyncSessi
     stops = _stops_clock(new_status, cfgs)
 
     ticket.status = new_status
+    # Only true while the ticket stays as its requester left it (or moves on
+    # to closed); the App Home handler sets it again after calling this
+    if not (was_resolved and now_resolved):
+        ticket.resolved_by_requester = False
 
     if now_resolved and not was_resolved:
         ticket.resolved_at = now

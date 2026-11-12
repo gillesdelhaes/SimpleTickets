@@ -442,15 +442,21 @@ async def get_by_category(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     start, end = await _date_range(from_date, to_date, session)
+    # Tickets the requester marked fixed themselves carry no category by
+    # design; keep them apart from work nobody categorised
+    label = func.coalesce(
+        Category.name,
+        case((Ticket.resolved_by_requester == True, "Resolved by requester"), else_="Uncategorised"),  # noqa: E712
+    )
     stmt = (
         select(
-            func.coalesce(Category.name, "Uncategorised").label("category"),
+            label.label("category"),
             func.count().label("count"),
         )
         .select_from(Ticket)
         .outerjoin(Category, Ticket.category_id == Category.id)
         .where(Ticket.created_at >= start, Ticket.created_at <= end)
-        .group_by(Category.name)
+        .group_by(text("1"))  # the label; by position, as it holds bound values
         .order_by(func.count().desc())
     )
     if assignee_id is not None:

@@ -111,6 +111,10 @@ class Ticket(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow, index=True)
     updated_at: datetime = Field(default_factory=utcnow)
     resolved_at: Optional[datetime] = Field(default=None)
+    # The requester marked it fixed themselves (Slack App Home), so it was
+    # resolved without the category and assignee technicians owe. Cleared by
+    # transition_status on any later status change, e.g. a reopen.
+    resolved_by_requester: bool = Field(default=False)
     # First-response SLA — deadline set at creation, timestamp set on first public tech reply
     first_response_deadline: Optional[datetime] = Field(default=None)
     first_responded_at: Optional[datetime] = Field(default=None)

@@ -82,6 +82,168 @@ async def _fetch_categories() -> list[dict]:
                 for c in result.scalars().all()]
 
 
+# ── App Home: Resolve ──────────────────────────────────────────────────────────
+#
+# The button sits on a person's own tickets, so whoever clicks is that
+# ticket's requester. What happens depends on whether they're also staff:
+#
+#   • Requester (no SimpleTickets account): "never mind, it's fixed". It goes
+#     through without the category and assignee the web asks of technicians —
+#     they can't sensibly pick either. The ticket is marked
+#     resolved_by_requester, so reports can tell it from uncategorised work,
+#     and the resolution is credited to nobody unless someone was assigned.
+#   • Technician or admin (linked account): the web's rules apply. Unassigned
+#     → it's assigned to them (they're the one resolving it); no category →
+#     a small modal asks for one first.
+#
+# Either way the survey only goes out if someone else worked on the ticket:
+# asking a person to rate a ticket they closed themselves, untouched, is noise.
+
+NEEDS_CATEGORY = "needs_category"
+REQUESTER_LABEL = "Requester"
+
+
+def wants_csat(ticket: Ticket, resolver_id: int | None) -> bool:
+    """After a requester resolves their own ticket: was anyone else involved?"""
+    assigned_to_someone_else = ticket.assignee_id is not None and ticket.assignee_id != resolver_id
+    return assigned_to_someone_else or ticket.first_responded_at is not None
+
+
+def _resolve_category_modal(ticket_id: int, tab: str, category_options: list[dict]) -> dict:
+    return {
+        "type": "modal",
+        "callback_id": "home_resolve_modal",
+        "private_metadata": json.dumps({"tid": ticket_id, "tab": tab}),
+        "title": {"type": "plain_text", "text": "Resolve ticket"},
+        "submit": {"type": "plain_text", "text": "Resolve"},
+        "close": {"type": "plain_text", "text": "Cancel"},
+        "blocks": [{
+            "type": "input",
+            "block_id": "category_block",
+            "label": {"type": "plain_text", "text": "Category"},
+            "hint": {"type": "plain_text", "text": "Every resolved ticket needs one, for reporting."},
+            "element": {
+                "type": "static_select",
+                "action_id": "category_select",
+                "placeholder": {"type": "plain_text", "text": "Select a category"},
+                "options": category_options[:100],  # Slack's limit
+            },
+        }],
+    }
+
+
+async def resolve_from_home(
+    workspace_id: int, slack_user_id: str, ticket_id: int, *, category_id: int | None = None,
+) -> str | None:
+    """Resolve a ticket from its requester's App Home. Returns NEEDS_CATEGORY
+    when a technician must pick a category first (nothing is changed then),
+    "resolved" when it was resolved, None when there was nothing to do."""
+    from app.services.sla import transition_status
+    from app.slack.service import send_csat_dm
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    async with AsyncSessionLocal() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        if not ticket or ticket.workspace_id != workspace_id:
+            return None
+
+        statuses = (await session.execute(select(TicketStatusConfig))).scalars().all()
+        # The first active resolved status
+        resolved_cfg = min(
+            (s for s in statuses if s.is_resolved_state and not s.is_archived),
+            key=lambda s: s.sort_order, default=None,
+        )
+        resolved_status = resolved_cfg.name if resolved_cfg else "resolved"
+        # Skip if the ticket is already in ANY resolved state (e.g. already
+        # 'closed') — checking only the first one let a re-click re-fire
+        # history, notifications, and CSAT.
+        resolved_names = {s.name for s in statuses if s.is_resolved_state} or {"resolved", "closed"}
+        old_status = ticket.status
+        if old_status in resolved_names:
+            return None
+
+        staff = await get_user_by_slack_id(session, workspace_id, slack_user_id) if slack_user_id else None
+        # Only the ticket's Slack submitter or a linked DB user may resolve
+        # via App Home (matches the reply handler's authorization).
+        is_submitter = bool(ticket.slack_submitter_id) and ticket.slack_submitter_id == slack_user_id
+        if not is_submitter and staff is None:
+            logger.warning(
+                "home_resolve: unauthorized resolve attempt by %s on ticket %d", slack_user_id, ticket_id,
+            )
+            return None
+
+        changes: dict = {}
+        category_name = None
+        if staff is not None:
+            if ticket.category_id is None:
+                category = None
+                if category_id is not None:
+                    category = await session.get(Category, category_id)
+                    if category is not None and category.is_archived:
+                        category = None
+                if category is None:
+                    any_category = (await session.execute(
+                        select(Category.id).where(Category.is_archived == False).limit(1)  # noqa: E712
+                    )).scalar_one_or_none()
+                    if any_category is not None:
+                        return NEEDS_CATEGORY
+                else:
+                    ticket.category_id = category.id
+                    category_name = category.name
+                    changes["category_id"] = (None, str(category.id))
+                    session.add(TicketHistory(
+                        ticket_id=ticket_id, actor_id=staff.id, field_changed="category_id",
+                        old_value=None, new_value=str(category.id), created_at=now,
+                    ))
+            if ticket.assignee_id is None:
+                ticket.assignee_id = staff.id
+                changes["assignee_id"] = (None, str(staff.id))
+                session.add(TicketHistory(
+                    ticket_id=ticket_id, actor_id=staff.id, field_changed="assignee_id",
+                    old_value=None, new_value=str(staff.id), created_at=now,
+                ))
+            actor_name = staff.name or staff.email
+        else:
+            actor_name = ticket.linked_slack_name or ticket.slack_submitter_name or REQUESTER_LABEL
+
+        # Status, resolved_at and the SLA clock (stops on resolve)
+        await transition_status(ticket, resolved_status, session)
+        # After transition_status, which clears it whenever the status changes
+        ticket.resolved_by_requester = staff is None
+        ticket.updated_at = now
+        session.add(TicketHistory(
+            ticket_id=ticket_id,
+            actor_id=staff.id if staff else None,
+            actor_label=None if staff else REQUESTER_LABEL,
+            field_changed="status",
+            old_value=old_status,
+            new_value=resolved_status,
+            created_at=now,
+        ))
+        changes["status"] = (old_status, resolved_status)
+        survey = bool(resolved_cfg and resolved_cfg.sends_csat) and wants_csat(ticket, staff.id if staff else None)
+        await session.commit()
+
+        # Notify Slack thread — no self-notification, user did this themselves
+        try:
+            await post_ticket_update_to_slack(
+                ticket, changes, actor_name,
+                assignee_name=actor_name if "assignee_id" in changes else None,
+                category_name=category_name,
+                notify_submitter=False,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("home_resolve: thread update failed for ticket %d", ticket_id)
+        if survey:
+            try:
+                await send_csat_dm(ticket)
+            except Exception:  # noqa: BLE001
+                logger.exception("home_resolve: CSAT DM failed for ticket %d", ticket_id)
+
+        logger.info("Ticket %s resolved from App Home by %s", ticket.display_id, actor_name)
+        return "resolved"
+
+
 async def _slack_display_name(client: Any, slack_user_id: str) -> str:
     """Fetch Slack display name for a user ID. Falls back to the ID itself."""
     try:
@@ -936,6 +1098,15 @@ def register_handlers(app: Any, workspace: SlackWorkspace) -> None:
 
     # ── App Home: resolve ticket ───────────────────────────────────────────────
 
+    async def _refresh_home(client: Any, slack_user_id: str, tab: str) -> None:
+        if not slack_user_id:
+            return
+        try:
+            home_view = await build_home_view(slack_user_id, client, workspace_id, tab=tab)
+            await client.views_publish(user_id=slack_user_id, view=home_view)
+        except Exception:  # noqa: BLE001
+            pass
+
     @app.action(re.compile(r"^home_resolve_\d+$"))
     async def handle_home_resolve(ack: Any, body: dict, client: Any) -> None:
         await ack()
@@ -948,99 +1119,36 @@ def register_handlers(app: Any, workspace: SlackWorkspace) -> None:
         except Exception:  # noqa: BLE001
             return
 
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
-
         try:
-            async with AsyncSessionLocal() as session:
-                ticket = await session.get(Ticket, ticket_id)
-                if not ticket or ticket.workspace_id != workspace_id:
-                    return
-
-                # Find the first resolved status
-                res_result = await session.execute(
-                    select(TicketStatusConfig)
-                    .where(
-                        TicketStatusConfig.is_resolved_state == True,  # noqa: E712
-                        TicketStatusConfig.is_archived == False,  # noqa: E712
-                    )
-                    .order_by(TicketStatusConfig.sort_order)
-                    .limit(1)
+            outcome = await resolve_from_home(workspace_id, slack_user_id, ticket_id)
+            if outcome == NEEDS_CATEGORY:
+                # A technician owes a category, as on the web: ask, then resolve
+                await client.views_open(
+                    trigger_id=body.get("trigger_id"),
+                    view=_resolve_category_modal(ticket_id, tab, await _fetch_categories()),
                 )
-                resolved_cfg = res_result.scalar_one_or_none()
-                resolved_status = resolved_cfg.name if resolved_cfg else "resolved"
-
-                # Skip if the ticket is already in ANY resolved state (e.g. already
-                # 'closed') — checking only the first one let a re-click re-fire
-                # history, notifications, and CSAT.
-                resolved_names_result = await session.execute(
-                    select(TicketStatusConfig.name).where(
-                        TicketStatusConfig.is_resolved_state == True,  # noqa: E712
-                    )
-                )
-                resolved_names = {r[0] for r in resolved_names_result.all()} or {"resolved", "closed"}
-
-                old_status = ticket.status
-                if old_status in resolved_names:
-                    return  # already resolved/closed
-
-                actor_name = "User (Slack)"
-                db_user = await get_user_by_slack_id(session, workspace_id, slack_user_id) if slack_user_id else None
-                if db_user:
-                    actor_name = db_user.name or db_user.email
-
-                # Only the ticket's Slack submitter or a linked DB user may resolve
-                # via App Home (matches the reply handler's authorization).
-                is_submitter = ticket.slack_submitter_id and ticket.slack_submitter_id == slack_user_id
-                if not is_submitter and db_user is None:
-                    logger.warning(
-                        "home_resolve: unauthorized resolve attempt by %s on ticket %d",
-                        slack_user_id, ticket_id,
-                    )
-                    return
-
-                # Status, resolved_at and the SLA clock (stops on resolve)
-                from app.services.sla import transition_status
-                await transition_status(ticket, resolved_status, session)
-                session.add(
-                    TicketHistory(
-                        ticket_id=ticket_id,
-                        actor_id=db_user.id if db_user else None,
-                        field_changed="status",
-                        old_value=old_status,
-                        new_value=resolved_status,
-                        created_at=now,
-                    )
-                )
-                await session.commit()
-
-                # Notify Slack thread — no self-notification, user did this themselves
-                await post_ticket_update_to_slack(
-                    ticket,
-                    {"status": (old_status, resolved_status)},
-                    actor_name,
-                    notify_submitter=False,
-                )
-
-                # Send CSAT DM if this status triggers it
-                if resolved_cfg and resolved_cfg.sends_csat:
-                    try:
-                        from app.slack.service import send_csat_dm
-                        await send_csat_dm(ticket)
-                    except Exception:  # noqa: BLE001
-                        logger.exception("home_resolve: CSAT DM failed for ticket %d", ticket_id)
-
-                logger.info("Ticket %s resolved from App Home by %s", ticket.display_id, actor_name)
-
+                return
         except Exception:  # noqa: BLE001
             logger.exception("home_resolve: failed for ticket %d", ticket_id)
 
         # Refresh home — go to resolved tab so user can see it
-        if slack_user_id:
-            try:
-                home_view = await build_home_view(slack_user_id, client, workspace_id, tab="resolved")
-                await client.views_publish(user_id=slack_user_id, view=home_view)
-            except Exception:  # noqa: BLE001
-                pass
+        await _refresh_home(client, slack_user_id, "resolved")
+
+    @app.view("home_resolve_modal")
+    async def handle_home_resolve_modal(ack: Any, body: dict, client: Any, view: dict) -> None:
+        await ack()
+        slack_user_id: str = body.get("user", {}).get("id", "")
+        try:
+            ticket_id = int(json.loads(view.get("private_metadata", "{}"))["tid"])
+            selected = view["state"]["values"]["category_block"]["category_select"]["selected_option"]
+            category_id = int(selected["value"])
+        except Exception:  # noqa: BLE001
+            return
+        try:
+            await resolve_from_home(workspace_id, slack_user_id, ticket_id, category_id=category_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("home_resolve: failed for ticket %d", ticket_id)
+        await _refresh_home(client, slack_user_id, "resolved")
 
     # ── CSAT 👍 / 👎 responses ────────────────────────────────────────────────
 
