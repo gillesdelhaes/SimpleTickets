@@ -2010,6 +2010,17 @@ function DataHealthTab() {
 
 // ── Backup tab ────────────────────────────────────────────────────────────────
 
+interface RestoreResult {
+  ok: boolean
+  restored_files: number
+  // Integrations whose secrets must be re-entered, with the tab to do it in
+  reconnect?: { tab: Tab; label: string; detail: string }[]
+}
+
+// Never in a backup, so never restored: re-entered by an admin afterwards.
+// Keeping them out means a leaked backup file holds no working credentials.
+const NOT_IN_BACKUPS = 'Slack tokens, the Gmail connection and the AI API key'
+
 function BackupTab() {
   const [downloading, setDownloading] = useState(false)
   const [downloadError, setDownloadError] = useState<string | null>(null)
@@ -2017,7 +2028,7 @@ function BackupTab() {
   const [file, setFile] = useState<File | null>(null)
   const [confirmed, setConfirmed] = useState(false)
   const [restoring, setRestoring] = useState(false)
-  const [restoreResult, setRestoreResult] = useState<{ ok: boolean; restored_files: number } | null>(null)
+  const [restoreResult, setRestoreResult] = useState<RestoreResult | null>(null)
   const [restoreError, setRestoreError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -2038,7 +2049,7 @@ function BackupTab() {
     setRestoring(true); setRestoreError(null); setRestoreResult(null)
     try {
       const form = new FormData(); form.append('file', file)
-      const res = await api.post<{ ok: boolean; restored_files: number }>('/admin/restore', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+      const res = await api.post<RestoreResult>('/admin/restore', form, { headers: { 'Content-Type': 'multipart/form-data' } })
       setRestoreResult(res.data); setFile(null); setConfirmed(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
     } catch (err: any) {
@@ -2057,7 +2068,7 @@ function BackupTab() {
         <CardHeader><SectionLabel>Export backup</SectionLabel></CardHeader>
         <div style={{ padding: '18px 22px' }}>
           <p className="text-[13px] text-ink-2 m-0 mb-4 leading-relaxed">
-            Downloads a <span className="font-mono text-[12px] px-1 py-px rounded bg-field text-ink">.zip</span> with all tickets, replies, users, categories, SLA policies, settings, and attachments. Slack credentials and JWT secret are excluded.
+            Downloads a <span className="font-mono text-[12px] px-1 py-px rounded bg-field text-ink">.zip</span> with all tickets, replies, users, categories, SLA policies, settings, and attachments. Secrets are left out — {NOT_IN_BACKUPS} — so the file holds no working credentials.
           </p>
           <button className="btn" onClick={handleDownload} disabled={downloading} style={downloading ? { opacity: 0.7, cursor: 'wait' } : undefined}>
             {downloading ? <><Spin />&nbsp;Preparing…</> : 'Download backup'}
@@ -2074,7 +2085,7 @@ function BackupTab() {
             className="rounded-block px-3.5 py-2.5 mb-4 text-[13px] leading-relaxed text-danger-ink"
             style={{ background: 'var(--danger-bg)' }}
           >
-            <strong>This permanently overwrites all data.</strong> Slack credentials and the JWT secret are not affected — re-enter them after restore.
+            <strong>This permanently overwrites all data.</strong> Backups don't contain secrets, so afterwards you'll re-enter {NOT_IN_BACKUPS}. Everyone stays signed in.
           </div>
           <div
             onDragOver={e => { e.preventDefault(); setDragOver(true) }}
@@ -2112,6 +2123,20 @@ function BackupTab() {
           {restoreResult && (
             <div className="mt-3.5 rounded-block px-3.5 py-2.5 text-[13px]" style={{ background: 'var(--brand-tint)', color: 'var(--brand-ink)' }}>
               Restore complete. {restoreResult.restored_files} attachment file{restoreResult.restored_files !== 1 ? 's' : ''} restored. Reload to see updated data.
+            </div>
+          )}
+          {restoreResult?.reconnect && restoreResult.reconnect.length > 0 && (
+            <div className="mt-2.5 rounded-block px-3.5 py-2.5 text-[13px] leading-relaxed text-ink"
+              style={{ background: 'var(--warn-bg)', borderLeft: '3px solid var(--warn-ink)' }}>
+              <div className="font-semibold mb-1">Set these up again</div>
+              <ul className="m-0 pl-4">
+                {restoreResult.reconnect.map(r => (
+                  <li key={r.tab}>
+                    {/* A full load, so the restored settings are what the tab shows */}
+                    <a href={`/admin/settings?tab=${r.tab}`} className="font-semibold underline">{r.label}</a>: {r.detail}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
           {restoreError && (

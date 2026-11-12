@@ -23,7 +23,7 @@ from app.auth.deps import require_admin
 from app.config import settings, settings_manager
 from app.services.audit import write_audit
 from app.services.rate_limit import RateLimiter
-from app.services.settings_service import encrypt_value
+from app.services.settings_service import SECRET_SETTINGS, encrypt_value
 from app.utils import client_ip
 from app.database import get_session
 from app.models.app_setting import AppSetting
@@ -60,11 +60,7 @@ BACKUP_VERSION = 1
 # The Gmail grant and client secret are left out too: they're encrypted with
 # this instance's master key, so they'd be useless elsewhere — reconnect the
 # mailbox after a restore.
-_SECRET_KEYS = frozenset({
-    "jwt_secret", "app_secret_key", "gmail_client_secret", "gmail_refresh_token",
-    # The AI provider key is re-entered after a restore, like the others
-    "ai_api_key",
-})
+_SECRET_KEYS = frozenset({"app_secret_key", *SECRET_SETTINGS})
 
 # Slack workspace columns never exported — re-entered per workspace after restore.
 _WORKSPACE_SECRET_COLS = ("bot_token", "app_token", "signing_secret")
@@ -120,6 +116,35 @@ def _deserialize_row(row: dict, table_name: str) -> dict:
             out[k] = dt.replace(tzinfo=None)
         else:
             out[k] = v
+    return out
+
+
+def to_reconnect(tables: dict[str, list[dict]]) -> list[dict]:
+    """What the admin must set up again after restoring these tables: the
+    secrets backups never carry, for the integrations the backup had set up.
+    Each item names the Settings tab to do it in."""
+    from app.ai.config import PROVIDERS
+
+    settings_rows = {r.get("key"): r.get("value") for r in tables.get("app_settings", [])}
+    out: list[dict] = []
+    workspaces = tables.get("slack_workspaces", [])
+    if workspaces:
+        n = len(workspaces)
+        out.append({
+            "tab": "slack", "label": "Slack",
+            "detail": f"{n} workspace{'s are' if n != 1 else ' is'} switched off. Re-enter each one's tokens, then switch it back on.",
+        })
+    if settings_rows.get("gmail_address"):
+        out.append({
+            "tab": "google", "label": "Email channel",
+            "detail": f"Reconnect {settings_rows['gmail_address']} — no email is read or sent until then.",
+        })
+    provider = PROVIDERS.get(settings_rows.get("ai_provider") or "")
+    if provider and provider["needs_key"]:
+        out.append({
+            "tab": "ai", "label": "AI assistant",
+            "detail": "Re-enter the API key — the Assistant is paused until then.",
+        })
     return out
 
 
@@ -331,6 +356,11 @@ async def restore_backup(
             key="jwt_secret", value=encrypt_value(settings_manager.jwt_secret),
             is_secret=True, group_name="app", updated_at=now,
         ))
+        # The other secret rows come back empty but still marked secret, so
+        # whatever the admin re-enters (Gmail, AI key) is stored encrypted
+        for key, group in SECRET_SETTINGS.items():
+            if key != "jwt_secret":
+                session.add(AppSetting(key=key, value=None, is_secret=True, group_name=group, updated_at=now))
 
         # Verify the restored data includes at least one *active* admin — a backup
         # whose only admins are deactivated would lock everyone out just as surely
@@ -407,4 +437,4 @@ async def restore_backup(
     )
     await session.commit()
 
-    return {"ok": True, "restored_files": restored_files}
+    return {"ok": True, "restored_files": restored_files, "reconnect": to_reconnect(tables)}

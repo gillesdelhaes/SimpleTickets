@@ -58,6 +58,19 @@ def decrypt_value(token: str) -> str:
         return ""
 
 
+# ── Which settings are secret ──────────────────────────────────────────────────
+#
+# Known here, not only on the row: a row can go missing (a restore truncates
+# app_settings and backups never carry these), and set_setting used to
+# re-create it as plaintext. Key → settings group, for a re-created row.
+SECRET_SETTINGS: dict[str, str] = {
+    "jwt_secret": "app",
+    "gmail_client_secret": "email",
+    "gmail_refresh_token": "email",
+    "ai_api_key": "ai",
+}
+
+
 # ── CRUD ───────────────────────────────────────────────────────────────────────
 
 
@@ -82,13 +95,33 @@ async def set_setting(key: str, value: str, session: AsyncSession) -> None:
     row = await session.get(AppSetting, key)
     if row is None:
         # Create with sensible defaults — caller must ensure key is known
-        row = AppSetting(key=key, is_secret=False, group_name="app")
+        row = AppSetting(key=key, is_secret=key in SECRET_SETTINGS, group_name=SECRET_SETTINGS.get(key, "app"))
         session.add(row)
+    elif key in SECRET_SETTINGS and not row.is_secret:
+        row.is_secret = True  # a row left plaintext by an older restore
 
     stored = encrypt_value(value) if row.is_secret else value
     row.value = stored
     row.updated_at = utcnow()
     # No commit here — caller owns the transaction
+
+
+async def encrypt_plaintext_secrets(session: AsyncSession) -> list[str]:
+    """Encrypt secret settings stored as plaintext — left that way by a
+    restore before set_setting knew which keys are secret. Run at startup;
+    values are kept, so nothing needs re-entering. Returns the keys fixed."""
+    rows = (await session.execute(
+        select(AppSetting).where(AppSetting.key.in_(SECRET_SETTINGS), AppSetting.is_secret == False)  # noqa: E712
+    )).scalars().all()
+    for row in rows:
+        if row.value is not None:
+            row.value = encrypt_value(row.value)
+        row.is_secret = True
+        row.updated_at = utcnow()
+    if rows:
+        await session.commit()
+        logger.warning("Encrypted secret settings stored as plaintext: %s", ", ".join(r.key for r in rows))
+    return [r.key for r in rows]
 
 
 async def get_all_settings(session: AsyncSession) -> dict[str, str]:

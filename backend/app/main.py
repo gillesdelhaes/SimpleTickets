@@ -29,6 +29,7 @@ from app.routers import (
     tickets,
 )
 from app.routers import setup, settings as settings_router, slack_users, slack_workspaces
+from app.services.settings_service import encrypt_plaintext_secrets
 from app.services.sla import start_scheduler, stop_scheduler
 
 # No logging was configured anywhere — every logger.info()/logger.warning() call
@@ -49,6 +50,8 @@ for _noisy in ("httpx", "httpcore", "aiohttp.client", "apscheduler"):
 async def lifespan(app: FastAPI):
     # Warm the settings cache from DB before serving any request
     async with AsyncSessionLocal() as session:
+        # Before warm(): it must read these through their decryption
+        await encrypt_plaintext_secrets(session)
         await settings_manager.warm(session)
         await settings_manager.ensure_jwt_secret(session)
 
