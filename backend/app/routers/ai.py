@@ -26,7 +26,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.client import AIError, list_models, provider_choices, tokens_used_today, usage_summary
 from app.ai.config import PROVIDERS, AIConfig, load_config
-from app.ai.triage import _MAX_QUESTION_ROUNDS, _requester_reply_filter, assess, stored_assessment, triage_ticket
+from app.ai.triage import (
+    DEFAULT_INSTRUCTIONS, FIXED_RULES, MAX_INSTRUCTIONS_CHARS, _MAX_QUESTION_ROUNDS, _requester_reply_filter,
+    assess, stored_assessment, triage_ticket,
+)
 from app.auth.deps import require_admin, require_technician
 from app.database import get_session
 from app.models import Ticket, TicketReply
@@ -58,6 +61,12 @@ class AISettingsRead(BaseModel):
     api_key_set: bool
     daily_token_budget: int
     company_context: str
+    # The base prompt in use: the admin's, or the built-in one
+    instructions: str
+    instructions_custom: bool
+    default_instructions: str
+    # Always sent after the base prompt; shown read-only
+    fixed_rules: str
     triage_note: bool
     auto_category: bool
     ask_requester: bool
@@ -81,6 +90,8 @@ class AISettingsUpdate(BaseModel):
     clear_api_key: bool = False
     daily_token_budget: Optional[int] = Field(default=None, ge=0, le=100_000_000)
     company_context: Optional[str] = Field(default=None, max_length=4000)
+    # Blank, or the built-in text unchanged, goes back to the built-in prompt
+    instructions: Optional[str] = Field(default=None, max_length=MAX_INSTRUCTIONS_CHARS)
     triage_note: Optional[bool] = None
     auto_category: Optional[bool] = None
     ask_requester: Optional[bool] = None
@@ -106,8 +117,16 @@ class AITryRequest(BaseModel):
     base_url: Optional[str] = Field(default=None, max_length=500)
     api_key: Optional[str] = Field(default=None, max_length=1000)
     company_context: Optional[str] = Field(default=None, max_length=4000)
+    instructions: Optional[str] = Field(default=None, max_length=MAX_INSTRUCTIONS_CHARS)
     title: Optional[str] = Field(default=None, max_length=255)
     description: Optional[str] = Field(default=None, max_length=8000)
+
+
+def _custom_instructions(text: str) -> str:
+    """What to store: empty when it's blank or just the built-in prompt, so
+    installs that never changed it keep following the built-in one."""
+    text = text.replace("\r\n", "\n").strip()
+    return "" if text == DEFAULT_INSTRUCTIONS.strip() else text
 
 
 def _check_base_url(url: str) -> None:
@@ -126,6 +145,10 @@ async def _read(session: AsyncSession) -> AISettingsRead:
         api_key_set=bool(cfg.api_key),
         daily_token_budget=cfg.daily_token_budget,
         company_context=cfg.company_context,
+        instructions=cfg.instructions or DEFAULT_INSTRUCTIONS,
+        instructions_custom=bool(cfg.instructions),
+        default_instructions=DEFAULT_INSTRUCTIONS,
+        fixed_rules=FIXED_RULES,
         triage_note=cfg.triage_note,
         auto_category=cfg.auto_category,
         ask_requester=cfg.ask_requester,
@@ -181,6 +204,9 @@ async def update_ai_settings(
     if body.company_context is not None:
         await set_setting("ai_company_context", body.company_context.strip(), session)
         changed.append("company_context")
+    if body.instructions is not None:
+        await set_setting("ai_instructions", _custom_instructions(body.instructions), session)
+        changed.append("instructions")
     if body.triage_note is not None:
         await set_setting("ai_triage_note", "true" if body.triage_note else "false", session)
         changed.append("triage_note")
@@ -240,6 +266,7 @@ async def _try_config(body: AITryRequest, session: AsyncSession) -> AIConfig:
         daily_token_budget=saved.daily_token_budget,
         company_context=(body.company_context if body.company_context is not None else saved.company_context).strip(),
         triage_note=saved.triage_note,
+        instructions=_custom_instructions(body.instructions) if body.instructions is not None else saved.instructions,
     )
 
 

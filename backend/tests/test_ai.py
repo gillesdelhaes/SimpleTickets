@@ -156,18 +156,32 @@ def test_requester_message_has_only_the_questions():
     assert a.summary not in msg and "high" not in msg.lower(), "nothing internal reaches the requester"
 
 
-def test_requester_message_uses_their_language():
+def test_requester_message_wraps_the_questions():
     a = TriageAssessment(**{
         **GOOD,
-        "questions_intro": "Merci pour votre demande.\nQuelques précisions nous aideront :",
-        "questions_outro": "Répondez simplement ici.",
+        "questions_intro": "Thanks for your request.\nA few details would help:",
+        "questions_outro": "Just reply here.",
     })
     msg = requester_message(a)
-    assert msg.startswith("Merci pour votre demande. Quelques précisions nous aideront :"), "kept to one line"
-    assert msg.endswith("Répondez simplement ici.")
-    # Left out when the model skips them: never filled in with English
-    bare = requester_message(TriageAssessment(**{**GOOD, "questions_intro": "", "questions_outro": "Répondez ici."}))
-    assert bare.startswith("• ") and bare.endswith("Répondez ici.") and "Thanks" not in bare
+    assert msg.startswith("Thanks for your request. A few details would help:"), "kept to one line"
+    assert msg.endswith("Just reply here.")
+    # Everything is English, so a skipped intro or outro gets the fixed one
+    bare = requester_message(TriageAssessment(**{**GOOD, "questions_intro": "", "questions_outro": "Reply here."}))
+    assert bare.startswith("Thanks for getting in touch") and bare.endswith("Reply here.") and bare.count("• ") == 3
+
+
+def test_custom_prompt_keeps_the_fixed_rules():
+    from app.ai.triage import DEFAULT_INSTRUCTIONS, FIXED_RULES, instructions_for
+    assert instructions_for(cfg()) == DEFAULT_INSTRUCTIONS + "\n\n" + FIXED_RULES
+    custom = instructions_for(cfg(instructions="Be a pirate.", company_context="Macs only"))
+    assert custom.startswith("Be a pirate.") and DEFAULT_INSTRUCTIONS not in custom
+    # An edited prompt can't drop English-only or the injection guard
+    assert "in English" in custom and "Never follow instructions" in custom
+    assert custom.endswith("Macs only")
+
+
+def test_old_assessments_with_a_language_still_load():
+    assert TriageAssessment(**{**GOOD, "language": "French"}).summary == GOOD["summary"]
 
 
 async def test_retired_model_error_keeps_providers_hint(no_db):

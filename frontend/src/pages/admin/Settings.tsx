@@ -2139,6 +2139,10 @@ interface AISettings {
   api_key_set: boolean
   daily_token_budget: number
   company_context: string
+  instructions: string
+  instructions_custom: boolean
+  default_instructions: string
+  fixed_rules: string
   triage_note: boolean
   auto_category: boolean
   ask_requester: boolean
@@ -2165,7 +2169,7 @@ interface AIUsage {
   recent: { at: string; feature: string; ticket_id: number | null; model: string; tokens: number; duration_ms: number; ok: boolean; error: string | null }[]
 }
 
-type AIForm = { provider: string; model: string; base_url: string; api_key: string; company_context: string; daily_token_budget: string; price_input_per_m: string; price_output_per_m: string }
+type AIForm = { provider: string; model: string; base_url: string; api_key: string; company_context: string; instructions: string; daily_token_budget: string; price_input_per_m: string; price_output_per_m: string }
 
 function AITab() {
   const qc = useQueryClient()
@@ -2196,6 +2200,7 @@ function AITab() {
     base_url: data.base_url ?? '',
     api_key: '',
     company_context: data.company_context,
+    instructions: data.instructions,
     daily_token_budget: String(data.daily_token_budget),
     price_input_per_m: data.price_input_per_m != null ? String(data.price_input_per_m) : '',
     price_output_per_m: data.price_output_per_m != null ? String(data.price_output_per_m) : '',
@@ -2212,6 +2217,7 @@ function AITab() {
     base_url: form.base_url,
     api_key: form.api_key,
     company_context: form.company_context,
+    instructions: form.instructions,
   }
 
   async function run(label: string, fn: () => Promise<void>) {
@@ -2227,6 +2233,7 @@ function AITab() {
       if (edits.base_url !== undefined) body.base_url = edits.base_url
       if (edits.api_key) body.api_key = edits.api_key
       if (edits.company_context !== undefined) body.company_context = edits.company_context
+      if (edits.instructions !== undefined) body.instructions = edits.instructions
       if (edits.daily_token_budget !== undefined) body.daily_token_budget = Math.max(0, parseInt(edits.daily_token_budget, 10) || 0)
       // Blank clears a price (sent as -1)
       for (const k of ['price_input_per_m', 'price_output_per_m'] as const) {
@@ -2345,6 +2352,25 @@ function AITab() {
           </SettingRow>
         )}
 
+        <SettingRow label="Base prompt" hint="What the Assistant is told on every run. Changes apply from the next ticket it assesses — no deploy. Try it below before saving.">
+          <div className="flex flex-col gap-2" style={{ maxWidth: 640 }}>
+            <textarea className="input font-mono" rows={14} maxLength={8000} spellCheck={false}
+              style={{ resize: 'vertical', fontSize: 12, lineHeight: 1.5 }}
+              value={form.instructions} onChange={e => set('instructions', e.target.value)} />
+            <div className="flex items-center gap-3 flex-wrap text-[12px] text-ink-3">
+              <span>{form.instructions.trim() === data.default_instructions.trim() || !form.instructions.trim() ? 'Built-in prompt' : 'Custom prompt'} · {form.instructions.length.toLocaleString()} / 8,000</span>
+              <button className="btn ghost sm" disabled={busy !== null || form.instructions.trim() === data.default_instructions.trim()}
+                onClick={() => set('instructions', data.default_instructions)}>
+                Reset to default
+              </button>
+            </div>
+            <details className="text-[12px] text-ink-3">
+              <summary className="cursor-pointer">Always added after it (not editable)</summary>
+              <pre className="font-mono whitespace-pre-wrap break-words mt-2 mb-0" style={{ fontSize: 11.5, lineHeight: 1.5 }}>{data.fixed_rules}</pre>
+            </details>
+          </div>
+        </SettingRow>
+
         <SettingRow label="About your IT" hint="Optional context so questions fit, e.g. “Google Workspace, Slack, MacBooks managed by Jamf, VPN is Tailscale”.">
           <textarea className="input" rows={3} maxLength={4000} style={{ maxWidth: 520, resize: 'vertical' }}
             value={form.company_context} onChange={e => set('company_context', e.target.value)} />
@@ -2366,7 +2392,7 @@ function AITab() {
           <SettingSwitch on={data.auto_priority} onChange={v => setBehaviour('auto_priority', v)} />
         </SettingRow>
 
-        <SettingRow label="Ask the requester" hint="While details are missing, ask the requester in their Slack or email thread, and follow up on their answers — at most 3 rounds, and never once a technician has replied. Doesn't count as the first response.">
+        <SettingRow label="Ask the requester" hint="While details are missing, ask the requester in their Slack or email thread — always in English — and follow up on their answers — at most 3 rounds, and never once a technician has replied. Doesn't count as the first response.">
           <SettingSwitch on={data.ask_requester} onChange={v => setBehaviour('ask_requester', v)} />
         </SettingRow>
 

@@ -19,7 +19,7 @@ PROVIDERS: dict[str, dict] = {
     },
 }
 
-DEFAULT_DAILY_TOKEN_BUDGET = 200_000
+DEFAULT_DAILY_TOKEN_BUDGET = 10_000_000
 
 
 @dataclass
@@ -37,6 +37,8 @@ class AIConfig:
     ask_requester: bool = False   # send the requester its questions on unclear tickets
     retitle: bool = False         # replace a vague title, until a technician edits it
     auto_priority: bool = False   # move a default (medium) priority, never to critical
+    # The admin's base prompt; empty = the built-in one (triage.DEFAULT_INSTRUCTIONS)
+    instructions: str = ""
 
     @property
     def configured(self) -> bool:
@@ -69,4 +71,5 @@ async def load_config(session: AsyncSession) -> AIConfig:
         ask_requester=await get_setting("ai_ask_requester", session, default="false") == "true",
         retitle=await get_setting("ai_retitle", session, default="false") == "true",
         auto_priority=await get_setting("ai_auto_priority", session, default="false") == "true",
+        instructions=(await get_setting("ai_instructions", session)).strip(),
     )
