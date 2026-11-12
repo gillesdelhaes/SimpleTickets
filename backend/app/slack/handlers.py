@@ -1019,7 +1019,6 @@ def register_handlers(app: Any, workspace: SlackWorkspace) -> None:
                     {"status": (old_status, resolved_status)},
                     actor_name,
                     notify_submitter=False,
-                    actor_user_id=db_user.id if db_user else None,
                 )
 
                 # Send CSAT DM if this status triggers it

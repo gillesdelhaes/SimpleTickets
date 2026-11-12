@@ -16,7 +16,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import insert as sa_insert, select, text
+from sqlalchemy import DateTime, insert as sa_insert, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import require_admin
@@ -86,28 +86,13 @@ _EXPORT_MODELS: list[tuple[str, Any]] = [
     ("ticket_read_markers", TicketReadMarker),
 ]
 
-# Datetime column names per table (used during restore deserialization)
+# Datetime column names per table (used during restore deserialization).
+# Read from the models, not listed by hand: a hand-kept list missed
+# tickets.ai_triaged_at, which made any backup with an assessed ticket
+# unrestorable (an ISO string going into a timestamp column).
 _DT_COLS: dict[str, set[str]] = {
-    "ticket_statuses":     set(),
-    "slack_workspaces":    {"created_at", "updated_at"},
-    "users":               {"created_at", "last_login_at", "tokens_valid_after"},
-    "user_slack_identities": {"created_at"},
-    "categories":          {"created_at"},
-    "sla_policies":        set(),
-    "tickets":             {
-        "created_at", "updated_at", "resolved_at",
-        "sla_deadline", "sla_paused_at",
-        "sla_breach_warned_at",
-        "first_response_deadline", "first_responded_at",
-        "first_response_warned_at",
-    },
-    "ticket_replies":      {"created_at"},
-    "ticket_history":      {"created_at"},
-    "ticket_attachments":  {"created_at"},
-    "ticket_csat":         {"responded_at"},
-    "audit_log":           {"created_at"},
-    "ticket_read_markers": {"last_read_at"},
-    "app_settings":        {"updated_at"},
+    name: {c.key for c in model.__table__.columns if isinstance(c.type, DateTime)}
+    for name, model in [*_EXPORT_MODELS, ("app_settings", AppSetting)]
 }
 
 
