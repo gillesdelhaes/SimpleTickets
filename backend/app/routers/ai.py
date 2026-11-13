@@ -28,7 +28,7 @@ from app.ai.client import AIError, list_models, provider_choices, tokens_used_to
 from app.ai.config import PROVIDERS, AIConfig, load_config
 from app.ai.triage import (
     DEFAULT_INSTRUCTIONS, FIXED_RULES, MAX_INSTRUCTIONS_CHARS, _MAX_QUESTION_ROUNDS, _requester_reply_filter,
-    assess, stored_assessment, triage_ticket,
+    _is_resolved, assess, stored_assessment, triage_ticket,
 )
 from app.auth.deps import require_admin, require_technician
 from app.database import get_session
@@ -327,6 +327,8 @@ class TicketAssistantRead(BaseModel):
     assessed_at: Optional[str]
     # The requester replied since; an update is on its way
     updating: bool
+    # Resolved: frozen, so no Refresh
+    resolved: bool
 
 
 async def _ticket_assistant(session: AsyncSession, ticket: Ticket) -> TicketAssistantRead:
@@ -349,6 +351,7 @@ async def _ticket_assistant(session: AsyncSession, ticket: Ticket) -> TicketAssi
         max_question_rounds=_MAX_QUESTION_ROUNDS,
         assessed_at=ticket.ai_triaged_at.isoformat() if ticket.ai_triaged_at else None,
         updating=updating,
+        resolved=await _is_resolved(session, ticket),
     )
 
 
@@ -376,8 +379,12 @@ async def refresh_ticket_assistant(
     cfg = await load_config(session)
     if not (cfg.enabled and cfg.configured):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "The Assistant is off.")
-    if await session.get(Ticket, ticket_id) is None:
+    ticket = await session.get(Ticket, ticket_id)
+    if ticket is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Ticket not found")
+    if await _is_resolved(session, ticket):
+        # Resolved tickets are frozen, as everywhere else
+        raise HTTPException(status.HTTP_409_CONFLICT, "This ticket is resolved — reopen it to refresh the Assistant.")
     if not await triage_ticket(cfg, ticket_id, allow_questions=False):
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,

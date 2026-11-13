@@ -313,8 +313,11 @@ def stored_assessment(ticket: Ticket) -> Optional[dict]:
 
 
 def _asked_before(ticket: Ticket) -> list[str]:
+    """The questions last sent to the requester, however many runs ago — a
+    refresh or an assessment that sends nothing mustn't forget them, or the
+    same questions go out again."""
     data = stored_assessment(ticket)
-    return list(data.get("asked") or []) if data else []
+    return list(data.get("last_asked") or data.get("asked") or []) if data else []
 
 
 # ── Background job ────────────────────────────────────────────────────────────
@@ -400,15 +403,22 @@ async def triage_ticket(cfg: AIConfig, ticket_id: int, *, allow_questions: bool 
             return True
         now = utcnow()
         previous = stored_assessment(ticket)
-        category = await _apply_category(session, cfg, ticket, assessment, now)
-        # Before asking, which counts a question round
-        title = await _apply_title(session, cfg, ticket, assessment, now)
-        priority = await _apply_priority(session, cfg, ticket, assessment, now)
-        asked_reply = await _ask_requester(session, cfg, ticket, assessment, now) if allow_questions else None
+        category = title = priority = asked_reply = None
+        # A resolved ticket is frozen: the summary is updated, nothing else
+        # (it may have been resolved while the model was running)
+        if not await _is_resolved(session, ticket):
+            category = await _apply_category(session, cfg, ticket, assessment, now)
+            # Before asking, which counts a question round
+            title = await _apply_title(session, cfg, ticket, assessment, now)
+            priority = await _apply_priority(session, cfg, ticket, assessment, now)
+            asked_reply = await _ask_requester(session, cfg, ticket, assessment, now) if allow_questions else None
 
         ticket.ai_assessment = json.dumps({
             "assessment": assessment.model_dump(),
+            # Sent in this run (the panel says "Asked the requester")
             "asked": assessment.questions if asked_reply is not None else [],
+            # Sent last, in any run — so the same questions aren't sent again
+            "last_asked": assessment.questions if asked_reply is not None else _asked_before(ticket),
             # Keep showing what the Assistant set earlier
             "category_set": category.name if category else (previous or {}).get("category_set"),
             # The requester's original title is kept across several rewrites
@@ -427,6 +437,13 @@ async def triage_ticket(cfg: AIConfig, ticket_id: int, *, allow_questions: bool 
     await _set_error("")
     logger.info("AI: assessed ticket %d", ticket_id)
     return True
+
+
+async def _is_resolved(session, ticket: Ticket) -> bool:
+    names = set((await session.execute(
+        select(TicketStatusConfig.name).where(TicketStatusConfig.is_resolved_state == True)  # noqa: E712
+    )).scalars()) or {"resolved", "closed"}
+    return ticket.status in names
 
 
 async def _apply_category(session, cfg: AIConfig, ticket: Ticket, a: TriageAssessment, now) -> Optional[Category]:

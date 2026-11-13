@@ -31,6 +31,7 @@ interface TicketAssistant {
   max_question_rounds: number
   assessed_at: string | null
   updating: boolean
+  resolved: boolean
 }
 
 const CLARITY: Record<Assessment['clarity'], { label: string; pill: string }> = {
@@ -100,7 +101,7 @@ export default function AssistantPanel({ ticketId }: { ticketId: number }) {
           <span className="font-mono text-[10.5px] text-ink-3">
             {data.updating || refresh.isPending ? 'Updating…' : data.assessed_at ? `Updated ${timeAgo(data.assessed_at)}` : ''}
           </span>
-          {data.active && (
+          {data.active && !data.resolved && (
             <button className="btn ghost sm" disabled={refresh.isPending} onClick={() => refresh.mutate()} title="Re-read the ticket now. Never messages the requester.">
               Refresh
             </button>
