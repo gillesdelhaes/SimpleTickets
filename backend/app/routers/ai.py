@@ -67,11 +67,8 @@ class AISettingsRead(BaseModel):
     default_instructions: str
     # Always sent after the base prompt; shown read-only
     fixed_rules: str
-    triage_note: bool
-    auto_category: bool
+    fill_details: bool
     ask_requester: bool
-    retitle: bool
-    auto_priority: bool
     configured: bool
     providers: list[dict]
     tokens_today: int
@@ -92,11 +89,8 @@ class AISettingsUpdate(BaseModel):
     company_context: Optional[str] = Field(default=None, max_length=4000)
     # Blank, or the built-in text unchanged, goes back to the built-in prompt
     instructions: Optional[str] = Field(default=None, max_length=MAX_INSTRUCTIONS_CHARS)
-    triage_note: Optional[bool] = None
-    auto_category: Optional[bool] = None
+    fill_details: Optional[bool] = None
     ask_requester: Optional[bool] = None
-    retitle: Optional[bool] = None
-    auto_priority: Optional[bool] = None
     # -1 clears a price
     price_input_per_m: Optional[float] = Field(default=None, ge=-1, le=1000)
     price_output_per_m: Optional[float] = Field(default=None, ge=-1, le=1000)
@@ -149,11 +143,8 @@ async def _read(session: AsyncSession) -> AISettingsRead:
         instructions_custom=bool(cfg.instructions),
         default_instructions=DEFAULT_INSTRUCTIONS,
         fixed_rules=FIXED_RULES,
-        triage_note=cfg.triage_note,
-        auto_category=cfg.auto_category,
+        fill_details=cfg.fill_details,
         ask_requester=cfg.ask_requester,
-        retitle=cfg.retitle,
-        auto_priority=cfg.auto_priority,
         configured=cfg.configured,
         providers=provider_choices(),
         tokens_today=await tokens_used_today(),
@@ -207,15 +198,12 @@ async def update_ai_settings(
     if body.instructions is not None:
         await set_setting("ai_instructions", _custom_instructions(body.instructions), session)
         changed.append("instructions")
-    if body.triage_note is not None:
-        await set_setting("ai_triage_note", "true" if body.triage_note else "false", session)
-        changed.append("triage_note")
     for field in ("price_input_per_m", "price_output_per_m"):
         value = getattr(body, field)
         if value is not None:
             await set_setting(f"ai_{field}", "" if value < 0 else str(value), session)
             changed.append(field)
-    for field in ("auto_category", "ask_requester", "retitle", "auto_priority"):
+    for field in ("fill_details", "ask_requester"):
         value = getattr(body, field)
         if value is not None:
             await set_setting(f"ai_{field}", "true" if value else "false", session)
@@ -265,7 +253,6 @@ async def _try_config(body: AITryRequest, session: AsyncSession) -> AIConfig:
         base_url=base_url,
         daily_token_budget=saved.daily_token_budget,
         company_context=(body.company_context if body.company_context is not None else saved.company_context).strip(),
-        triage_note=saved.triage_note,
         instructions=_custom_instructions(body.instructions) if body.instructions is not None else saved.instructions,
     )
 
@@ -352,8 +339,8 @@ async def _ticket_assistant(session: AsyncSession, ticket: Ticket) -> TicketAssi
         )).scalar_one_or_none()
         updating = bool(last and last > ticket.ai_triaged_at and cfg.enabled)
     return TicketAssistantRead(
-        active=cfg.enabled and cfg.triage_note,
-        assessment=data["assessment"] if data and cfg.triage_note else None,
+        active=cfg.enabled,
+        assessment=data["assessment"] if data else None,
         asked=(data or {}).get("asked") or [],
         category_set=(data or {}).get("category_set"),
         title_set=(data or {}).get("title_set"),

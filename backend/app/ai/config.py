@@ -31,14 +31,25 @@ class AIConfig:
     base_url: Optional[str]
     daily_token_budget: int
     company_context: str
-    triage_note: bool
-    # Both off by default: the Assistant only suggests until an admin opts in
-    auto_category: bool = False   # fill in the category when the ticket has none
+    # Both off by default: with the Assistant on, it keeps its summary on each
+    # ticket and only suggests until an admin opts in to these
+    fill_details: bool = False    # fill in blanks and defaults: category, vague title, medium priority
     ask_requester: bool = False   # send the requester its questions on unclear tickets
-    retitle: bool = False         # replace a vague title, until a technician edits it
-    auto_priority: bool = False   # move a default (medium) priority, never to critical
     # The admin's base prompt; empty = the built-in one (triage.DEFAULT_INSTRUCTIONS)
     instructions: str = ""
+
+    # The three things "Fill in ticket details" covers, one switch in Settings
+    @property
+    def auto_category(self) -> bool:   # set the category when the ticket has none
+        return self.fill_details
+
+    @property
+    def retitle(self) -> bool:         # replace a vague title, until a technician edits it
+        return self.fill_details
+
+    @property
+    def auto_priority(self) -> bool:   # move a default (medium) priority, never to critical
+        return self.fill_details
 
     @property
     def configured(self) -> bool:
@@ -66,10 +77,7 @@ async def load_config(session: AsyncSession) -> AIConfig:
         base_url=(await get_setting("ai_base_url", session)).strip() or None,
         daily_token_budget=max(0, budget),
         company_context=(await get_setting("ai_company_context", session)).strip(),
-        triage_note=await get_setting("ai_triage_note", session, default="true") == "true",
-        auto_category=await get_setting("ai_auto_category", session, default="false") == "true",
+        fill_details=await get_setting("ai_fill_details", session, default="false") == "true",
         ask_requester=await get_setting("ai_ask_requester", session, default="false") == "true",
-        retitle=await get_setting("ai_retitle", session, default="false") == "true",
-        auto_priority=await get_setting("ai_auto_priority", session, default="false") == "true",
         instructions=(await get_setting("ai_instructions", session)).strip(),
     )

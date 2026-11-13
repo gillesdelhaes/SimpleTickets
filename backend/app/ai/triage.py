@@ -7,7 +7,8 @@ It's stored on the ticket (tickets.ai_assessment) and shown in the
 Assistant panel on the ticket page, not as a note in the thread.
 
 Opt-in settings let it act (changes show in the history as "Assistant",
-so they can be traced and undone):
+so they can be traced and undone). "Fill in ticket details" (fill_details)
+covers the first three:
   • auto_category: set the suggested category when the ticket has none
   • auto_priority: move a ticket still on the default priority (medium) to
     the suggested one, with the same timing as the title. Never to critical:
@@ -325,7 +326,8 @@ async def run_pending_triage() -> None:
     try:
         async with AsyncSessionLocal() as session:
             cfg = await load_config(session)
-            if not (cfg.enabled and cfg.configured and (cfg.triage_note or cfg.auto_category or cfg.ask_requester)):
+            # On means on: the summary is always kept, whichever switches are set
+            if not (cfg.enabled and cfg.configured):
                 return
             enabled_at = await get_setting("ai_enabled_at", session)
             resolved = list((await session.execute(

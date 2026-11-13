@@ -31,7 +31,7 @@ GOOD = {
 
 def cfg(**kw) -> AIConfig:
     base = dict(enabled=True, provider="openai", model="fake", api_key="k", base_url=None,
-                daily_token_budget=100_000, company_context="", triage_note=True)
+                daily_token_budget=100_000, company_context="")
     base.update(kw)
     return AIConfig(**base)
 
@@ -223,7 +223,7 @@ def test_fixes_are_capped_and_shown_to_technicians():
 def test_title_rules():
     a = TriageAssessment(**{**GOOD, "suggested_title": '  "Laptop slow since this\nmorning"  '})
     assert a.suggested_title == "Laptop slow since this morning", "one line, no quotes"
-    on = cfg(retitle=True)
+    on = cfg(fill_details=True)
     ok = dict(title_edited=False, gathering=False)
     assert title_change(on, "help", a, **ok) == "Laptop slow since this morning"
     assert title_change(cfg(), "help", a, **ok) is None, "switch is off"
@@ -248,7 +248,7 @@ def test_still_gathering():
 
 
 def test_priority_rules():
-    on = cfg(auto_priority=True)
+    on = cfg(fill_details=True)
     ok = dict(priority_edited=False, gathering=False)
     high = TriageAssessment(**GOOD)  # suggests high
     assert priority_change(on, "medium", high, **ok) == "high"
@@ -262,3 +262,10 @@ def test_priority_rules():
     assert priority_change(on, "medium", medium, **ok) is None, "no change"
     low = TriageAssessment(**{**GOOD, "suggested_priority": "low"})
     assert priority_change(on, "medium", low, **ok) == "low"
+
+
+def test_fill_details_is_one_switch_for_three_actions():
+    on, off = cfg(fill_details=True), cfg()
+    assert on.auto_category and on.retitle and on.auto_priority
+    assert not (off.auto_category or off.retitle or off.auto_priority)
+    assert not on.ask_requester, "asking the requester stays its own switch"

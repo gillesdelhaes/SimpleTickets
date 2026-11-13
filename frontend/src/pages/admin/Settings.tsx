@@ -2168,11 +2168,8 @@ interface AISettings {
   instructions_custom: boolean
   default_instructions: string
   fixed_rules: string
-  triage_note: boolean
-  auto_category: boolean
+  fill_details: boolean
   ask_requester: boolean
-  retitle: boolean
-  auto_priority: boolean
   configured: boolean
   providers: AIProvider[]
   tokens_today: number
@@ -2232,7 +2229,6 @@ function AITab() {
     ...edits,
   }
   const spec = data.providers.find(p => p.id === form.provider)
-  const dirty = Object.keys(edits).length > 0
   function set<K extends keyof AIForm>(k: K, v: AIForm[K]) { setEdits(e => ({ ...e, [k]: v })); setSaved(false) }
 
   // The connection as currently typed — /models and /test use it unsaved
@@ -2274,7 +2270,7 @@ function AITab() {
   }
 
   // What the Assistant may do: like the main switch, these save on flip
-  type Behaviour = 'triage_note' | 'auto_category' | 'retitle' | 'auto_priority' | 'ask_requester'
+  type Behaviour = 'fill_details' | 'ask_requester'
   function setBehaviour(key: Behaviour, on: boolean) {
     run('toggle', async () => {
       const r = (await api.patch<AISettings>('/admin/ai', { [key]: on })).data
@@ -2292,8 +2288,29 @@ function AITab() {
   const budget = data.daily_token_budget
   const pct = budget ? Math.min(100, Math.round((data.tokens_today / budget) * 100)) : 0
 
+  // Each card saves with its own button; all unsaved edits go together
+  function saveBar(fields: (keyof AIForm)[]) {
+    const mine = fields.some(f => edits[f] !== undefined)
+    return (
+      <div className="px-5 py-3 flex items-center justify-end gap-3">
+        {saved && mine && <Saved />}
+        <button className="btn" onClick={save} disabled={!mine || busy !== null}
+          style={busy === 'save' ? { opacity: 0.7, cursor: 'wait' } : undefined}>
+          {busy === 'save' ? 'Saving…' : 'Save changes'}
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-4">
+      {(error || data.last_error) && (
+        <div className="rounded-block px-3.5 py-2.5 text-[12.5px] text-danger-ink" style={{ background: 'var(--danger-bg)' }}>
+          {error ?? `Last problem: ${data.last_error}`}
+        </div>
+      )}
+
+      {/* ── Connection ── */}
       <Card>
         <CardHeader>
           <SectionLabel>AI assistant</SectionLabel>
@@ -2302,12 +2319,11 @@ function AITab() {
 
         <div className="px-[22px] py-3 text-[12.5px] text-ink-2 leading-relaxed border-b border-track">
           The Assistant keeps a summary on every new ticket for technicians — what's known and missing, possible fixes, and a
-          suggested priority and category — and updates it each time the requester replies. On its own it only suggests;
-          the switches below let it set the category and priority, rewrite vague titles, and ask the requester for missing details. Ticket text and replies are
+          suggested priority and category — and updates it each time the requester replies. Ticket text and replies are
           sent to the provider you choose — use a paid plan that doesn't train on your data, or a self-hosted model.
         </div>
 
-        <SettingRow label="Assistant" hint={data.configured ? 'Only tickets created after it is switched on are triaged.' : 'Save a provider and model first.'}>
+        <SettingRow label="Assistant" hint={data.configured ? 'Only tickets created after it is switched on are assessed.' : 'Save a provider and model first.'}>
           <div className="flex items-center gap-3">
             <SettingSwitch on={data.enabled} onChange={v => { if (data.configured || !v) toggle(v) }} />
             {!data.configured && <span className="text-[12px] text-ink-3">Not configured</span>}
@@ -2376,6 +2392,12 @@ function AITab() {
             </div>
           </SettingRow>
         )}
+        {saveBar(['provider', 'model', 'base_url', 'api_key'])}
+      </Card>
+
+      {/* ── Behaviour ── */}
+      <Card>
+        <CardHeader><SectionLabel>Behaviour</SectionLabel></CardHeader>
 
         <SettingRow label="Base prompt" hint="What the Assistant is told on every run. Changes apply from the next ticket it assesses — no deploy. Try it below before saving.">
           <div className="flex flex-col gap-2" style={{ maxWidth: 640 }}>
@@ -2401,66 +2423,21 @@ function AITab() {
             value={form.company_context} onChange={e => set('company_context', e.target.value)} />
         </SettingRow>
 
-        <SettingRow label="Ticket summary" hint="Show the Assistant panel on each ticket, for technicians only. Updated as the requester replies.">
-          <SettingSwitch on={data.triage_note} onChange={v => setBehaviour('triage_note', v)} />
+        <SettingRow label="Fill in ticket details" hint="Set the category when a ticket has none, replace a vague title (“help”, “laptop”), and move a ticket still on the default priority (medium) — never to critical. Only fills blanks and defaults: never overwrites what a requester or technician chose. Each change shows in the history as Assistant, so it can be undone.">
+          <SettingSwitch on={data.fill_details} onChange={v => setBehaviour('fill_details', v)} />
         </SettingRow>
 
-        <SettingRow label="Set the category" hint="Fill in the suggested category when a new ticket has none. Never overwrites a technician's choice; shows in the history as Assistant.">
-          <SettingSwitch on={data.auto_category} onChange={v => setBehaviour('auto_category', v)} />
-        </SettingRow>
-
-        <SettingRow label="Improve the title" hint="Replace a vague title (“help”, “laptop”) with a specific one. Stops once a technician edits the title; shows in the history as Assistant.">
-          <SettingSwitch on={data.retitle} onChange={v => setBehaviour('retitle', v)} />
-        </SettingRow>
-
-        <SettingRow label="Set the priority" hint="Once the details are in, move a ticket still on the default (medium) to the suggested priority; SLA deadlines follow. Never sets critical — that stays with a person. Leaves any priority a requester or technician chose.">
-          <SettingSwitch on={data.auto_priority} onChange={v => setBehaviour('auto_priority', v)} />
-        </SettingRow>
-
-        <SettingRow label="Ask the requester" hint="While details are missing, ask the requester in their Slack or email thread — always in English — and follow up on their answers — at most 3 rounds, and never once a technician has replied. Doesn't count as the first response.">
+        <SettingRow label="Ask the requester" hint="While details are missing, ask the requester in their Slack or email thread, in English, and follow up on their answers — at most 3 rounds, and never once a technician has replied. Doesn't count as the first response.">
           <SettingSwitch on={data.ask_requester} onChange={v => setBehaviour('ask_requester', v)} />
         </SettingRow>
-
-        <SettingRow label="Prices" hint="Optional, from your provider's pricing page — Reports uses them to estimate cost. US dollars per 1 million tokens.">
-          <div className="flex items-center gap-2 flex-wrap text-[12px] text-ink-3">
-            <span>$</span>
-            <input className="input font-mono" inputMode="decimal" style={{ width: 90, fontSize: 12 }} value={form.price_input_per_m}
-              onChange={e => set('price_input_per_m', e.target.value)} placeholder="0.30" />
-            <span className="mr-3">input</span>
-            <span>$</span>
-            <input className="input font-mono" inputMode="decimal" style={{ width: 90, fontSize: 12 }} value={form.price_output_per_m}
-              onChange={e => set('price_output_per_m', e.target.value)} placeholder="2.50" />
-            <span>output</span>
-          </div>
-        </SettingRow>
-
-        <SettingRow label="Daily token budget" hint="The Assistant pauses for the rest of the day (UTC) once this many tokens are used. 0 = no limit." last>
-          <div className="flex items-center gap-3 flex-wrap">
-            <input type="number" className="input" min={0} style={{ width: 140 }} value={form.daily_token_budget}
-              onChange={e => set('daily_token_budget', e.target.value)} />
-            <span className="text-[12px] text-ink-3">
-              Used today: <b className="text-ink-2">{data.tokens_today.toLocaleString()}</b>{budget ? ` (${pct}%)` : ''}
-            </span>
-          </div>
-        </SettingRow>
-
-        {(error || data.last_error) && (
-          <div className="px-5 pb-3 text-[12.5px] text-danger-ink">{error ?? `Last problem: ${data.last_error}`}</div>
-        )}
-        <div className="px-5 py-3 border-t border-track flex items-center justify-end gap-3">
-          {saved && <Saved />}
-          <button className="btn" onClick={save} disabled={!dirty || busy !== null}
-            style={busy === 'save' ? { opacity: 0.7, cursor: 'wait' } : undefined}>
-            {busy === 'save' ? 'Saving…' : 'Save changes'}
-          </button>
-        </div>
+        {saveBar(['instructions', 'company_context'])}
       </Card>
 
       <Card>
         <CardHeader><SectionLabel>Try it</SectionLabel></CardHeader>
         <div className="px-[22px] py-4 flex flex-col gap-3">
           <p className="text-[12.5px] text-ink-2 m-0">
-            Runs the Assistant on a sample ticket with the settings above (saved or not) and shows what it would put in the ticket panel. Uses a few hundred tokens.
+            Runs the Assistant on a sample ticket with the connection and prompt above (saved or not) and shows what it would put in the ticket panel. Uses a few hundred tokens.
           </p>
           <input className="input" style={{ maxWidth: 520 }} value={sampleTitle} onChange={e => setSampleTitle(e.target.value)}
             placeholder="Title (blank: “laptop not working”)" />
@@ -2490,6 +2467,35 @@ function AITab() {
             </div>
           )}
         </div>
+      </Card>
+
+      {/* ── Cost ── */}
+      <Card>
+        <CardHeader><SectionLabel>Cost</SectionLabel></CardHeader>
+        <SettingRow label="Daily token budget" hint="The Assistant pauses for the rest of the day (UTC) once this many tokens are used. 0 = no limit.">
+          <div className="flex items-center gap-3 flex-wrap">
+            <input type="number" className="input" min={0} style={{ width: 140 }} value={form.daily_token_budget}
+              onChange={e => set('daily_token_budget', e.target.value)} />
+            <span className="text-[12px] text-ink-3">
+              Used today: <b className="text-ink-2">{data.tokens_today.toLocaleString()}</b>{budget ? ` (${pct}%)` : ''}
+            </span>
+          </div>
+        </SettingRow>
+
+        <SettingRow label="Prices" hint="Optional, from your provider's pricing page — Reports uses them to estimate cost. US dollars per 1 million tokens.">
+          <div className="flex items-center gap-2 flex-wrap text-[12px] text-ink-3">
+            <span>$</span>
+            <input className="input font-mono" inputMode="decimal" style={{ width: 90, fontSize: 12 }} value={form.price_input_per_m}
+              onChange={e => set('price_input_per_m', e.target.value)} placeholder="0.30" />
+            <span className="mr-3">input</span>
+            <span>$</span>
+            <input className="input font-mono" inputMode="decimal" style={{ width: 90, fontSize: 12 }} value={form.price_output_per_m}
+              onChange={e => set('price_output_per_m', e.target.value)} placeholder="2.50" />
+            <span>output</span>
+          </div>
+        </SettingRow>
+
+        {saveBar(['daily_token_budget', 'price_input_per_m', 'price_output_per_m'])}
       </Card>
 
       {usage && usage.days.length > 0 && (
