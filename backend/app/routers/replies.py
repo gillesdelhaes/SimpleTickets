@@ -117,7 +117,7 @@ async def create_reply(
     reopened = False
     if old_status in resolved_names and not is_internal:
         # Restarts the SLA clock too (it was stopped while resolved)
-        await transition_status(ticket, reopen_status, session)
+        await transition_status(ticket, reopen_status, session, actor_id=current_user.id)
         ticket.updated_at = now
         reopened = True
         session.add(

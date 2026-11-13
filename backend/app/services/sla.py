@@ -237,14 +237,22 @@ async def _remaining_from(paused_at: datetime, deadline: datetime, now: datetime
     return await compute_sla_deadline(now, remaining / 60, session)
 
 
-async def transition_status(ticket: Ticket, new_status: str, session: AsyncSession) -> None:
+async def transition_status(
+    ticket: Ticket, new_status: str, session: AsyncSession, *, actor_id: int | None = None,
+) -> int | None:
     """
     The single place a ticket changes status: sets ticket.status, maintains
     resolved_at (the latest resolution), and runs the SLA clock (see above).
     Call it *instead of* assigning ticket.status. Mutates; caller commits.
+
+    Reopening also removes a duplicate link, whichever way it happens (the
+    Reopen button, a status change, a reply from the web, Slack or email):
+    a reopened ticket is live again, so it no longer points elsewhere. That
+    change is recorded in the history under actor_id (None: the requester or
+    the system). Returns the ticket id it was a duplicate of, if removed.
     """
     if ticket.status == new_status:
-        return
+        return None
     cfgs = await _status_configs(session)
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     was_resolved = _is_resolved(ticket.status, cfgs)
@@ -257,10 +265,18 @@ async def transition_status(ticket: Ticket, new_status: str, session: AsyncSessi
     if not (was_resolved and now_resolved):
         ticket.resolved_by_requester = False
 
+    removed_duplicate = None
     if now_resolved and not was_resolved:
         ticket.resolved_at = now
     elif was_resolved and not now_resolved:
         ticket.resolved_at = None
+        if ticket.duplicate_of_id is not None:
+            removed_duplicate = ticket.duplicate_of_id
+            ticket.duplicate_of_id = None
+            session.add(TicketHistory(
+                ticket_id=ticket.id, actor_id=actor_id, field_changed="duplicate_of",
+                old_value=f"TKT-{removed_duplicate:04d}", new_value=None, created_at=now,
+            ))
 
     running = ticket.sla_paused_at is None
     if stops and running:
@@ -280,6 +296,7 @@ async def transition_status(ticket: Ticket, new_status: str, session: AsyncSessi
             if moved != ticket.first_response_deadline:
                 ticket.first_response_deadline = moved
                 ticket.first_response_warned_at = None
+    return removed_duplicate
 
 
 async def recompute_sla_for_policy(ticket: Ticket, policy, session: AsyncSession) -> None:

@@ -681,7 +681,7 @@ async def bulk_update_tickets(
         if body.status is not None and ticket.status != body.status:
             old_status = ticket.status
             changes["status"] = (old_status, body.status)
-            await transition_status(ticket, body.status, session)
+            await transition_status(ticket, body.status, session, actor_id=current_user.id)
             if body.status in resolved_names and old_status not in resolved_names:
                 entered_csat = sends_csat
 
@@ -851,7 +851,7 @@ async def update_ticket(
             changes["status"] = (ticket.status, body.status)
             old_status = ticket.status
             # Status, resolved_at and the SLA clock in one place
-            await transition_status(ticket, body.status, session)
+            await transition_status(ticket, body.status, session, actor_id=current_user.id)
             if body.status in resolved_names and old_status not in resolved_names:
                 # CSAT fires only on first entry into a sends_csat resolved state
                 _sends_csat = bool(status_cfg.sends_csat)
@@ -1042,12 +1042,10 @@ async def reopen_ticket(
     now = utcnow()
     new_status = await _get_reopen_status(session)
     changes: dict[str, tuple[str | None, str | None]] = {"status": (ticket.status, new_status)}
-    await transition_status(ticket, new_status, session)
+    # Also removes a duplicate link, with its own history row
+    old_dup_id = await transition_status(ticket, new_status, session, actor_id=current_user.id)
 
-    old_dup_id = ticket.duplicate_of_id
     if old_dup_id is not None:
-        changes["duplicate_of"] = (f"TKT-{old_dup_id:04d}", None)
-        ticket.duplicate_of_id = None
         # Same audit as unlinking — a mark-then-reopen cycle must not be traceless.
         await write_audit(
             session,
@@ -1252,13 +1250,17 @@ async def mark_duplicate(
         canonical.display_id,
     )
 
-    # Close the duplicate
+    # Close the duplicate, with the configured no-survey close status (as
+    # Close without survey and auto-close do), not one guessed by name
     resolved_names = await _get_resolved_status_names(session)
-    closed_status = (
-        "closed" if "closed" in resolved_names
-        else "resolved" if "resolved" in resolved_names
-        else next(iter(resolved_names), "closed")
-    )
+    close_cfg = (await session.execute(
+        select(TicketStatusConfig).where(
+            TicketStatusConfig.is_resolved_state == True,  # noqa: E712
+            TicketStatusConfig.sends_csat == False,  # noqa: E712
+            TicketStatusConfig.is_archived == False,  # noqa: E712
+        ).order_by(TicketStatusConfig.sort_order).limit(1)
+    )).scalar_one_or_none()
+    closed_status = close_cfg.name if close_cfg else "closed"
     if ticket.status not in resolved_names:
         changes["status"] = (ticket.status, closed_status)
         await transition_status(ticket, closed_status, session)
@@ -1314,7 +1316,8 @@ async def unmark_duplicate(
         raise HTTPException(status_code=400, detail="Ticket is not marked as a duplicate")
 
     now = utcnow()
-    default_status = await _get_default_status(session)
+    # The same status every other reopen goes back to
+    reopen_status = await _get_reopen_status(session)
 
     old_dup_id = ticket.duplicate_of_id
     changes: dict[str, tuple[str | None, str | None]] = {
@@ -1324,8 +1327,8 @@ async def unmark_duplicate(
 
     resolved_names = await _get_resolved_status_names(session)
     if ticket.status in resolved_names:
-        changes["status"] = (ticket.status, default_status)
-        await transition_status(ticket, default_status, session)
+        changes["status"] = (ticket.status, reopen_status)
+        await transition_status(ticket, reopen_status, session)
 
     ticket.updated_at = now
     _record_history(session, ticket.id, current_user.id, changes)
