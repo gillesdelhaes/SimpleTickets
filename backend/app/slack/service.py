@@ -374,19 +374,42 @@ async def notify_duplicate_dm(ticket: Ticket, canonical: Ticket) -> None:
         logger.exception("notify_duplicate_dm: failed to DM %s", submitter_slack_id)
 
 
-async def anchor_ticket_in_dm(ticket: Ticket, slack_user_id: str, text: str) -> bool:
+async def workspace_for_team(team_id: Optional[str]) -> Optional[int]:
+    """The connected, running workspace for a Slack team id, if there is one."""
+    if not team_id:
+        return None
+    from app.slack.bot import get_slack_client
+    async with AsyncSessionLocal() as session:
+        rows = (await session.execute(
+            select(SlackWorkspace.id).where(
+                SlackWorkspace.team_id == team_id,
+                SlackWorkspace.is_active == True,  # noqa: E712
+            )
+        )).scalars().all()
+    return next((ws_id for ws_id in rows if get_slack_client(ws_id) is not None), None)
+
+
+async def anchor_ticket_in_dm(
+    ticket: Ticket, slack_user_id: str, text: str, *, workspace_id: Optional[int] = None,
+) -> bool:
     """
     Post `text` to the user's DM with the bot (using the Slack user ID as the
     channel) and re-anchor the ticket on that message, so all later replies
     and status updates thread there instead of wherever the ticket came from.
 
+    Pass `workspace_id` when the user belongs to another connected workspace
+    than the ticket's (a message in a channel shared between the two): the DM
+    goes out from that workspace's bot, and the ticket moves to it so replies,
+    App Home and the survey all go through the bot the user can talk to.
+
     Returns True if the ticket was re-anchored.
     """
-    if ticket.workspace_id is None or not slack_user_id:
+    target_workspace = workspace_id or ticket.workspace_id
+    if target_workspace is None or not slack_user_id:
         return False
 
     from app.slack.bot import get_slack_client
-    client = get_slack_client(ticket.workspace_id)
+    client = get_slack_client(target_workspace)
     if client is None:
         return False
 
@@ -406,7 +429,11 @@ async def anchor_ticket_in_dm(ticket: Ticket, slack_user_id: str, text: str) -> 
             return False
         t.slack_channel_id = dm_channel_id
         t.slack_message_ts = message_ts
+        t.workspace_id = target_workspace
         await session.commit()
+    ticket.slack_channel_id = dm_channel_id
+    ticket.slack_message_ts = message_ts
+    ticket.workspace_id = target_workspace
     return True
 
 

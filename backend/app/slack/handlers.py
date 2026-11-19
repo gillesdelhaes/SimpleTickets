@@ -33,6 +33,7 @@ from app.slack.service import (
     post_reply_to_slack,
     post_ticket_update_to_slack,
     slack_escape,
+    workspace_for_team,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,8 +46,22 @@ _message_limiter = RateLimiter(limit=20, window_seconds=60)
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
+async def _author_team(client: Any, message: dict, author_slack_id: str) -> str | None:
+    """The Slack team the message's author belongs to. In a channel shared
+    between workspaces it can be another workspace than the bot's."""
+    team = message.get("user_team") or message.get("team")
+    if team or not author_slack_id:
+        return team
+    try:
+        info = await client.users_info(user=author_slack_id)
+        return (info.get("user") or {}).get("team_id")
+    except Exception:  # noqa: BLE001
+        return None
+
+
 async def _move_ticket_to_dm(
     client: Any, ticket: Ticket, author_slack_id: str, channel_id: str, message_ts: str,
+    *, author_team: str | None = None, own_team: str | None = None,
 ) -> bool:
     """
     For a ticket made from a channel message (emoji reaction or message
@@ -54,9 +69,21 @@ async def _move_ticket_to_dm(
     place /ticket tickets live, so follow-up doesn't take over a thread in the
     middle of a channel conversation. Returns False if the author couldn't be
     DMed, in which case the ticket stays anchored on the channel message.
+
+    An author from another connected workspace (a channel shared between
+    the two) can't be DMed by this workspace's bot: the DM goes out from their
+    own workspace's bot, and the ticket moves there.
     """
     if not author_slack_id:
         return False
+    home_workspace: int | None = None
+    if author_team and author_team != own_team:
+        home_workspace = await workspace_for_team(author_team)
+        if home_workspace is None:
+            logger.info(
+                "Ticket %s: author %s is in team %s, which isn't connected — can't DM them",
+                ticket.display_id, author_slack_id, author_team,
+            )
     try:
         link = await client.chat_getPermalink(channel=channel_id, message_ts=message_ts)
         origin = f"<{link['permalink']}|your message> in <#{channel_id}>"
@@ -68,6 +95,7 @@ async def _move_ticket_to_dm(
         f"📋 Ticket *{ticket.display_id}* has been opened from {origin}.\n"
         f"*{slack_escape(ticket.title)}*\n"
         f"Our team will get back to you shortly. Reply here to add a comment.",
+        workspace_id=home_workspace,
     )
 
 
@@ -642,7 +670,11 @@ def register_handlers(app: Any, workspace: SlackWorkspace) -> None:
                 logger.exception("reaction_added: failed to download files for %s", ticket.display_id)
 
         # ── Move follow-up to the author's DM, leave a pointer in the channel ──
-        moved = await _move_ticket_to_dm(client, ticket, author_slack_id, channel_id, message_ts)
+        moved = await _move_ticket_to_dm(
+            client, ticket, author_slack_id, channel_id, message_ts,
+            author_team=await _author_team(client, original, author_slack_id),
+            own_team=workspace.team_id,
+        )
         follow_up = (
             f"Follow-up continues in a direct message with {slack_escape(submitter_name)}."
             if moved else "Our team will follow up shortly."
@@ -1206,6 +1238,7 @@ def register_handlers(app: Any, workspace: SlackWorkspace) -> None:
             "message_ts": message_ts,
             "author_slack_id": author_slack_id,
             "author_name": author_name,
+            "author_team": await _author_team(client, message, author_slack_id),
         })
 
         blocks: list[dict] = [
@@ -1307,9 +1340,11 @@ def register_handlers(app: Any, workspace: SlackWorkspace) -> None:
             message_ts: str = meta.get("message_ts", "")
             author_slack_id: str = meta.get("author_slack_id", "")
             author_name: str = meta.get("author_name", "Slack user")
+            author_team: str | None = meta.get("author_team")
         except Exception:  # noqa: BLE001
             channel_id = message_ts = author_slack_id = ""
             author_name = "Slack user"
+            author_team = None
 
         try:
             priority = Priority(priority_value)
@@ -1345,7 +1380,10 @@ def register_handlers(app: Any, workspace: SlackWorkspace) -> None:
         # Move follow-up to the author's DM, and leave a pointer in the
         # original message thread so everyone in that channel can see it
         if channel_id and message_ts:
-            moved = await _move_ticket_to_dm(client, ticket, author_slack_id, channel_id, message_ts)
+            moved = await _move_ticket_to_dm(
+                client, ticket, author_slack_id, channel_id, message_ts,
+                author_team=author_team, own_team=workspace.team_id,
+            )
             follow_up = (
                 f"Follow-up continues in a direct message with {slack_escape(author_name)}."
                 if moved else "Our team will follow up shortly."
