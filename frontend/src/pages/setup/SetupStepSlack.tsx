@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import api, { apiErrorMessage } from '../../lib/api'
+import SlackTestResult, { type SlackTestResultData } from '../../components/SlackTestResult'
 
 interface Props {
   onNext: (configured: boolean, teamName: string) => void
@@ -51,7 +52,7 @@ export default function SetupStepSlack({ onNext }: Props) {
   const [copied, setCopied] = useState(false)
 
   const [testing, setTesting] = useState(false)
-  const [testResult, setTestResult] = useState<{ ok: boolean; team_name?: string; error?: string } | null>(null)
+  const [testResult, setTestResult] = useState<SlackTestResultData | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -175,11 +176,7 @@ export default function SetupStepSlack({ onNext }: Props) {
         >
           {testing ? 'Testing…' : 'Test connection'}
         </button>
-        {testResult && (
-          <span className={`text-[13px] ${testResult.ok ? 'text-ok-ink' : 'text-danger-ink'}`}>
-            {testResult.ok ? `✓ Connected to ${testResult.team_name}` : `✗ ${testResult.error}`}
-          </span>
-        )}
+        {testResult && <SlackTestResult result={testResult} />}
       </div>
 
       <details className="mb-4">

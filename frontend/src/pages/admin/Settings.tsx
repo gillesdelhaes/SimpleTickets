@@ -7,6 +7,7 @@ import api, { apiErrorMessage } from '../../lib/api'
 import { parseUTC } from '../../types/ticket'
 import { useAgents, type UserRead } from '../../hooks/useAgents'
 import RichText from '../../components/RichText'
+import SlackTestResult, { type SlackTestResultData } from '../../components/SlackTestResult'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -387,7 +388,7 @@ function WorkspaceCard({ workspace, agents }: { workspace: WorkspaceRead; agents
   const [revealing, setRevealing] = useState<Record<string, boolean>>({})
   const [renaming, setRenaming] = useState(false)
   const [nameValue, setNameValue] = useState(workspace.name)
-  const [testResult, setTestResult] = useState<{ ok: boolean; team_name?: string; error?: string } | null>(null)
+  const [testResult, setTestResult] = useState<SlackTestResultData | null>(null)
   const [testing, setTesting] = useState(false)
   const [saved, setSaved] = useState(false)
   const [escalationModeOverride, setEscalationModeOverride] = useState<'all' | 'person' | 'channel' | null>(null)
@@ -500,11 +501,7 @@ function WorkspaceCard({ workspace, agents }: { workspace: WorkspaceRead; agents
             <button className="btn ghost sm" onClick={handleTest} disabled={testing}>
               {testing ? 'Testing…' : 'Test connection'}
             </button>
-            {testResult && (
-              <span className={`text-[12px] ${testResult.ok ? 'text-ok-ink' : 'text-danger-ink'}`}>
-                {testResult.ok ? `✓ Connected to ${testResult.team_name}` : `✗ ${testResult.error}`}
-              </span>
-            )}
+            {testResult && <SlackTestResult result={testResult} size={12} />}
           </div>
 
           {WORKSPACE_TOKEN_FIELDS.map(({ key, label, hint, placeholder }) => {
@@ -687,7 +684,7 @@ function AddWorkspaceForm({ onDone, onCancel }: { onDone: () => void; onCancel: 
   const [signingSecret, setSigningSecret] = useState('')
   const [triggerEmoji, setTriggerEmoji] = useState('clipboard')
   const [twoWaySync, setTwoWaySync] = useState(true)
-  const [testResult, setTestResult] = useState<{ ok: boolean; team_name?: string; error?: string } | null>(null)
+  const [testResult, setTestResult] = useState<SlackTestResultData | null>(null)
   const [testing, setTesting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -760,11 +757,7 @@ function AddWorkspaceForm({ onDone, onCancel }: { onDone: () => void; onCancel: 
           >
             {testing ? 'Testing…' : 'Test connection'}
           </button>
-          {testResult && (
-            <span className={`text-[13px] ${testResult.ok ? 'text-ok-ink' : 'text-danger-ink'}`}>
-              {testResult.ok ? `✓ Connected to ${testResult.team_name}` : `✗ ${testResult.error}`}
-            </span>
-          )}
+          {testResult && <SlackTestResult result={testResult} />}
         </div>
 
         {error && (

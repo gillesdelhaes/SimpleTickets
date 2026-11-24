@@ -29,7 +29,7 @@ from app.models.slack_workspace import SlackWorkspace
 from app.models.user import User
 from app.services.audit import write_audit
 from app.services.settings_service import decrypt_value, encrypt_value
-from app.slack.service import slack_test_error_message
+from app.slack.service import slack_test_error_message, slack_test_success
 from app.utils import client_ip
 
 logger = logging.getLogger(__name__)
@@ -333,7 +333,7 @@ async def test_new_workspace(
         from slack_sdk import WebClient
         client = WebClient(token=body.bot_token)
         response = await asyncio.to_thread(client.auth_test)
-        return {"ok": True, "team_name": response.get("team"), "bot_name": response.get("user")}
+        return slack_test_success(response)
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": slack_test_error_message(exc)}
 
@@ -354,7 +354,7 @@ async def test_existing_workspace(
         from slack_sdk import WebClient
         client = WebClient(token=decrypt_value(workspace.bot_token))
         response = await asyncio.to_thread(client.auth_test)
-        return {"ok": True, "team_name": response.get("team"), "bot_name": response.get("user")}
+        return slack_test_success(response)
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": slack_test_error_message(exc)}
 

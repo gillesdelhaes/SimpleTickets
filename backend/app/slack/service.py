@@ -77,6 +77,39 @@ def slack_test_error_message(exc: Exception) -> str:
     return "Unexpected error — check server logs"
 
 
+# Bot scopes the app relies on — keep in step with slack-manifest.json.
+# users:read.email is optional (email → Slack matching) and left out.
+REQUIRED_BOT_SCOPES = (
+    "chat:write", "chat:write.public", "im:write", "im:history",
+    "channels:history", "channels:read", "groups:read", "groups:history",
+    "reactions:read", "files:read", "files:write", "users:read", "commands",
+)
+
+
+def missing_bot_scopes(auth_response: Any) -> list[str]:
+    """Required scopes the token lacks, read from the `x-oauth-scopes` header
+    Slack puts on every Web API response. Empty when the header is absent —
+    we can't tell, so we don't warn."""
+    headers = getattr(auth_response, "headers", None) or {}
+    granted = next((v for k, v in headers.items() if k.lower() == "x-oauth-scopes"), None)
+    if isinstance(granted, list):
+        granted = ",".join(granted)
+    if not granted:
+        return []
+    have = {s.strip() for s in granted.split(",")}
+    return [s for s in REQUIRED_BOT_SCOPES if s not in have]
+
+
+def slack_test_success(auth_response: Any) -> dict:
+    """The body a successful Slack connection test returns."""
+    return {
+        "ok": True,
+        "team_name": auth_response.get("team"),
+        "bot_name": auth_response.get("user"),
+        "missing_scopes": missing_bot_scopes(auth_response),
+    }
+
+
 # ── Workspace / staff identity lookups ──────────────────────────────────────────
 
 

@@ -123,6 +123,8 @@ manifest have them; for an older app, add both under OAuth & Permissions and
 **Reinstall to Workspace**. Without them, channel mentions fall back to the
 ID. User mentions only need `users:read`, which every install already has.
 Private channels resolve only if the bot is a member.
+**Test connection** (setup wizard and Settings → Slack) lists any bot scopes
+the app is missing, so you can tell when a reinstall is needed.
 
 ## Backups
 

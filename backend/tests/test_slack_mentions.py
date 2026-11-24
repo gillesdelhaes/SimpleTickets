@@ -54,3 +54,27 @@ def test_repeat_ids_are_looked_up_once():
 
 def test_plain_form_for_titles():
     assert plain_mentions("<@U1|Jane Doe> <#C1|it-help> <#C2> <!here>") == "@Jane Doe #it-help #C2 @here"
+
+
+# ── Test connection reports missing bot scopes ────────────────────────────────
+
+from app.slack.service import REQUIRED_BOT_SCOPES, missing_bot_scopes, slack_test_success  # noqa: E402
+
+
+class FakeAuth(dict):
+    def __init__(self, scopes):
+        super().__init__(team="Acme", user="simpletickets")
+        self.headers = {} if scopes is None else {"X-OAuth-Scopes": scopes}
+
+
+def test_missing_channel_scopes_are_reported():
+    granted = ",".join(s for s in REQUIRED_BOT_SCOPES if s not in ("channels:read", "groups:read"))
+    assert slack_test_success(FakeAuth(granted))["missing_scopes"] == ["channels:read", "groups:read"]
+
+
+def test_full_grant_reports_nothing_missing():
+    assert missing_bot_scopes(FakeAuth(", ".join(REQUIRED_BOT_SCOPES) + ",users:read.email")) == []
+
+
+def test_no_scope_header_means_no_warning():
+    assert missing_bot_scopes(FakeAuth(None)) == []
