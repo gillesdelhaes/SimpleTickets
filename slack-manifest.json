@@ -42,6 +42,8 @@
         "im:write",
         "im:history",
         "channels:history",
+        "channels:read",
+        "groups:read",
         "groups:history",
         "reactions:read",
         "files:read",

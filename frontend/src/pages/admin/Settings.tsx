@@ -806,7 +806,7 @@ const SLACK_MANIFEST = JSON.stringify({
   },
   oauth_config: {
     scopes: {
-      bot: ["chat:write", "chat:write.public", "im:write", "im:history", "channels:history", "groups:history", "reactions:read", "files:read", "files:write", "users:read", "users:read.email", "commands"],
+      bot: ["chat:write", "chat:write.public", "im:write", "im:history", "channels:history", "channels:read", "groups:read", "groups:history", "reactions:read", "files:read", "files:write", "users:read", "users:read.email", "commands"],
     },
   },
   settings: {

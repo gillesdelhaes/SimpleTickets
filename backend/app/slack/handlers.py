@@ -23,6 +23,7 @@ from app.models.enums import Priority
 from app.models.slack_workspace import SlackWorkspace
 from app.models.ticket_status_config import TicketStatusConfig
 from app.services.rate_limit import RateLimiter
+from app.slack.mentions import label_mentions, plain_mentions
 from app.slack.service import (
     _download_slack_files,
     anchor_ticket_in_dm,
@@ -637,7 +638,8 @@ def register_handlers(app: Any, workspace: SlackWorkspace) -> None:
         submitter_name = await _slack_display_name(client, author_slack_id) if author_slack_id else "Slack user"
 
         # ── Build title ────────────────────────────────────────────────────
-        first_line = message_text.split("\n")[0].strip()
+        message_text = await label_mentions(client, message_text)
+        first_line = plain_mentions(message_text.split("\n")[0].strip())
         title = first_line[:200] if first_line else "Ticket from Slack"
         description = message_text or title
 
@@ -720,6 +722,8 @@ def register_handlers(app: Any, workspace: SlackWorkspace) -> None:
             logger.warning("Rate-limited inbound Slack message from user %s", slack_user_id)
             return
 
+        text = await label_mentions(client, text)
+
         # Slack doesn't always populate channel_type on threaded DM replies,
         # so detect DM channels by ID prefix as a fallback.
         is_dm = channel_type == "im" or channel_id.startswith("D")
@@ -792,7 +796,7 @@ def register_handlers(app: Any, workspace: SlackWorkspace) -> None:
 
             submitter_name = await _slack_display_name(client, slack_user_id) if slack_user_id else "Slack user"
 
-            first_line = text.split("\n")[0].strip() if text.strip() else ""
+            first_line = plain_mentions(text.split("\n")[0].strip()) if text.strip() else ""
             file_hint = f"{len(event_files)} attachment(s)" if event_files and not first_line else ""
             title = first_line[:200] if first_line else (file_hint or "Ticket from DM")
             description = text.strip() or title
@@ -1220,7 +1224,8 @@ def register_handlers(app: Any, workspace: SlackWorkspace) -> None:
         message: dict = body.get("message", {})
         channel: dict = body.get("channel", {})
 
-        message_text: str = message.get("text", "") or ""
+        # The modal's text box is plain text — show mentions by name, not as tokens
+        message_text: str = plain_mentions(await label_mentions(client, message.get("text", "") or ""))
         author_slack_id: str = message.get("user", "")
         message_ts: str = message.get("ts", "")
         channel_id: str = channel.get("id", "") or body.get("channel_id", "")

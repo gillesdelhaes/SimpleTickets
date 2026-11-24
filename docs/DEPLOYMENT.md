@@ -116,6 +116,14 @@ To match email senders to Slack users automatically, the Slack app needs the
 **Reinstall to Workspace** (no need to recreate the app). Backups don't carry
 the Gmail grant or client secret — reconnect the mailbox after a restore.
 
+To show channel mentions by name (`#it-help` instead of `#C0CD157MNP9`) in
+tickets, the Slack app needs the `channels:read` (public channels) and
+`groups:read` (private channels) bot scopes. Apps created from the current
+manifest have them; for an older app, add both under OAuth & Permissions and
+**Reinstall to Workspace**. Without them, channel mentions fall back to the
+ID. User mentions only need `users:read`, which every install already has.
+Private channels resolve only if the bot is a member.
+
 ## Backups
 
 Data lives in four Docker volumes: `pgdata`, `attachments`, `app_secret`,
