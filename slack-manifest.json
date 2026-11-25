@@ -49,6 +49,7 @@
         "files:read",
         "files:write",
         "users:read",
+        "users:read.email",
         "commands"
       ]
     }

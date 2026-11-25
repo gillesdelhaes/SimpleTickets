@@ -111,9 +111,10 @@ Setup uses the **same Google Cloud project and OAuth client** as Google sign-in:
 4. Click **Connect Gmail** and sign in as the mailbox user (not your own
    account). Only mail arriving after this is ticketed.
 
-To match email senders to Slack users automatically, the Slack app needs the
-`users:read.email` bot scope: add it under OAuth & Permissions and
-**Reinstall to Workspace** (no need to recreate the app). Backups don't carry
+Email senders are matched to Slack users automatically through the
+`users:read.email` bot scope. Apps created from the current manifest have it;
+for an older app, add it under OAuth & Permissions and **Reinstall to
+Workspace** (no need to recreate the app). Backups don't carry
 the Gmail grant or client secret — reconnect the mailbox after a restore.
 
 To show channel mentions by name (`#it-help` instead of `#C0CD157MNP9`) in

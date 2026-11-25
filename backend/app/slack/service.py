@@ -77,12 +77,13 @@ def slack_test_error_message(exc: Exception) -> str:
     return "Unexpected error — check server logs"
 
 
-# Bot scopes the app relies on — keep in step with slack-manifest.json.
-# users:read.email is optional (email → Slack matching) and left out.
+# Bot scopes the app relies on — keep in step with slack-manifest.json and
+# the manifests in SetupStepSlack.tsx and Settings.tsx.
 REQUIRED_BOT_SCOPES = (
     "chat:write", "chat:write.public", "im:write", "im:history",
     "channels:history", "channels:read", "groups:read", "groups:history",
-    "reactions:read", "files:read", "files:write", "users:read", "commands",
+    "reactions:read", "files:read", "files:write", "users:read",
+    "users:read.email", "commands",
 )
 
 
