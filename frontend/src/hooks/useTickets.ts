@@ -8,6 +8,7 @@ interface UseTicketsParams {
   assignee_id?: number | null
   unassigned?: boolean
   has_negative_csat?: boolean
+  negative_csat_days?: number
   category_id?: number | null
   workspace_id?: number | null
   requester_of?: number | null
@@ -19,9 +20,9 @@ interface UseTicketsParams {
 }
 
 export function useTickets(params: UseTicketsParams = {}) {
-  const { status, priority, assignee_id, unassigned, has_negative_csat, category_id, workspace_id, requester_of, ids, sort, sort_dir, limit = 50, offset = 0 } = params
+  const { status, priority, assignee_id, unassigned, has_negative_csat, negative_csat_days, category_id, workspace_id, requester_of, ids, sort, sort_dir, limit = 50, offset = 0 } = params
 
-  const queryKey = ['tickets', { status, priority, assignee_id, unassigned, has_negative_csat, category_id, workspace_id, requester_of, ids, sort, sort_dir, limit, offset }]
+  const queryKey = ['tickets', { status, priority, assignee_id, unassigned, has_negative_csat, negative_csat_days, category_id, workspace_id, requester_of, ids, sort, sort_dir, limit, offset }]
 
   return useQuery<TicketListResponse>({
     queryKey,
@@ -32,6 +33,7 @@ export function useTickets(params: UseTicketsParams = {}) {
       if (assignee_id != null) p.set('assignee_id', String(assignee_id))
       if (unassigned) p.set('unassigned', 'true')
       if (has_negative_csat) p.set('has_negative_csat', 'true')
+      if (negative_csat_days) p.set('negative_csat_days', String(negative_csat_days))
       if (category_id != null) p.set('category_id', String(category_id))
       if (workspace_id != null) p.set('workspace_id', String(workspace_id))
       if (requester_of != null) p.set('requester_of', String(requester_of))

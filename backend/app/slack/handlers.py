@@ -457,16 +457,12 @@ async def _handle_csat_response(body: dict, client: Any, workspace_id: int, *, s
                 (s for s in status_cfgs if not s.is_archived),
                 key=lambda s: s.sort_order,
             )
-            if score:
-                # Terminal resolved state — the one that doesn't trigger another CSAT
-                close_cfg = next((s for s in pickable if s.is_resolved_state and not s.sends_csat), None)
-                new_status = close_cfg.name if close_cfg else "closed"
-            else:
-                # First active (non-resolved) state
-                open_cfg = next((s for s in pickable if not s.is_resolved_state), None)
-                new_status = open_cfg.name if open_cfg else "open"
-
-            # 👍 Resolved → Closed keeps the clock stopped; 👎 reopens and restarts it
+            # The rating is about the support, not whether the issue is fixed:
+            # both answers close the ticket (terminal resolved state — the one
+            # that doesn't trigger another CSAT), keeping the clock stopped.
+            # An issue that isn't fixed is reopened by replying in the thread.
+            close_cfg = next((s for s in pickable if s.is_resolved_state and not s.sends_csat), None)
+            new_status = close_cfg.name if close_cfg else "closed"
             await transition_status(ticket, new_status, session)
             ticket.updated_at = now
 
@@ -491,7 +487,7 @@ async def _handle_csat_response(body: dict, client: Any, workspace_id: int, *, s
                 await notify(session, await ticket_watchers(session, ticket, admins_only=True), ticket_id, "csat_negative")
             await session.commit()
 
-            # Notify assignee on negative response
+            # Tell the assignee about a poor rating
             if not score and ticket.assignee_id:
                 from app.slack.service import _get_staff_slack_id
                 assignee_slack_id = await _get_staff_slack_id(session, ticket.assignee_id, workspace_id)
@@ -503,8 +499,8 @@ async def _handle_csat_response(body: dict, client: Any, workspace_id: int, *, s
                             await c.chat_postMessage(
                                 channel=assignee_slack_id,
                                 text=(
-                                    f"↩️ *{ticket.display_id}* was reopened — "
-                                    f"the submitter indicated the issue is not yet resolved."
+                                    f"👎 *{ticket.display_id}* — the requester rated the support poorly. "
+                                    f"The ticket is closed; it reopens if they reply in its thread."
                                 ),
                             )
                     except Exception:  # noqa: BLE001
@@ -517,10 +513,20 @@ async def _handle_csat_response(body: dict, client: Any, workspace_id: int, *, s
     # Replace the CSAT buttons with a plain confirmation message
     if message_ts and channel_id:
         text = (
-            "✅ Thanks for the feedback! Your ticket has been closed."
+            "✅ Thanks for the feedback! Your ticket is now closed."
             if score
-            else "↩️ Thanks for letting us know — your ticket has been reopened."
+            else "🙏 Thanks for telling us — we'll look at how we handled this. Your ticket is now closed."
         )
+        try:
+            from app.slack.service import csat_reply_hint
+            hint = await csat_reply_hint(
+                ticket, client,
+                survey_in_thread=bool(ticket.slack_message_ts and channel_id == ticket.slack_channel_id),
+            )
+        except Exception:  # noqa: BLE001
+            hint = None
+        if hint:
+            text += f"\nIssue not fixed after all? Just {hint} and we'll reopen it."
         try:
             await client.chat_update(
                 channel=channel_id,

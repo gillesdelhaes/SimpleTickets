@@ -353,6 +353,7 @@ async def list_tickets(
     assignee_id: int | None = Query(default=None),
     unassigned: bool = Query(default=False),
     has_negative_csat: bool = Query(default=False),
+    negative_csat_days: int | None = Query(default=None, ge=1, le=365, description="Only 👎 ratings from the last N days"),
     requester_of: int | None = Query(default=None, description="Tickets from the same requester as this ticket"),
     ids: list[int] = Query(default=[], max_length=200, description="Only these tickets (e.g. a list from Ask)"),
     sort: str = Query(default="created_at"),
@@ -383,13 +384,11 @@ async def list_tickets(
         where.extend(clauses if clauses is not None else [false()])
     if ids:
         where.append(Ticket.id.in_(ids))
-    if has_negative_csat:
-        where.append(
-            select(TicketCSAT.id)
-            .where(TicketCSAT.ticket_id == Ticket.id, TicketCSAT.score == False)  # noqa: E712
-            .correlate(Ticket)
-            .exists()
-        )
+    if has_negative_csat or negative_csat_days:
+        csat_where = [TicketCSAT.ticket_id == Ticket.id, TicketCSAT.score == False]  # noqa: E712
+        if negative_csat_days:
+            csat_where.append(TicketCSAT.responded_at >= utcnow() - timedelta(days=negative_csat_days))
+        where.append(select(TicketCSAT.id).where(*csat_where).correlate(Ticket).exists())
 
     _sort_cols = {
         "created_at": Ticket.created_at,

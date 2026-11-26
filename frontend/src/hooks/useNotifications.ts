@@ -44,7 +44,7 @@ export function notificationText(n: NotificationItem): string {
     case 'sla_warning': return 'SLA breaches in under 15 min'
     case 'first_response_warning': return 'First response due in under 15 min'
     case 'sla_breached': return 'SLA breached'
-    case 'csat_negative': return 'Requester says it’s not solved — reopened'
+    case 'csat_negative': return 'Requester rated the support poorly'
     default: return n.kind.replace(/_/g, ' ')
   }
 }

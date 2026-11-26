@@ -1786,7 +1786,7 @@ function StatusesTab() {
               { key: 'pauses_sla', title: 'Pauses SLA', hint: 'SLA clock stops while in this status' },
               { key: 'is_default', title: 'Default status', hint: 'Applied to newly created tickets' },
               { key: 'is_resolved_state', title: 'Resolved state', hint: 'Tickets re-open on new Slack reply' },
-              { key: 'sends_csat', title: 'Sends CSAT survey', hint: 'DMs the submitter 👍/👎 on entry (resolved states only)' },
+              { key: 'sends_csat', title: 'Sends CSAT survey', hint: 'DMs the submitter a 👍/👎 support rating on entry (resolved states only); replying in the thread reopens' },
             ].map(({ key, title, hint }) => (
               <label key={key} className="flex items-center gap-2 cursor-pointer text-[13px]">
                 <input type="checkbox" checked={(form as any)[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.checked }))} style={{ accentColor: 'var(--b1)' }} />

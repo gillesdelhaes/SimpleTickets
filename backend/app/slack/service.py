@@ -535,10 +535,37 @@ async def send_password_reset_dm(user: User, code: str, session: AsyncSession) -
 
 
 
+async def csat_reply_hint(ticket: "Ticket", client: Any, *, survey_in_thread: bool) -> Optional[str]:
+    """How the requester reopens the ticket, or None when no reply would.
+
+    A reply reopens a resolved/closed ticket only when it lands in the
+    ticket's own Slack thread and the workspace syncs replies (see
+    handle_slack_thread_message). A reply anywhere else in the bot DM opens a
+    new ticket, so only promise what will actually happen."""
+    if not (ticket.slack_channel_id and ticket.slack_message_ts and ticket.workspace_id):
+        return None
+    async with AsyncSessionLocal() as session:
+        workspace = await _get_workspace(session, ticket.workspace_id)
+    if workspace is None or not workspace.two_way_sync:
+        return None
+    if survey_in_thread:
+        return "reply in this thread"
+    try:
+        res = await client.chat_getPermalink(channel=ticket.slack_channel_id, message_ts=ticket.slack_message_ts)
+        link = res.get("permalink")
+    except Exception:  # noqa: BLE001
+        link = None
+    return f"reply in <{link}|the ticket's thread>" if link else "reply in the ticket's thread"
+
+
 async def send_csat_dm(ticket: "Ticket") -> None:
-    """Ask the ticket submitter 👍/👎 when their ticket moves to a sends_csat=True
-    status. Posted in the ticket's thread when it lives in their DM with the
-    bot (@mentioning them, like other thread updates), else as a plain DM."""
+    """Ask the ticket submitter to rate the support (👍/👎) when their ticket
+    moves to a sends_csat=True status. Posted in the ticket's thread when it
+    lives in their DM with the bot (@mentioning them, like other thread
+    updates), else as a plain DM.
+
+    The rating is about the support only: both answers close the ticket. An
+    issue that isn't fixed is reopened by replying in the ticket's thread."""
     slack_user_id = await _get_submitter_slack_id(ticket)
     if not slack_user_id or ticket.workspace_id is None:
         return
@@ -560,12 +587,19 @@ async def send_csat_dm(ticket: "Ticket") -> None:
         and ticket.slack_channel_id.startswith("D")
     )
     mention = f"\n<@{slack_user_id}>" if in_dm_thread else ""
+    hint = await csat_reply_hint(ticket, client, survey_in_thread=in_dm_thread)
+    footer = []
+    if hint:
+        footer.append(f"💬 *Issue not fixed?* Don't use the buttons — just {hint} and we'll reopen the ticket.")
+    footer.append(
+        f"No rating? The ticket closes automatically in {days} day{'s' if days != 1 else ''}."
+    )
 
     try:
         await client.chat_postMessage(
             channel=ticket.slack_channel_id if in_dm_thread else slack_user_id,
             thread_ts=ticket.slack_message_ts if in_dm_thread else None,
-            text=f"Your ticket {ticket.display_id} has been resolved. Did we help?{mention}",
+            text=f"Your ticket {ticket.display_id} has been resolved. How was our support?{mention}",
             blocks=[
                 {
                     "type": "section",
@@ -573,7 +607,9 @@ async def send_csat_dm(ticket: "Ticket") -> None:
                         "type": "mrkdwn",
                         "text": (
                             f"✅ *{ticket.display_id}* has been marked as resolved.\n"
-                            f"_{slack_escape(ticket.title)}_\n\nDid we solve your issue?{mention}"
+                            f"_{slack_escape(ticket.title)}_\n\n"
+                            f"*How was our support?* Your rating is about how we handled "
+                            f"your request.{mention}"
                         ),
                     },
                 },
@@ -582,14 +618,14 @@ async def send_csat_dm(ticket: "Ticket") -> None:
                     "elements": [
                         {
                             "type": "button",
-                            "text": {"type": "plain_text", "text": "👍 Yes, resolved!"},
+                            "text": {"type": "plain_text", "text": "👍 Good support"},
                             "style": "primary",
                             "action_id": "csat_positive",
                             "value": str(ticket.id),
                         },
                         {
                             "type": "button",
-                            "text": {"type": "plain_text", "text": "👎 Still an issue"},
+                            "text": {"type": "plain_text", "text": "👎 Poor support"},
                             "style": "danger",
                             "action_id": "csat_negative",
                             "value": str(ticket.id),
@@ -598,15 +634,7 @@ async def send_csat_dm(ticket: "Ticket") -> None:
                 },
                 {
                     "type": "context",
-                    "elements": [
-                        {
-                            "type": "mrkdwn",
-                            "text": (
-                                f"No response? The ticket closes automatically in "
-                                f"{days} day{'s' if days != 1 else ''}."
-                            ),
-                        }
-                    ],
+                    "elements": [{"type": "mrkdwn", "text": line} for line in footer],
                 },
             ],
         )

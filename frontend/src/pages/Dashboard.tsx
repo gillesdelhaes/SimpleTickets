@@ -62,10 +62,11 @@ function NeedsAttention({ userId }: { userId: number }) {
     status: activeStatuses,
     limit: 100,
   })
+  // A 👎 closes the ticket (it rates the support, not the fix), so look at
+  // recent ratings whatever the ticket's status
   const { data: negativeCsatData, isLoading: csatLoading } = useTickets({
     assignee_id: userId,
-    status: activeStatuses,
-    has_negative_csat: true,
+    negative_csat_days: 7,
     limit: 100,
   })
   const { data: unreadData } = useUnreadReplies()
@@ -74,11 +75,10 @@ function NeedsAttention({ userId }: { userId: number }) {
   const { breached, unread, negativeCsat } = useMemo(() => {
     const items = myTickets?.items ?? []
     const negCsatItems = negativeCsatData?.items ?? []
-    return {
-      breached: items.filter(t => t.sla_breached),
-      unread: items.filter(t => !t.sla_breached && unreadSet.has(t.id)),
-      negativeCsat: negCsatItems.filter(t => !t.sla_breached && !unreadSet.has(t.id)),
-    }
+    const breached = items.filter(t => t.sla_breached)
+    const unread = items.filter(t => !t.sla_breached && unreadSet.has(t.id))
+    const listed = new Set([...breached, ...unread].map(t => t.id))
+    return { breached, unread, negativeCsat: negCsatItems.filter(t => !listed.has(t.id)) }
   }, [myTickets, negativeCsatData, unreadData])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const all = [...breached, ...unread, ...negativeCsat]
@@ -131,7 +131,7 @@ function NeedsAttention({ userId }: { userId: number }) {
           onClick={() => navigate(`/tickets/${t.id}`)}
           reason={
             <span className="inline-flex items-center gap-1 font-semibold text-danger-ink">
-              <ThumbDown size={12} /> Negative CSAT — reopened
+              <ThumbDown size={12} /> Poor support rating
             </span>
           }
         />
