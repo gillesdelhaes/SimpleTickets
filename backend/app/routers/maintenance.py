@@ -27,7 +27,7 @@ from app.models import Notification, Ticket, TicketCSAT, TicketHistory, TicketRe
 from app.models.ticket_attachment import TicketAttachment
 from app.models.ticket_reply import TicketReply
 from app.models.ticket_status_config import TicketStatusConfig
-from app.routers.reports import _closed_time, _date_range
+from app.services.reports import closed_time as _closed_time, date_range as _date_range
 from app.services.audit import write_audit
 from app.utils import client_ip
 
@@ -111,7 +111,7 @@ async def data_health(
 
     rows = []
     for t in tickets:
-        # Same rules as routers/reports.py (_sla_met / _sla_counted)
+        # Same rules as services/reports.py (sla_met / sla_counted)
         if t.sla_deadline is None:
             sla, why = "excluded", "no SLA policy"
         elif t.resolved_at is not None:

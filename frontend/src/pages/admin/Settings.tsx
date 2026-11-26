@@ -2423,6 +2423,10 @@ function AITab() {
         <SettingRow label="Ask the requester" hint="While details are missing, ask the requester in their Slack or email thread, in English, and follow up on their answers — at most 3 rounds, and never once a technician has replied. Doesn't count as the first response.">
           <SettingSwitch on={data.ask_requester} onChange={v => setBehaviour('ask_requester', v)} />
         </SettingRow>
+
+        <SettingRow label="Ask" hint="Staff can ask questions about the ticket data on the Ask page, answered with this provider. To answer questions about topics and categories, the Assistant reads each ticket once (about 250 tokens a ticket, newest first, however old, within the daily budget) and again when it's resolved or recategorised. A question uses about 5–20k tokens. On whenever the Assistant is.">
+          <div><a href="/ask" className="btn ghost sm" style={{ textDecoration: 'none' }}>Open Ask</a></div>
+        </SettingRow>
         {saveBar(['instructions', 'company_context'])}
       </Card>
 

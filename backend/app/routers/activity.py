@@ -61,6 +61,8 @@ async def get_activity(
         .where(
             TicketHistory.created_at >= cutoff,
             TicketHistory.field_changed.in_(_DISPLAY_FIELDS),
+            # Bulk category clean-ups from Ask stay in each ticket's history only
+            TicketHistory.actor_label.is_distinct_from("Category clean-up (Ask)"),
         )
         .order_by(TicketHistory.created_at.desc())
         .limit(limit)

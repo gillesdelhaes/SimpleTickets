@@ -354,6 +354,7 @@ async def list_tickets(
     unassigned: bool = Query(default=False),
     has_negative_csat: bool = Query(default=False),
     requester_of: int | None = Query(default=None, description="Tickets from the same requester as this ticket"),
+    ids: list[int] = Query(default=[], max_length=200, description="Only these tickets (e.g. a list from Ask)"),
     sort: str = Query(default="created_at"),
     sort_dir: str = Query(default="desc"),
     limit: int = Query(default=50, ge=1, le=200),
@@ -380,6 +381,8 @@ async def list_tickets(
         clauses = _same_requester(await get_ticket_or_404(session, requester_of))
         # No identifiable requester → nothing matches (not "everything")
         where.extend(clauses if clauses is not None else [false()])
+    if ids:
+        where.append(Ticket.id.in_(ids))
     if has_negative_csat:
         where.append(
             select(TicketCSAT.id)

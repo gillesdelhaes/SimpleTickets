@@ -13,6 +13,7 @@ import AdminSettings from './pages/admin/Settings'
 import AdminAudit from './pages/admin/Audit'
 import Search from './pages/Search'
 import Reports from './pages/Reports'
+import Ask from './pages/Ask'
 import Account from './pages/Account'
 import SetupWizard from './pages/setup/SetupWizard'
 
@@ -34,6 +35,7 @@ export default function App() {
             <Route path="/queue" element={<Queue />} />
             <Route path="/search" element={<Search />} />
             <Route path="/reports" element={<Reports />} />
+            <Route path="/ask" element={<Ask />} />
           </Route>
 
           {/* ── My account: every staff member (password, own Slack IDs) ── */}

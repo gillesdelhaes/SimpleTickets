@@ -3,26 +3,28 @@ Reporting endpoints — aggregated metrics for the Reports page.
 
 All endpoints accept optional `from_date` / `to_date` query params (ISO date strings).
 Defaults to the last 30 days when omitted.
-All chart endpoints accept an optional `assignee_id` to scope results to one technician.
+All chart endpoints accept optional `assignee_id`, `category_id` and `source`
+to narrow the results.
+
+The queries live in app/services/reports.py, shared with Ask, so the Reports
+page and Ask always agree.
 """
 import csv
 import io
-from datetime import date, datetime, timedelta, timezone
-from typing import Optional
+from datetime import date, datetime, timezone
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import case, func, select, text
-from sqlalchemy.orm import aliased
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import require_admin, require_technician
 from app.database import get_session
-from app.dt import utcnow
-from app.models import AIUsage, Category, Ticket, TicketHistory, User
+from app.models import AIUsage, Category, Ticket, User
 from app.models.enums import Role
-from app.models.ticket_csat import TicketCSAT
-from app.models.ticket_status_config import TicketStatusConfig
+from app.services import reports as svc
+from app.services.reports import ReportFilter
 
 router = APIRouter(tags=["reports"], prefix="/reports")
 
@@ -44,130 +46,16 @@ def _csv_safe(value) -> str:
     return s
 
 
-async def _date_range(
-    from_date: Optional[date],
-    to_date: Optional[date],
-    session: AsyncSession,
-) -> tuple[datetime, datetime]:
-    """
-    Resolve the [start, end] window as naive-UTC bounds. The selected dates are
-    interpreted as calendar days in the configured timezone, so a non-UTC team's
-    "today" lines up with their local day rather than a UTC day.
-    """
-    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-    from app.services.settings_service import get_setting
-
-    tz_name = await get_setting("timezone", session, default="UTC")
-    try:
-        tz = ZoneInfo(tz_name)
-    except ZoneInfoNotFoundError:
-        tz = ZoneInfo("UTC")
-
-    today = datetime.now(tz).date()
-    end = to_date or today
-    start = from_date or (end - timedelta(days=29))
-    start_local = datetime(start.year, start.month, start.day, 0, 0, 0, tzinfo=tz)
-    end_local = datetime(end.year, end.month, end.day, 23, 59, 59, tzinfo=tz)
-    return (
-        start_local.astimezone(timezone.utc).replace(tzinfo=None),
-        end_local.astimezone(timezone.utc).replace(tzinfo=None),
-    )
-
-
-# ── Shared SLA / resolution-time definitions ──────────────────────────────────
-# One definition for every report (and Settings → Data health):
-#   - The SLA clock stops while a ticket is resolved/closed or waiting on the
-#     requester, and a breach is recorded the moment the clock stops past the
-#     deadline (services.sla.transition_status). So a resolved ticket met its
-#     SLA exactly when it isn't flagged breached.
-#   - SLA compliance counts resolved tickets plus still-open tickets that have
-#     already breached (they've missed it whatever happens next); open tickets
-#     still within their deadline aren't decided yet and are left out.
-#   - Time to resolve = creation → latest resolution, minus the time the
-#     ticket sat resolved/closed before being reopened (derived from its
-#     status history — see _closed_time).
-#   - First response = the first public tech reply *or* resolving the ticket,
-#     whichever came first: resolving is an answer too, and technicians
-#     shouldn't need an "on it" reply just to stop the clock. It's met when
-#     that landed by first_response_deadline. A ticket with neither yet has
-#     missed it once the deadline passed while the clock ran (before now, or
-#     before the clock stopped — a stopped clock's later deadline is walked
-#     forward on resume, so it isn't decided yet). Time to first response is
-#     wall-clock creation → first response, like time to resolve.
-
-def _sla_met():
-    return (Ticket.sla_deadline.isnot(None)) & (Ticket.resolved_at.isnot(None)) & (Ticket.sla_breached == False)  # noqa: E712
-
-
-def _sla_counted():
-    return (Ticket.sla_deadline.isnot(None)) & (Ticket.resolved_at.isnot(None) | (Ticket.sla_breached == True))  # noqa: E712
-
-
-def _fr_at():
-    # Postgres LEAST ignores NULLs: NULL only when neither has happened
-    return func.least(Ticket.first_responded_at, Ticket.resolved_at)
-
-
-def _fr_met():
-    return (Ticket.first_response_deadline.isnot(None)) & (_fr_at() <= Ticket.first_response_deadline)
-
-
-def _fr_counted():
-    return (Ticket.first_response_deadline.isnot(None)) & (
-        _fr_at().isnot(None)
-        | (Ticket.first_response_deadline < func.coalesce(Ticket.sla_paused_at, utcnow()))
-    )
-
-
-def _fr_minutes():
-    # NULL until answered or resolved, so avg / percentile skip those tickets
-    return func.extract("epoch", _fr_at() - Ticket.created_at) / 60
-
-
-def _closed_time():
-    """
-    Per ticket, seconds it spent resolved/closed *before its latest
-    resolution* — i.e. closed time that ended in a reopen. Built from the
-    ticket's status history: each status change lasts until the next one, and
-    the spans spent in a resolved state that ended by resolved_at are summed.
-    (The span after the latest resolution is not "before" it, so a ticket
-    that's simply still closed contributes nothing.)
-    """
-    resolved_names = select(TicketStatusConfig.name).where(TicketStatusConfig.is_resolved_state == True)  # noqa: E712
-    spans = (
-        select(
-            TicketHistory.ticket_id,
-            TicketHistory.new_value,
-            TicketHistory.created_at.label("start_at"),
-            func.lead(TicketHistory.created_at).over(
-                partition_by=TicketHistory.ticket_id,
-                order_by=(TicketHistory.created_at, TicketHistory.id),
-            ).label("end_at"),
-        )
-        .where(TicketHistory.field_changed == "status")
-        .subquery()
-    )
-    return (
-        select(
-            spans.c.ticket_id,
-            func.sum(func.extract("epoch", spans.c.end_at - spans.c.start_at)).label("closed_secs"),
-        )
-        .join(Ticket, Ticket.id == spans.c.ticket_id)
-        .where(
-            spans.c.new_value.in_(resolved_names),
-            spans.c.end_at.isnot(None),
-            spans.c.end_at <= Ticket.resolved_at,
-        )
-        .group_by(spans.c.ticket_id)
-        .subquery()
-    )
-
-
-def _resolution_hours(closed):
-    return (
-        func.extract("epoch", Ticket.resolved_at - Ticket.created_at)
-        - func.coalesce(closed.c.closed_secs, 0)
-    ) / 3600
+async def report_filter(
+    from_date: Optional[date] = Query(default=None),
+    to_date: Optional[date] = Query(default=None),
+    assignee_id: Optional[int] = Query(default=None),
+    category_id: Optional[int] = Query(default=None),
+    source: Optional[str] = Query(default=None, max_length=20),
+    session: AsyncSession = Depends(get_session),
+) -> ReportFilter:
+    start, end = await svc.date_range(from_date, to_date, session)
+    return ReportFilter(start, end, assignee_id=assignee_id, category_id=category_id, source=source)
 
 
 # ── GET /api/reports/assignees ─────────────────────────────────────────────────
@@ -189,113 +77,91 @@ async def list_assignees(
     return [{"id": row.id, "name": row.name} for row in result.all()]
 
 
-# ── GET /api/reports/overview ──────────────────────────────────────────────────
+# ── Charts ────────────────────────────────────────────────────────────────────
+
 
 @router.get("/overview")
 async def get_overview(
-    from_date: Optional[date] = Query(default=None),
-    to_date: Optional[date] = Query(default=None),
-    assignee_id: Optional[int] = Query(default=None),
+    f: ReportFilter = Depends(report_filter),
     _: User = Depends(require_technician),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    start, end = await _date_range(from_date, to_date, session)
+    return await svc.overview(session, f)
 
-    resolved_subq = (
-        select(TicketStatusConfig.name)
-        .where(TicketStatusConfig.is_resolved_state == True)  # noqa: E712
-        .scalar_subquery()
-    )
-
-    closed = _closed_time()
-    stmt = select(
-        func.count().label("total"),
-        func.count(case((Ticket.status.in_(resolved_subq), 1))).label("resolved"),
-        func.count(case((~Ticket.status.in_(resolved_subq), 1))).label("open"),
-        func.count(case((_sla_met(), 1))).label("sla_met"),
-        func.count(case((_sla_counted(), 1))).label("sla_total"),
-        func.avg(_resolution_hours(closed)).filter(
-            Ticket.resolved_at.isnot(None)
-        ).label("avg_resolution_hours"),
-        func.count(case((_fr_met(), 1))).label("fr_met"),
-        func.count(case((_fr_counted(), 1))).label("fr_total"),
-        func.avg(_fr_minutes()).label("avg_fr_minutes"),
-        func.percentile_cont(0.5).within_group(_fr_minutes()).label("median_fr_minutes"),
-    ).select_from(Ticket).outerjoin(closed, closed.c.ticket_id == Ticket.id).where(
-        Ticket.created_at >= start, Ticket.created_at <= end,
-    )
-
-    if assignee_id is not None:
-        stmt = stmt.where(Ticket.assignee_id == assignee_id)
-
-    row = (await session.execute(stmt)).one()
-
-    sla_pct = round(row.sla_met * 100 / row.sla_total, 1) if row.sla_total else None
-    # `is not None`, not truthiness — a genuine 0 (0% SLA, 0h avg) is a real value,
-    # not "no data", and must not render as "—".
-    avg_h = round(float(row.avg_resolution_hours), 1) if row.avg_resolution_hours is not None else None
-    fr_pct = round(row.fr_met * 100 / row.fr_total, 1) if row.fr_total else None
-    avg_fr = round(float(row.avg_fr_minutes)) if row.avg_fr_minutes is not None else None
-    median_fr = round(float(row.median_fr_minutes)) if row.median_fr_minutes is not None else None
-
-    csat_stmt = (
-        select(
-            func.count(TicketCSAT.id).label("csat_total"),
-            func.count(case((TicketCSAT.score == True, 1))).label("csat_positive"),  # noqa: E712
-        )
-        .join(Ticket, TicketCSAT.ticket_id == Ticket.id)
-        .where(Ticket.created_at >= start, Ticket.created_at <= end)
-    )
-    if assignee_id is not None:
-        csat_stmt = csat_stmt.where(Ticket.assignee_id == assignee_id)
-    csat_row = (await session.execute(csat_stmt)).one()
-    csat_pct = (
-        round(csat_row.csat_positive * 100 / csat_row.csat_total, 1)
-        if csat_row.csat_total
-        else None
-    )
-
-    return {
-        "total": row.total,
-        "resolved": row.resolved,
-        "open": row.open,
-        "sla_compliance_pct": sla_pct,
-        "avg_resolution_hours": avg_h,
-        "first_response_pct": fr_pct,
-        "avg_first_response_minutes": avg_fr,
-        "median_first_response_minutes": median_fr,
-        "csat_pct": csat_pct,
-        "csat_total": csat_row.csat_total,
-        "csat_positive": int(csat_row.csat_positive),
-    }
-
-
-# ── GET /api/reports/volume ────────────────────────────────────────────────────
 
 @router.get("/volume")
 async def get_volume(
-    from_date: Optional[date] = Query(default=None),
-    to_date: Optional[date] = Query(default=None),
-    assignee_id: Optional[int] = Query(default=None),
+    bucket: Literal["day", "week", "month"] = Query(default="day"),
+    f: ReportFilter = Depends(report_filter),
     _: User = Depends(require_technician),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
-    start, end = await _date_range(from_date, to_date, session)
+    return await svc.volume(session, f, bucket)
 
-    stmt = (
-        select(
-            func.date_trunc("day", Ticket.created_at).label("day"),
-            func.count().label("count"),
-        )
-        .where(Ticket.created_at >= start, Ticket.created_at <= end)
-        .group_by(text("day"))
-        .order_by(text("day"))
-    )
-    if assignee_id is not None:
-        stmt = stmt.where(Ticket.assignee_id == assignee_id)
 
-    result = await session.execute(stmt)
-    return [{"date": row.day.strftime("%Y-%m-%d"), "count": row.count} for row in result.all()]
+@router.get("/by-priority")
+async def get_by_priority(
+    f: ReportFilter = Depends(report_filter),
+    _: User = Depends(require_technician),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    return await svc.by_priority(session, f)
+
+
+@router.get("/by-status")
+async def get_by_status(
+    f: ReportFilter = Depends(report_filter),
+    _: User = Depends(require_technician),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    return await svc.by_status(session, f)
+
+
+@router.get("/by-category")
+async def get_by_category(
+    f: ReportFilter = Depends(report_filter),
+    _: User = Depends(require_technician),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    return await svc.by_category(session, f)
+
+
+@router.get("/by-source")
+async def get_by_source(
+    f: ReportFilter = Depends(report_filter),
+    _: User = Depends(require_technician),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    return await svc.by_source(session, f)
+
+
+@router.get("/technicians")
+async def get_technicians(
+    f: ReportFilter = Depends(report_filter),
+    _user: User = Depends(require_technician),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    return await svc.technicians(session, f)
+
+
+@router.get("/csat-negative")
+async def get_csat_negative(
+    f: ReportFilter = Depends(report_filter),
+    _: User = Depends(require_technician),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    """All tickets that received a negative CSAT response in the date range."""
+    return await svc.csat_negative(session, f)
+
+
+@router.get("/sla-breached")
+async def get_sla_breached(
+    f: ReportFilter = Depends(report_filter),
+    _: User = Depends(require_technician),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    """All SLA-breached tickets created in the date range."""
+    return await svc.sla_breached(session, f)
 
 
 # ── GET /api/reports/ai-usage ─────────────────────────────────────────────────
@@ -315,7 +181,7 @@ async def get_ai_usage(
     from app.routers.ai import read_price
     from app.services.settings_service import get_setting
 
-    start, end = await _date_range(from_date, to_date, session)
+    start, end = await svc.date_range(from_date, to_date, session)
     in_range = (AIUsage.created_at >= start, AIUsage.created_at <= end)
     failed = func.count().filter(AIUsage.ok == False)  # noqa: E712
 
@@ -383,299 +249,6 @@ async def get_ai_usage(
             for m in models
         ],
     }
-
-
-# ── GET /api/reports/by-priority ──────────────────────────────────────────────
-
-@router.get("/by-priority")
-async def get_by_priority(
-    from_date: Optional[date] = Query(default=None),
-    to_date: Optional[date] = Query(default=None),
-    assignee_id: Optional[int] = Query(default=None),
-    _: User = Depends(require_technician),
-    session: AsyncSession = Depends(get_session),
-) -> list[dict]:
-    start, end = await _date_range(from_date, to_date, session)
-    stmt = (
-        select(Ticket.priority, func.count().label("count"))
-        .where(Ticket.created_at >= start, Ticket.created_at <= end)
-        .group_by(Ticket.priority)
-        .order_by(func.count().desc())
-    )
-    if assignee_id is not None:
-        stmt = stmt.where(Ticket.assignee_id == assignee_id)
-    result = await session.execute(stmt)
-    return [{"priority": row.priority.value, "count": row.count} for row in result.all()]
-
-
-# ── GET /api/reports/by-status ────────────────────────────────────────────────
-
-@router.get("/by-status")
-async def get_by_status(
-    from_date: Optional[date] = Query(default=None),
-    to_date: Optional[date] = Query(default=None),
-    assignee_id: Optional[int] = Query(default=None),
-    _: User = Depends(require_technician),
-    session: AsyncSession = Depends(get_session),
-) -> list[dict]:
-    start, end = await _date_range(from_date, to_date, session)
-    stmt = (
-        select(Ticket.status, func.count().label("count"))
-        .where(Ticket.created_at >= start, Ticket.created_at <= end)
-        .group_by(Ticket.status)
-        .order_by(func.count().desc())
-    )
-    if assignee_id is not None:
-        stmt = stmt.where(Ticket.assignee_id == assignee_id)
-    result = await session.execute(stmt)
-    return [{"status": row.status, "count": row.count} for row in result.all()]
-
-
-# ── GET /api/reports/by-category ──────────────────────────────────────────────
-
-@router.get("/by-category")
-async def get_by_category(
-    from_date: Optional[date] = Query(default=None),
-    to_date: Optional[date] = Query(default=None),
-    assignee_id: Optional[int] = Query(default=None),
-    _: User = Depends(require_technician),
-    session: AsyncSession = Depends(get_session),
-) -> list[dict]:
-    start, end = await _date_range(from_date, to_date, session)
-    # Tickets the requester marked fixed themselves carry no category by
-    # design; keep them apart from work nobody categorised
-    label = func.coalesce(
-        Category.name,
-        case((Ticket.resolved_by_requester == True, "Resolved by requester"), else_="Uncategorised"),  # noqa: E712
-    )
-    stmt = (
-        select(
-            label.label("category"),
-            func.count().label("count"),
-        )
-        .select_from(Ticket)
-        .outerjoin(Category, Ticket.category_id == Category.id)
-        .where(Ticket.created_at >= start, Ticket.created_at <= end)
-        .group_by(text("1"))  # the label; by position, as it holds bound values
-        .order_by(func.count().desc())
-    )
-    if assignee_id is not None:
-        stmt = stmt.where(Ticket.assignee_id == assignee_id)
-    result = await session.execute(stmt)
-    return [{"category": row.category, "count": row.count} for row in result.all()]
-
-
-# ── GET /api/reports/by-source ────────────────────────────────────────────────
-
-@router.get("/by-source")
-async def get_by_source(
-    from_date: Optional[date] = Query(default=None),
-    to_date: Optional[date] = Query(default=None),
-    assignee_id: Optional[int] = Query(default=None),
-    _: User = Depends(require_technician),
-    session: AsyncSession = Depends(get_session),
-) -> list[dict]:
-    start, end = await _date_range(from_date, to_date, session)
-    stmt = (
-        select(Ticket.source, func.count().label("count"))
-        .where(Ticket.created_at >= start, Ticket.created_at <= end)
-        .group_by(Ticket.source)
-        .order_by(func.count().desc())
-    )
-    if assignee_id is not None:
-        stmt = stmt.where(Ticket.assignee_id == assignee_id)
-    result = await session.execute(stmt)
-    return [{"source": row.source, "count": row.count} for row in result.all()]
-
-
-# ── GET /api/reports/technicians ──────────────────────────────────────────────
-
-@router.get("/technicians")
-async def get_technicians(
-    from_date: Optional[date] = Query(default=None),
-    to_date: Optional[date] = Query(default=None),
-    assignee_id: Optional[int] = Query(default=None),
-    _user: User = Depends(require_technician),
-    session: AsyncSession = Depends(get_session),
-) -> list[dict]:
-    start, end = await _date_range(from_date, to_date, session)
-    resolved_subq = (
-        select(TicketStatusConfig.name)
-        .where(TicketStatusConfig.is_resolved_state == True)  # noqa: E712
-        .scalar_subquery()
-    )
-
-    closed = _closed_time()
-    csat_subq = (
-        select(
-            TicketCSAT.ticket_id,
-            func.count(TicketCSAT.id).label("csat_count"),
-            func.count(case((TicketCSAT.score == True, 1))).label("csat_pos"),  # noqa: E712
-        )
-        .where(TicketCSAT.responded_at >= start, TicketCSAT.responded_at <= end)
-        .group_by(TicketCSAT.ticket_id)
-        .subquery()
-    )
-
-    stmt = (
-        select(
-            User.id,
-            User.name,
-            func.count(Ticket.id).label("total"),
-            func.count(case((Ticket.status.in_(resolved_subq), 1))).label("resolved"),
-            func.avg(_resolution_hours(closed)).filter(Ticket.resolved_at.isnot(None)).label("avg_hours"),
-            # Scoped to tickets resolved in the window, so every one is counted
-            (
-                func.count(case((_sla_met(), 1))) * 100.0 /
-                func.nullif(func.count(case((_sla_counted(), 1))), 0)
-            ).label("sla_pct"),
-            (
-                func.count(case((_fr_met(), 1))) * 100.0 /
-                func.nullif(func.count(case((_fr_counted(), 1))), 0)
-            ).label("fr_pct"),
-            func.avg(_fr_minutes()).label("avg_fr_minutes"),
-            func.coalesce(func.sum(csat_subq.c.csat_count), 0).label("csat_total"),
-            func.coalesce(func.sum(csat_subq.c.csat_pos), 0).label("csat_positive"),
-        )
-        .join(User, Ticket.assignee_id == User.id)
-        .outerjoin(closed, closed.c.ticket_id == Ticket.id)
-        .outerjoin(csat_subq, csat_subq.c.ticket_id == Ticket.id)
-        .where(
-            Ticket.resolved_at.isnot(None),
-            Ticket.resolved_at >= start,
-            Ticket.resolved_at <= end,
-        )
-        .group_by(User.id, User.name)
-        .order_by(func.count(Ticket.id).desc())
-    )
-
-    if assignee_id is not None:
-        stmt = stmt.where(User.id == assignee_id)
-
-    result = await session.execute(stmt)
-    return [
-        {
-            "name": row.name,
-            "total": row.total,
-            "resolved": row.resolved,
-            "avg_hours": round(float(row.avg_hours), 1) if row.avg_hours is not None else None,
-            "sla_pct": round(float(row.sla_pct), 1) if row.sla_pct is not None else None,
-            "first_response_pct": round(float(row.fr_pct), 1) if row.fr_pct is not None else None,
-            "avg_first_response_minutes": round(float(row.avg_fr_minutes)) if row.avg_fr_minutes is not None else None,
-            "csat_pct": (
-                round(row.csat_positive * 100 / row.csat_total, 1)
-                if row.csat_total
-                else None
-            ),
-        }
-        for row in result.all()
-    ]
-
-
-
-# ── GET /api/reports/csat-negative ────────────────────────────────────────────
-
-@router.get("/csat-negative")
-async def get_csat_negative(
-    from_date: Optional[date] = Query(default=None),
-    to_date: Optional[date] = Query(default=None),
-    assignee_id: Optional[int] = Query(default=None),
-    _: User = Depends(require_technician),
-    session: AsyncSession = Depends(get_session),
-) -> list[dict]:
-    """Return all tickets that received a negative CSAT response in the date range."""
-    start, end = await _date_range(from_date, to_date, session)
-    # Latest negative CSAT per ticket within the date range
-    latest_neg = (
-        select(
-            TicketCSAT.ticket_id,
-            func.max(TicketCSAT.responded_at).label("responded_at"),
-        )
-        .where(
-            TicketCSAT.score == False,  # noqa: E712
-            TicketCSAT.responded_at >= start,
-            TicketCSAT.responded_at <= end,
-        )
-        .group_by(TicketCSAT.ticket_id)
-        .subquery()
-    )
-    assignee_alias = aliased(User)
-    stmt = (
-        select(
-            Ticket.id,
-            Ticket.title,
-            Ticket.status,
-            Ticket.priority,
-            latest_neg.c.responded_at,
-            assignee_alias.name.label("assignee_name"),
-        )
-        .join(latest_neg, latest_neg.c.ticket_id == Ticket.id)
-        .outerjoin(assignee_alias, Ticket.assignee_id == assignee_alias.id)
-        .order_by(latest_neg.c.responded_at.desc())
-        .limit(1000)
-    )
-    if assignee_id is not None:
-        stmt = stmt.where(Ticket.assignee_id == assignee_id)
-    result = await session.execute(stmt)
-    return [
-        {
-            "id": row.id,
-            "title": row.title,
-            "status": row.status,
-            "priority": row.priority.value,
-            "responded_at": row.responded_at.isoformat(),
-            "assignee_name": row.assignee_name,
-        }
-        for row in result.all()
-    ]
-
-
-# ── GET /api/reports/sla-breached ─────────────────────────────────────────────
-
-@router.get("/sla-breached")
-async def get_sla_breached(
-    from_date: Optional[date] = Query(default=None),
-    to_date: Optional[date] = Query(default=None),
-    assignee_id: Optional[int] = Query(default=None),
-    _: User = Depends(require_technician),
-    session: AsyncSession = Depends(get_session),
-) -> list[dict]:
-    """Return all SLA-breached tickets created in the date range."""
-    start, end = await _date_range(from_date, to_date, session)
-    assignee_alias = aliased(User)
-    conditions = [
-        Ticket.sla_breached == True,  # noqa: E712
-        Ticket.created_at >= start,
-        Ticket.created_at <= end,
-    ]
-    if assignee_id is not None:
-        conditions.append(Ticket.assignee_id == assignee_id)
-    stmt = (
-        select(
-            Ticket.id,
-            Ticket.title,
-            Ticket.status,
-            Ticket.priority,
-            Ticket.sla_deadline,
-            assignee_alias.name.label("assignee_name"),
-        )
-        .outerjoin(assignee_alias, Ticket.assignee_id == assignee_alias.id)
-        .where(*conditions)
-        .order_by(Ticket.sla_deadline.asc())
-        .limit(1000)
-    )
-    result = await session.execute(stmt)
-    return [
-        {
-            "id": row.id,
-            "title": row.title,
-            "status": row.status,
-            "priority": row.priority.value,
-            "sla_deadline": row.sla_deadline.isoformat() if row.sla_deadline else None,
-            "assignee_name": row.assignee_name,
-        }
-        for row in result.all()
-    ]
 
 
 # ── GET /api/reports/export ────────────────────────────────────────────────────

@@ -178,11 +178,13 @@ export default function Queue() {
   // works out who the requester is (no Slack ids in URLs)
   const requesterOf = Number(searchParams.get('requester')) || undefined
   const page = parseInt(searchParams.get('page') ?? '0', 10)
+  // A list of tickets handed over from Ask ("Open in Queue"), comma-separated
+  const askIds = (searchParams.get('ids') ?? '').split(',').map(Number).filter(n => n > 0).slice(0, 200)
 
   // Derive API params — default to non-resolved statuses when no explicit filter is set
   const activeStatusNames = allStatuses.filter(s => !s.is_resolved_state).map(s => s.name)
   // …except for a requester's history, where closed tickets are the point
-  const statusParam = selectedStatuses.length > 0 ? selectedStatuses : requesterOf ? undefined : activeStatusNames
+  const statusParam = selectedStatuses.length > 0 ? selectedStatuses : (requesterOf || askIds.length) ? undefined : activeStatusNames
   const priorityParam = selectedPriorities.length > 0 ? selectedPriorities : undefined
   // 'all' | 'mine' | 'unassigned' | a technician's user id (from the menu)
   const pickedTechId = /^\d+$/.test(assigneeFilter) ? Number(assigneeFilter) : undefined
@@ -206,6 +208,7 @@ export default function Queue() {
     category_id: categoryIdParam,
     workspace_id: workspaceIdParam,
     requester_of: requesterOf,
+    ids: askIds.length ? askIds : undefined,
     sort: apiSort,
     sort_dir: apiSortDir,
     limit: PAGE_SIZE,
@@ -275,7 +278,7 @@ export default function Queue() {
 
   const statusLabel = (n: string) => allStatuses.find(s => s.name === n)?.label ?? n
   const statusSummary =
-    selectedStatuses.length === 0 ? (requesterOf ? 'All' : 'Active')
+    selectedStatuses.length === 0 ? ((requesterOf || askIds.length) ? 'All' : 'Active')
       : selectedStatuses.length === 1 ? statusLabel(selectedStatuses[0])
         : `${statusLabel(selectedStatuses[0])} +${selectedStatuses.length - 1}`
   const prioritySummary =
@@ -287,7 +290,7 @@ export default function Queue() {
   const filtersActive =
     selectedStatuses.length > 0 || selectedPriorities.length > 0 ||
     assigneeFilter !== 'all' || categoryFilter !== 'all' || workspaceFilter !== 'all' ||
-    requesterOf !== undefined
+    requesterOf !== undefined || askIds.length > 0
   const { data: requesterTicket } = useQuery<TicketRead>({
     queryKey: ['ticket', requesterOf],
     queryFn: async () => (await api.get<TicketRead>(`/tickets/${requesterOf}`)).data,
@@ -568,6 +571,17 @@ export default function Queue() {
             />
           )}
         </FilterMenu>
+
+        {askIds.length > 0 && (
+          <button
+            type="button"
+            className="chip on"
+            onClick={() => setParam('ids', [])}
+            title="Show the whole queue again"
+          >
+            From Ask · {askIds.length} ticket{askIds.length === 1 ? '' : 's'} <span aria-hidden>×</span>
+          </button>
+        )}
 
         {filtersActive && (
           <button

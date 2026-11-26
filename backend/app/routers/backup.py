@@ -36,6 +36,8 @@ from app.models.ticket_attachment import TicketAttachment
 from app.models.ticket_history import TicketHistory
 from app.models.ticket_csat import TicketCSAT
 from app.models.ticket_read_marker import TicketReadMarker
+from app.models.insight import Topic, TicketInsight
+from app.models.ask import AskMessage, AskPin, AskThread
 from app.models.ticket_reply import TicketReply
 from app.models.ticket_status_config import TicketStatusConfig
 from app.models.user import User
@@ -80,6 +82,12 @@ _EXPORT_MODELS: list[tuple[str, Any]] = [
     ("ticket_csat", TicketCSAT),
     ("audit_log", AuditLog),
     ("ticket_read_markers", TicketReadMarker),
+    # Ask: labels cost AI tokens to make again, so they travel with the backup
+    ("topics", Topic),
+    ("ticket_insights", TicketInsight),
+    ("ask_threads", AskThread),
+    ("ask_messages", AskMessage),
+    ("ask_pins", AskPin),
 ]
 
 # Datetime column names per table (used during restore deserialization).
@@ -376,7 +384,9 @@ async def restore_backup(
         # When the table is empty MAX(id) is NULL: set sequence to 1 with is_called=false
         # so the next nextval() returns 1. When rows exist: set to max(id) with is_called=true
         # so the next nextval() returns max(id)+1.
-        for table_name, _ in _EXPORT_MODELS:
+        for table_name, model in _EXPORT_MODELS:
+            if "id" not in model.__table__.columns:
+                continue  # keyed by its ticket (ticket_insights): no sequence
             await session.execute(text(
                 f"SELECT setval(pg_get_serial_sequence('{table_name}', 'id'), "
                 f"COALESCE(MAX(id), 1), MAX(id) IS NOT NULL) FROM {table_name}"

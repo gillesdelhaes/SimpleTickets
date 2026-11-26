@@ -625,6 +625,25 @@ def start_scheduler() -> None:
         max_instances=1,
         coalesce=True,
     )
+    # Ask: label tickets (topic, fit, fix) and merge duplicate topics
+    # (no-ops while the Assistant is off)
+    from app.ai.labels import run_pending_labels, run_topic_merge
+    _scheduler.add_job(
+        run_pending_labels,
+        trigger="interval",
+        seconds=60,
+        id="ask_labels",
+        max_instances=1,
+        coalesce=True,
+    )
+    _scheduler.add_job(
+        run_topic_merge,
+        trigger="interval",
+        hours=6,
+        id="ask_topic_merge",
+        max_instances=1,
+        coalesce=True,
+    )
     from app.auth.jwt import prune_revoked_tokens
     _scheduler.add_job(
         prune_revoked_tokens,
